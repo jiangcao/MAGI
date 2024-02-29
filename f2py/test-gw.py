@@ -22,13 +22,15 @@ if __name__=='__main__':
 
    # ham = wannierham.full_device_mat_def(ky=0.0,kz=0.0,nb=nb,ns=2,length=length,hr=hr,cell=cell,n_range=n_range)
 
-   nen = 2000
+   nen = 3200
    nky=1
    nkz=1
    nk=nky*nkz
    niter=5
    eps_screen=2.5
    r0=3.0
+   emin=-10.0
+   emax=4.0
 
    v = np.zeros((nb*length,nb*length,nk), dtype='complex')  
    ham = np.zeros((nb*length,nb*length,nk), dtype='complex')  
@@ -36,7 +38,7 @@ if __name__=='__main__':
    ham[:,:,0] = wannierham.full_device_mat_def(ky=0.0,kz=0.0,nb=nb,ns=2,length=length,hr=hr,cell=cell,n_range=n_range)
    v[:,:,0] = wannierham.full_device_bare_coulomb(ky=0.0,kz=0.0,length=length,eps=eps_screen,r0=r0,ldiag=True,nb=nb,ns=ns,method='pointlike',n_range=n_range,wannier_center=wannier_center,cell=cell)
 
-   energies = np.linspace(-4,2,nen)
+   energies = np.linspace(emin,emax,nen)
 
    dim_lead = np.ones(2)* nb*ns
    temp =  np.ones(2)* 300.0
@@ -70,4 +72,8 @@ if __name__=='__main__':
    # plt.plot(energies, cur[:,0] )
    # plt.show()
 
-   G_retarded,G_lesser,G_greater = gf_dense.solve_gw_3d(niter=niter,nm_dev=nb*length,lx=4.26,length=length,spindeg=2.0,temps=300.0,tempd=300.0,mus=mu[0],mud=mu[1],alpha_mix=0.5,nen=nen,en=energies,nb=nb,ns=ns,nphiy=nky,nphiz=nkz,ham=ham,h00lead=lead_h00,h10lead=lead_h10,t=lead_coupling,v=v,ldiag=True,flatband=False)
+   G_retarded,G_lesser,G_greater = gf_dense.solve_gw_3d(niter=niter,nm_dev=nb*length,lx=4.26,length=length,spindeg=2.0,
+                                                        temps=300.0,tempd=300.0,mus=mu[0],mud=mu[1],alpha_mix=0.5,
+                                                        nen=nen,en=energies,nb=nb,ns=ns,nphiy=nky,nphiz=nkz,
+                                                        ham=ham,h00lead=lead_h00,h10lead=lead_h10,t=lead_coupling,v=v,
+                                                        ldiag=True,flatband=False)
