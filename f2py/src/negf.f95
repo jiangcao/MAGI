@@ -22,6 +22,7 @@ module parameters_mod
 end module parameters_mod
 
 
+
 module fft_mod
     use parameters_mod
     implicit none 
@@ -206,23 +207,185 @@ end module fft_mod
     
 
 
+module output 
+
+    contains 
+
+    ! write spectrum into file (pm3d map)
+    subroutine write_spectrum_per_kz(dataset,i,G,nen,en,nky,nkz,length,NB,Lx,coeff,at_ky,at_kz)
+        character(len=*), intent(in) :: dataset
+        complex(8), intent(in) :: G(:,:,:,:) ! (m,m,e,k) kz is the fast-running index in k
+        integer, intent(in)::i,nen,length,NB,nky,nkz
+        real(8), intent(in)::Lx,en(nen),coeff(2)
+        real(8), intent(in), optional::at_ky,at_kz
+        integer:: ie,j,ib,ikz,iky,k,kb
+        real(8):: kcenter(2),dky,dkz
+        complex(8)::tr
+        character(len=4) :: i_str
+        character(len=8) :: fmt
+        fmt = '(I4.4)'
+        write (i_str, fmt) i 
+        kcenter=0.0d0
+        if (present(at_ky)) then
+            kcenter(1)=at_ky
+        endif
+        if (present(at_kz)) then
+            kcenter(2)=at_kz
+        endif
+        dky=1.0d0/dble(nky)
+        dkz=1.0d0/dble(nkz)
+        open(unit=11,file=trim(dataset)//i_str//'_ky.dat',status='unknown')
+        do ie = 1,nen
+            ikz=max(min(nkz/2+ floor(kcenter(2)/dkz)+1 , nkz) , 1)            
+            do iky=1,nky
+                tr=0.0d0          
+                do j = 1,length
+                    do ib=1,nb
+                        tr = tr+G((j-1)*nb+ib,(j-1)*nb+ib,ie,ikz+nkz*(iky-1))            
+                    enddo
+                end do
+                write(11,'(4E18.4)') dble(iky)/dble(nky), en(ie), dble(tr)*coeff(1), aimag(tr)*coeff(2)        
+            enddo
+            write(11,*)    
+        enddo
+        close(11)
+
+        open(unit=11,file=trim(dataset)//i_str//'_kz.dat',status='unknown')
+        do ie = 1,nen
+            iky=max(min(nky/2+ floor(kcenter(1)/dky)+1 , nkz) , 1)           
+            do ikz=1,nkz
+                tr=0.0d0          
+                do j = 1,length
+                    do ib=1,nb
+                        tr = tr+G((j-1)*nb+ib,(j-1)*nb+ib,ie,ikz+nkz*(iky-1))            
+                    enddo
+                end do
+                write(11,'(4E18.4)') dble(ikz)/dble(nkz), en(ie), dble(tr)*coeff(1), aimag(tr)*coeff(2)        
+            enddo
+            write(11,*)    
+        enddo
+        close(11)
+    end subroutine write_spectrum_per_kz
+
+
+    ! write spectrum into file (pm3d map)
+    subroutine write_spectrum_summed_over_kz(dataset,i,G,nen,en,nkz,length,NB,Lx,coeff)
+        character(len=*), intent(in) :: dataset
+        complex(8), intent(in) :: G(:,:,:,:)
+        integer, intent(in)::i,nen,length,NB,nkz
+        real(8), intent(in)::Lx,en(nen),coeff(2)
+        integer:: ie,j,ib,ikz
+        complex(8)::tr
+        character(len=4) :: i_str
+        character(len=8) :: fmt
+        fmt = '(I4.4)'
+        write (i_str, fmt) i 
+        open(unit=11,file=trim(dataset)//i_str//'.dat',status='unknown')
+        do ie = 1,nen
+            do j = 1,length
+                tr=0.0d0          
+                do ib=1,nb
+                do ikz=1,nkz
+                    tr = tr+ G((j-1)*nb+ib,(j-1)*nb+ib,ie,ikz)            
+                enddo
+                enddo
+                tr=tr/dble(nkz)
+                write(11,'(4E18.4)') dble(j-1)*Lx, en(ie), dble(tr)*coeff(1), aimag(tr)*coeff(2)        
+            end do
+            write(11,*)    
+        enddo
+        close(11)
+    end subroutine write_spectrum_summed_over_kz
+
+
+    ! write current into file 
+    subroutine write_current(dataset,i,cur,length,NB,NS,Lx)
+        character(len=*), intent(in) :: dataset
+        real(8), intent(in) :: cur(:,:)
+        integer, intent(in)::i,length,NB,NS
+        real(8), intent(in)::Lx
+        integer:: j,ib,jb,ii
+        real(8)::tr
+        character(len=4) :: i_str
+        character(len=8) :: fmt
+        fmt = '(I4.4)'
+        write (i_str, fmt) i 
+        open(unit=11,file=trim(dataset)//i_str//'.dat',status='unknown')
+        do ii = 1,length-1
+            tr=0.0d0          
+            do ib=1,nb  
+            do jb=1,nb       
+                do j=ii,min(ii+NS-1,length-1)
+                tr = tr+ cur((ii-1)*nb+ib,j*nb+jb)
+                enddo
+            enddo                        
+            end do
+            write(11,'(2E18.4)') dble(ii)*Lx, tr
+        end do
+    end subroutine write_current
+    
+    ! write current spectrum into file (pm3d map)
+    subroutine write_current_spectrum(dataset,i,cur,nen,en,length,NB,Lx)
+        character(len=*), intent(in) :: dataset
+        real(8), intent(in) :: cur(:,:,:)
+        integer, intent(in)::i,nen,length,NB
+        real(8), intent(in)::Lx,en(nen)
+        integer:: ie,j,ib,jb
+        real(8)::tr
+        character(len=4) :: i_str
+        character(len=8) :: fmt
+        fmt = '(I4.4)'
+        write (i_str, fmt) i 
+        open(unit=11,file=trim(dataset)//i_str//'.dat',status='unknown')
+        do ie = 1,nen
+            do j = 1,length-1
+                tr=0.0d0          
+                do ib=1,nb  
+                do jb=1,nb        
+                    tr = tr+ cur((j-1)*nb+ib,j*nb+jb,ie)
+                enddo                        
+                end do
+                write(11,'(3E18.4)') dble(j)*Lx, en(ie), tr
+            end do
+            write(11,*)    
+        end do
+        close(11)
+    end subroutine write_current_spectrum
+
+    ! write transmission spectrum into file
+    subroutine write_transmission_spectrum(dataset,i,tr,nen,en)
+        character(len=*), intent(in) :: dataset
+        real(8), intent(in) :: tr(:)
+        integer, intent(in)::i,nen
+        real(8), intent(in)::en(nen)
+        integer:: ie,j,ib
+        character(len=4) :: i_str
+        character(len=8) :: fmt
+        fmt = '(I4.4)'
+        write (i_str, fmt) i 
+        open(unit=11,file=trim(dataset)//i_str//'.dat',status='unknown')
+        do ie = 1,nen    
+        write(11,'(2E18.4)') en(ie), dble(tr(ie))      
+        end do
+        close(11)
+    end subroutine write_transmission_spectrum
+
+end module output
 
 
 
 module gf_dense 
     use parameters_mod
+    use output
     implicit none 
 
     contains
-
 
     ! 3D GW solver with two periodic directions (y,z)
     ! iterating G -> P -> W -> Sig 
     subroutine solve_gw_3D(niter,nm_dev,Lx,length,spindeg,temps,tempd,mus,mud,&
         alpha_mix,nen,En,nb,ns,nphiy,nphiz,Ham,H00lead,H10lead,T,V,&
-        G_retarded,G_lesser,G_greater,P_retarded,P_lesser,P_greater,&
-        W_retarded,W_lesser,W_greater,Sig_retarded,Sig_lesser,Sig_greater,&
-        Sig_retarded_new,Sig_lesser_new,Sig_greater_new,ldiag,flatband)
+        G_retarded,G_lesser,G_greater,ldiag,flatband)
     !
     use fft_mod, only : conv1d => conv1d2, corr1d => corr1d2  
     use parameters_mod
@@ -234,11 +397,11 @@ module gf_dense
     logical,intent(in)::ldiag
     logical,intent(in)::flatband
     complex(8),intent(out),dimension(nm_dev,nm_dev,nen,nphiy*nphiz) ::  G_retarded,G_lesser,G_greater
-    complex(8),intent(out),dimension(nm_dev,nm_dev,nen,nphiy*nphiz) ::  P_retarded,P_lesser,P_greater
-    complex(8),intent(out),dimension(nm_dev,nm_dev,nen,nphiy*nphiz) ::  W_retarded,W_lesser,W_greater
-    complex(8),intent(out),dimension(nm_dev,nm_dev,nen,nphiy*nphiz) ::  Sig_retarded,Sig_lesser,Sig_greater
-    complex(8),intent(out),dimension(nm_dev,nm_dev,nen,nphiy*nphiz) ::  Sig_retarded_new,Sig_lesser_new,Sig_greater_new
     !------
+    complex(8),dimension(nm_dev,nm_dev,nen,nphiy*nphiz) ::  P_retarded,P_lesser,P_greater
+    complex(8),dimension(nm_dev,nm_dev,nen,nphiy*nphiz) ::  W_retarded,W_lesser,W_greater
+    complex(8),dimension(nm_dev,nm_dev,nen,nphiy*nphiz) ::  Sig_retarded,Sig_lesser,Sig_greater
+    complex(8),dimension(nm_dev,nm_dev,nen,nphiy*nphiz) ::  Sig_retarded_new,Sig_lesser_new,Sig_greater_new
     complex(8),allocatable::siglead(:,:,:,:,:) ! lead scattering sigma_retarded
     complex(8),allocatable,dimension(:,:):: B ! tmp matrix
     real(8),allocatable::cur(:,:,:),tot_cur(:,:),tot_ecur(:,:),wen(:),sumcur(:,:,:),sumtot_cur(:,:),sumtot_ecur(:,:)
@@ -317,11 +480,11 @@ module gf_dense
             call write_spectrum_summed_over_kz('gw_ndos',iter,G_lesser,nen,En,nphiy*nphiz,length,NB,Lx,(/1.0d0,1.0d0/))
             call write_spectrum_summed_over_kz('gw_pdos',iter,G_greater,nen,En,nphiy*nphiz,length,NB,Lx,(/1.0d0,-1.0d0/))
         endif
-        ! call write_current_spectrum('gw_Jdens',iter,sumcur,nen,en,length,NB,Lx)
-        ! call write_current('gw_I',iter,sumtot_cur,length,NB,NS,Lx)
-        ! call write_current('gw_EI',iter,sumtot_ecur,length,NB,NS,Lx)
-        ! call write_transmission_spectrum('gw_trL',iter,sumTr(:,1)*spindeg,nen,En)
-        ! call write_transmission_spectrum('gw_trR',iter,sumTr(:,2)*spindeg,nen,En)
+        call write_current_spectrum('gw_Jdens',iter,sumcur,nen,en,length,NB,Lx)
+        call write_current('gw_I',iter,sumtot_cur,length,NB,NS,Lx)
+        call write_current('gw_EI',iter,sumtot_ecur,length,NB,NS,Lx)
+        call write_transmission_spectrum('gw_trL',iter,sumTr(:,1)*spindeg,nen,En)
+        call write_transmission_spectrum('gw_trR',iter,sumTr(:,2)*spindeg,nen,En)
         ! call write_transmission_spectrum('gw_TE_LR',iter,sumTe(:,1,2)*spindeg,nen,En)
         ! call write_transmission_spectrum('gw_TE_RL',iter,sumTe(:,2,1)*spindeg,nen,En)
         open(unit=101,file='gw_Id_iteration.dat',status='unknown',position='append')
@@ -405,9 +568,9 @@ module gf_dense
         !$omp do
         do nop=-nopmax+nen/2,nopmax+nen/2       
             if (flatband) then
-                ! call green_calc_w(0,NB,NS,nm_dev,P_retarded(:,:,nop,iq),P_lesser(:,:,nop,iq),P_greater(:,:,nop,iq),V(:,:,iq),W_retarded(:,:,nop,iq),W_lesser(:,:,nop,iq),W_greater(:,:,nop,iq))
+                call calc_w(0,NB,NS,nm_dev,P_retarded(:,:,nop,iq),P_lesser(:,:,nop,iq),P_greater(:,:,nop,iq),V(:,:,iq),W_retarded(:,:,nop,iq),W_lesser(:,:,nop,iq),W_greater(:,:,nop,iq))
             else      
-                ! call green_calc_w(1,NB,NS,nm_dev,P_retarded(:,:,nop,iq),P_lesser(:,:,nop,iq),P_greater(:,:,nop,iq),V(:,:,iq),W_retarded(:,:,nop,iq),W_lesser(:,:,nop,iq),W_greater(:,:,nop,iq))
+                call calc_w(1,NB,NS,nm_dev,P_retarded(:,:,nop,iq),P_lesser(:,:,nop,iq),P_greater(:,:,nop,iq),V(:,:,iq),W_retarded(:,:,nop,iq),W_lesser(:,:,nop,iq),W_greater(:,:,nop,iq))
             endif
         enddo
         !$omp end do
@@ -853,93 +1016,452 @@ module gf_dense
     end subroutine expand_size_bycopy
 
 
-    ! write spectrum into file (pm3d map)
-    subroutine write_spectrum_per_kz(dataset,i,G,nen,en,nky,nkz,length,NB,Lx,coeff,at_ky,at_kz)
-        character(len=*), intent(in) :: dataset
-        complex(8), intent(in) :: G(:,:,:,:) ! (m,m,e,k) kz is the fast-running index in k
-        integer, intent(in)::i,nen,length,NB,nky,nkz
-        real(8), intent(in)::Lx,en(nen),coeff(2)
-        real(8), intent(in), optional::at_ky,at_kz
-        integer:: ie,j,ib,ikz,iky,k,kb
-        real(8):: kcenter(2),dky,dkz
-        complex(8)::tr
-        character(len=4) :: i_str
-        character(len=8) :: fmt
-        fmt = '(I4.4)'
-        write (i_str, fmt) i 
-        kcenter=0.0d0
-        if (present(at_ky)) then
-            kcenter(1)=at_ky
+
+    subroutine calc_w(NBC,NB,NS,nm_dev,PR,PL,PG,V,WR,WL,WG)
+        integer,intent(in)::nm_dev,NB,NS,NBC
+        complex(8),intent(in),dimension(nm_dev,nm_dev)::PR,PL,PG,V
+        complex(8),intent(out),dimension(nm_dev,nm_dev)::WR,WL,WG
+        ! --------- local
+        complex(8),allocatable,dimension(:,:)::B,S,M,LL,LG,VV
+        complex(8),dimension(:,:),allocatable::V00,V01,V10,PR00,PR01,PR10,M00,M01,M10,&
+            PL00,PL01,PL10,PG00,PG01,PG10,LL00,LL01,LL10,LG00,LG01,LG10
+        complex(8),dimension(:,:),allocatable::VNN,VNN1,VN1N,PRNN,PRNN1,PRN1N,MNN,MNN1,&
+            MN1N,PLNN,PLNN1,PLN1N,PGNN,PGNN1,PGN1N,LLNN,LLNN1,LLN1N,LGNN,LGNN1,LGN1N
+        complex(8),dimension(:,:),allocatable::dM11,xR11,dLL11,dLG11,dV11
+        complex(8),dimension(:,:),allocatable::dMnn,xRnn,dLLnn,dLGnn,dVnn
+        integer::i,NL,NR,NT,LBsize,RBsize
+        real(8)::condL,condR
+        NL=NB*NS ! left contact block size
+        NR=NB*NS ! right contact block size
+        NT=nm_dev! total size
+        LBsize=NL*NBC
+        RBsize=NR*NBC
+        if (NBC>0) then
+          allocate(B(NT,NT))
+          allocate(M(NT,NT))
+          allocate(S(NT,NT))
+          allocate(LL(NT,NT))
+          allocate(LG(NT,NT))
+          allocate(V00 (LBsize,LBsize))
+          allocate(V01 (LBsize,LBsize))
+          allocate(V10 (LBsize,LBsize))
+          allocate(M00 (LBsize,LBsize))
+          allocate(M01 (LBsize,LBsize))
+          allocate(M10 (LBsize,LBsize))
+          allocate(PR00(LBsize,LBsize))
+          allocate(PR01(LBsize,LBsize))
+          allocate(PR10(LBsize,LBsize))
+          allocate(PG00(LBsize,LBsize))
+          allocate(PG01(LBsize,LBsize))
+          allocate(PG10(LBsize,LBsize))
+          allocate(PL00(LBsize,LBsize))
+          allocate(PL01(LBsize,LBsize))
+          allocate(PL10(LBsize,LBsize))
+          allocate(LG00(LBsize,LBsize))
+          allocate(LG01(LBsize,LBsize))
+          allocate(LG10(LBsize,LBsize))
+          allocate(LL00(LBsize,LBsize))
+          allocate(LL01(LBsize,LBsize))
+          allocate(LL10(LBsize,LBsize))
+          allocate(dM11(LBsize,LBsize))
+          allocate(xR11(LBsize,LBsize))
+          allocate(dV11(LBsize,LBsize))
+          allocate(dLL11(LBsize,LBsize))
+          allocate(dLG11(LBsize,LBsize))
+          !
+          allocate(VNN  (RBsize,RBsize))
+          allocate(VNN1 (RBsize,RBsize))
+          allocate(Vn1n (RBsize,RBsize))
+          allocate(Mnn  (RBsize,RBsize))
+          allocate(Mnn1 (RBsize,RBsize))
+          allocate(Mn1n (RBsize,RBsize))
+          allocate(PRnn (RBsize,RBsize))
+          allocate(PRnn1(RBsize,RBsize))
+          allocate(PRn1n(RBsize,RBsize))
+          allocate(PGnn (RBsize,RBsize))
+          allocate(PGnn1(RBsize,RBsize))
+          allocate(PGn1n(RBsize,RBsize))
+          allocate(PLnn (RBsize,RBsize))
+          allocate(PLnn1(RBsize,RBsize))
+          allocate(PLn1n(RBsize,RBsize))
+          allocate(LGnn (RBsize,RBsize))
+          allocate(LGnn1(RBsize,RBsize))
+          allocate(LGn1n(RBsize,RBsize))
+          allocate(LLnn (RBsize,RBsize))
+          allocate(LLnn1(RBsize,RBsize))
+          allocate(LLn1n(RBsize,RBsize))
+          allocate(dMnn (RBsize,RBsize))
+          allocate(xRnn (RBsize,RBsize))
+          allocate(dLLnn(RBsize,RBsize))
+          allocate(dLGnn(RBsize,RBsize))
+          allocate(dVnn(RBsize,RBsize))
+          !
+          call get_OBC_blocks_for_W(NL,V(1:NL,1:NL),V(1:NL,NL+1:2*NL),PR(1:NL,1:NL),PR(1:NL,NL+1:2*NL),&
+              PL(1:NL,1:NL),PL(1:NL,NL+1:2*NL),PG(1:NL,1:NL),PG(1:NL,NL+1:2*NL),NBC,&
+              V00,V01,V10,PR00,PR01,PR10,M00,M01,M10,PL00,PL01,PL10,PG00,PG01,PG10,&
+              LL00,LL01,LL10,LG00,LG01,LG10)
+          !    
+          call get_OBC_blocks_for_W(NR,V(NT-NR+1:NT,NT-NR+1:NT),transpose(conjg(V(NT-NR+1:NT,NT-2*NR+1:NT-NR))),PR(NT-NR+1:NT,NT-NR+1:NT),&
+              transpose(PR(NT-NR+1:NT,NT-2*NR+1:NT-NR)),PL(NT-NR+1:NT,NT-NR+1:NT),-transpose(conjg(PL(NT-NR+1:NT,NT-2*NR+1:NT-NR))),&
+              PG(NT-NR+1:NT,NT-NR+1:NT),-transpose(conjg(PG(NT-NR+1:NT,NT-2*NR+1:NT-NR))),NBC,&
+              VNN,VNN1,VN1N,PRNN,PRNN1,PRN1N,MNN,MNN1,MN1N,PLNN,PLNN1,PLN1N,PGNN,PGNN1,PGN1N,&
+              LLNN,LLNN1,LLN1N,LGNN,LGNN1,LGN1N)
+          !
+          !! S = V P^r
+          call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,V,nm_dev,PR,nm_dev,czero,S,nm_dev)
+          ! Correct first and last block to account for elements in the contacts
+          S(1:LBsize,1:LBsize)=S(1:LBsize,1:LBsize) + matmul(V10,PR01)
+          S(NT-RBsize+1:NT,NT-RBsize+1:NT)=S(NT-RBsize+1:NT,NT-RBsize+1:NT) + matmul(VNN1,PRN1N)
+          !
+          M = -S
+          do i=1,nm_dev
+             M(i,i) = 1.0d0 + M(i,i)
+          enddo
+          deallocate(S)
+          !! LL=V P^l V'
+          call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,V,nm_dev,PL,nm_dev,czero,B,nm_dev) 
+          call zgemm('n','c',nm_dev,nm_dev,nm_dev,cone,B,nm_dev,V,nm_dev,czero,LL,nm_dev) 
+          !Correct first and last block to account for elements in the contacts
+          LL(1:LBsize,1:LBsize)=LL(1:LBsize,1:LBsize) + matmul(matmul(V10,PL00),V01) + &
+            matmul(matmul(V10,PL01),V00) + matmul(matmul(V00,PL10),V01)
+          !  
+          LL(NT-RBsize+1:NT,NT-RBsize+1:NT)=LL(NT-RBsize+1:NT,NT-RBsize+1:NT) + &
+            matmul(matmul(VNN,PLNN1),VN1N) + matmul(matmul(VNN1,PLN1N),VNN) + &
+            matmul(matmul(VNN1,PLNN),VN1N)
+          !
+          !! LG=V P^g V'    
+          call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,V,nm_dev,PG,nm_dev,czero,B,nm_dev) 
+          call zgemm('n','c',nm_dev,nm_dev,nm_dev,cone,B,nm_dev,V,nm_dev,czero,LG,nm_dev) 
+          !Correct first and last block to account for elements in the contacts
+          LG(1:LBsize,1:LBsize)=LG(1:LBsize,1:LBsize) + matmul(matmul(V10,PG00),V01) + &
+            matmul(matmul(V10,PG01),V00) + matmul(matmul(V00,PG10),V01)
+          LG(NT-RBsize+1:NT,NT-RBsize+1:NT)=LG(NT-RBsize+1:NT,NT-RBsize+1:NT) + &
+            matmul(matmul(VNN,PGNN1),VN1N) + matmul(matmul(VNN1,PGN1N),VNN) + matmul(matmul(VNN1,PGNN),VN1N)
+            
+          ! WR/WL/WG OBC Left
+          call open_boundary_conditions(NL,M00,M10,M01,V01,xR11,dM11,dV11,condL)
+          ! WR/WL/WG OBC right
+          call open_boundary_conditions(NR,MNN,MNN1,MN1N,VN1N,xRNN,dMNN,dVNN,condR)
+          allocate(VV(nm_dev,nm_dev))
+          VV = V
+          if (condL<1.0d-6) then   
+              !
+              !call get_dL_OBC_for_W(NL,xR11,LL00,LL01,LG00,LG01,M10,'L', dLL11,dLG11)
+              !
+              M(1:LBsize,1:LBsize)=M(1:LBsize,1:LBsize) - dM11
+              VV(1:LBsize,1:LBsize)=V(1:LBsize,1:LBsize) - dV11    
+              ! LL(1:LBsize,1:LBsize)=LL(1:LBsize,1:LBsize) + dLL11
+              ! LG(1:LBsize,1:LBsize)=LG(1:LBsize,1:LBsize) + dLG11    
+          endif
+          if (condR<1.0d-6) then    
+              !
+              !call get_dL_OBC_for_W(NR,xRNN,LLNN,LLN1N,LGNN,LGN1N,MNN1,'R', dLLNN,dLGNN)
+              !
+              M(NT-RBsize+1:NT,NT-RBsize+1:NT)=M(NT-RBsize+1:NT,NT-RBsize+1:NT) - dMNN
+              VV(NT-RBsize+1:NT,NT-RBsize+1:NT)=V(NT-RBsize+1:NT,NT-RBsize+1:NT)- dVNN
+              ! LL(NT-RBsize+1:NT,NT-RBsize+1:NT)=LL(NT-RBsize+1:NT,NT-RBsize+1:NT) + dLLNN
+              ! LG(NT-RBsize+1:NT,NT-RBsize+1:NT)=LG(NT-RBsize+1:NT,NT-RBsize+1:NT) + dLGNN    
+          endif
+          !!!! calculate W^r = (I - V P^r)^-1 V    
+          call invert_inplace(M,nm_dev) ! M -> xR
+          call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,M,nm_dev,VV,nm_dev,czero,WR,nm_dev)           
+          ! calculate W^< and W^> = W^r P^<> W^r dagger
+          call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,M,nm_dev,LL,nm_dev,czero,B,nm_dev) 
+          call zgemm('n','c',nm_dev,nm_dev,nm_dev,cone,B,nm_dev,M,nm_dev,czero,WL,nm_dev) 
+          call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,M,nm_dev,LG,nm_dev,czero,B,nm_dev) 
+          call zgemm('n','c',nm_dev,nm_dev,nm_dev,cone,B,nm_dev,M,nm_dev,czero,WG,nm_dev)  
+          deallocate(M,LL,LG,B,VV)
+          deallocate(V00,V01,V10)
+          deallocate(M00,M01,M10)
+          deallocate(PR00,PR01,PR10)
+          deallocate(PG00,PG01,PG10)
+          deallocate(PL00,PL01,PL10)
+          deallocate(LG00,LG01,LG10)
+          deallocate(LL00,LL01,LL10)
+          deallocate(VNN,VNN1,Vn1n)
+          deallocate(Mnn,Mnn1,Mn1n)
+          deallocate(PRnn,PRnn1,PRn1n)
+          deallocate(PGnn,PGnn1,PGn1n)
+          deallocate(PLnn,PLnn1,PLn1n)
+          deallocate(LGnn,LGnn1,LGn1n)
+          deallocate(LLnn,LLnn1,LLn1n)
+          deallocate(dM11,xR11,dLL11,dLG11,dV11)
+          deallocate(dMnn,xRnn,dLLnn,dLGnn,dVnn)
+        else ! no OBC correction
+          allocate(B(NT,NT))
+          allocate(M(NT,NT))    
+          !! M = I - V P^r
+          call zgemm('n','n',nm_dev,nm_dev,nm_dev,-cone,V,nm_dev,PR,nm_dev,czero,M,nm_dev)
+          !
+          do i=1,nm_dev
+             M(i,i) = 1.0d0 + M(i,i)
+          enddo    
+          !!!! calculate W^r = (I - V P^r)^-1 V    
+          call invert_inplace(M,nm_dev) ! M -> xR
+          call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,M,nm_dev,V,nm_dev,czero,WR,nm_dev)           
+          ! calculate W^< and W^> = W^r P^<> W^r dagger
+          call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,WR,nm_dev,PL,nm_dev,czero,B,nm_dev) 
+          call zgemm('n','c',nm_dev,nm_dev,nm_dev,cone,B,nm_dev,WR,nm_dev,czero,WL,nm_dev) 
+          call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,WR,nm_dev,PG,nm_dev,czero,B,nm_dev) 
+          call zgemm('n','c',nm_dev,nm_dev,nm_dev,cone,B,nm_dev,WR,nm_dev,czero,WG,nm_dev)  
+          deallocate(B,M)  
+        endif 
+    end subroutine calc_w
+
+
+    ! calculate matrix blocks for the Open Boundary Condition of W
+    subroutine get_OBC_blocks_for_W(n,v_00,v_01,pR_00,pR_01,pL_00,pL_01,pG_00,pG_01,NBC,&
+        V00,V01,V10,PR00,PR01,PR10,M00,M01,M10,PL00,PL01,PL10,PG00,PG01,PG10,&
+        LL00,LL01,LL10,LG00,LG01,LG10)
+        integer,intent(in)::n,NBC
+        complex(8),intent(in),dimension(n,n)::v_00,v_01,pR_00,pR_01,pL_00,pL_01,pG_00,pG_01
+        complex(8),intent(out),dimension(n*NBC,n*NBC)::V00,V01,V10,PR00,PR01,PR10,M00,M01,M10,PL00,PL01,PL10,PG00,PG01,PG10,&
+            LL00,LL01,LL10,LG00,LG01,LG10
+        complex(8),dimension(n*NBC,n*NBC)::II
+    !
+        select case (NBC)
+        !
+        case(1)
+            !
+            V00=v_00
+            V01=v_01
+            V10=transpose(conjg(V01))
+            !
+            PR00=pR_00
+            PR01=pR_01
+            PR10=transpose(PR01)
+            !
+            PL00=pL_00;
+            PL01=pL_01;
+            PL10= - transpose(conjg(PL01))
+            !
+            PG00=pG_00
+            PG01=pG_01
+            PG10= - transpose(conjg(PG01))
+                
+        case(2)
+            !
+            V00(1:n,1:n)=v_00 
+            V00(1:n,n+1:2*n)=v_01
+            V00(n+1:2*n,1:n)=transpose(conjg(v_01))
+            V00(n+1:2*n,n+1:2*n)= v_00
+            V01=czero
+            V01(n+1:2*n,1:n)=v_01
+            V10=transpose(conjg(V01))
+            !
+            PR00(1:n,1:n)=pR_00 
+            PR00(1:n,n+1:2*n)=pR_01
+            PR00(n+1:2*n,1:n)=transpose(pR_01)
+            PR00(n+1:2*n,n+1:2*n)= pR_00
+            PR01=czero
+            PR01(n+1:2*n,1:n)=pR_01
+            PR10=transpose(PR01)
+            !
+            PG00(1:n,1:n)=pG_00 
+            PG00(1:n,n+1:2*n)=pG_01
+            PG00(n+1:2*n,1:n)=-transpose(conjg(pG_01))
+            PG00(n+1:2*n,n+1:2*n)= pG_00
+            PG01=czero
+            PG01(n+1:2*n,1:n)=pG_01
+            PG10=-transpose(conjg(PG01))
+            !
+            PL00(1:n,1:n)=pL_00 
+            PL00(1:n,n+1:2*n)=pL_01
+            PL00(n+1:2*n,1:n)=-transpose(conjg(pL_01))
+            PL00(n+1:2*n,n+1:2*n)= pL_00
+            PL01=czero
+            PL01(n+1:2*n,1:n)=pL_01
+            PL10=-transpose(conjg(PL01))    
+        !
+        end select
+        !
+        call identity(II,NBC*N)
+        M00=II*dcmplx(1.0d0,1d-10)-matmul(V10,PR01)
+        M00=M00-matmul(V00,PR00)-matmul(V01,PR10)
+        M01=-matmul(V00,PR01)-matmul(V01,PR00)
+        M10=-matmul(V10,PR00)-matmul(V00,PR10)
+        !
+        LL00=matmul(matmul(V10,PL00),V01)+matmul(matmul(V10,PL01),V00)
+        LL00=LL00+matmul(matmul(V00,PL10),V01)+matmul(matmul(V00,PL00),V00)
+        LL00=LL00+matmul(matmul(V00,PL01),V10)
+        LL00=LL00+matmul(matmul(V01,PL10),V00)+matmul(matmul(V01,PL00),V10)
+        !
+        LL01=matmul(matmul(V10,PL01),V01)+matmul(matmul(V00,PL00),V01)
+        LL01=LL01+matmul(matmul(V00,PL01),V00)+matmul(matmul(V01,PL10),V01)
+        LL01=LL01+matmul(matmul(V01,PL00),V00)
+        !
+        LL10=-transpose(conjg(LL01))
+        !
+        LG00=matmul(matmul(V10,PG00),V01)+matmul(matmul(V10,PG01),V00)
+        LG00=LG00+matmul(matmul(V00,PG10),V01)+matmul(matmul(V00,PG00),V00)
+        LG00=LG00+matmul(matmul(V00,PG01),V10)
+        LG00=LG00+matmul(matmul(V01,PG10),V00)+matmul(matmul(V01,PG00),V10)
+        !
+        LG01=matmul(matmul(V10,PG01),V01)
+        LG01=LG01+matmul(matmul(V00,PG00),V01)+matmul(matmul(V00,PG01),V00)
+        LG01=LG01+matmul(matmul(V01,PG10),V01)+matmul(matmul(V01,PG00),V00)
+        !
+        LG10=-transpose(conjg(LG01))  
+    end subroutine get_OBC_blocks_for_W
+
+
+    ! calculate corrections to the L matrix blocks for the Open Boundary Condition
+    subroutine get_dL_OBC_for_W(nm,xR,LL00,LL01,LG00,LG01,M10,typ, dLL11,dLG11)
+        integer,intent(in)::nm
+        character(len=*),intent(in)::typ
+        complex(8),intent(in),dimension(nm,nm)::xR,LL00,LL01,LG00,LG01,M10
+        complex(8),intent(out),dimension(nm,nm)::dLL11,dLG11
+        ! -----
+        complex(8),dimension(nm,nm)::AL,AG,FL,FG,A,V,iV,yL_NN,wL_NN,yG_NN,wG_NN,tmp1,tmp2
+        complex(8),dimension(nm)::E
+        integer::i,j
+        !!!! AL=M10*xR*LL01;
+        !!!! AG=M10*xR*LG01;
+        call zgemm('n','n',nm,nm,nm,cone,M10,nm,xR,nm,czero,tmp1,nm)
+        call zgemm('n','n',nm,nm,nm,cone,tmp1,nm,LL01,nm,czero,AL,nm)
+        call zgemm('n','n',nm,nm,nm,cone,M10,nm,xR,nm,czero,tmp1,nm)
+        call zgemm('n','n',nm,nm,nm,cone,tmp1,nm,LG01,nm,czero,AG,nm)
+        !!!! FL=xR*(LL00-(AL-AL'))*xR';
+        !!!! FG=xR*(LG00-(AG-AG'))*xR';
+        call zgemm('n','n',nm,nm,nm,cone,xR,nm,(LL00-(AL-transpose(conjg(AL)))),nm,czero,tmp1,nm)
+        call zgemm('n','c',nm,nm,nm,cone,tmp1,nm,xR,nm,czero,FL,nm)
+        call zgemm('n','n',nm,nm,nm,cone,xR,nm,(LG00-(AG-transpose(conjg(AG)))),nm,czero,tmp1,nm)
+        call zgemm('n','c',nm,nm,nm,cone,tmp1,nm,xR,nm,czero,FG,nm)
+        !
+        call zgemm('n','n',nm,nm,nm,cone,xR,nm,M10,nm,czero,V,nm)  
+        do i=1,nm
+        V(i,i)=V(i,i)+dcmplx(0.0d0,1.0d-4)  ! 1i*1e-4 added to stabilize matrix
+        enddo
+        E=eigv(nm,V)
+        iV=V
+        call invert_inplace(iV,nm)
+        !lesser component
+        call zgemm('n','n',nm,nm,nm,cone,iV,nm,FL,nm,czero,tmp1,nm)
+        call zgemm('n','c',nm,nm,nm,cone,tmp1,nm,iV,nm,czero,yL_NN,nm)
+        yL_NN=yL_NN/(1.0d0 - sum(E*conjg(E)))
+        call zgemm('n','n',nm,nm,nm,cone,V,nm,yL_NN,nm,czero,tmp1,nm)
+        call zgemm('n','c',nm,nm,nm,cone,tmp1,nm,V,nm,czero,wL_NN,nm)
+        !refinement iteration
+        call zgemm('n','n',nm,nm,nm,cone,xR,nm,M10,nm,czero,tmp1,nm)
+        call zgemm('n','n',nm,nm,nm,cone,tmp1,nm,wL_NN,nm,czero,tmp2,nm)
+        call zgemm('n','c',nm,nm,nm,cone,tmp2,nm,M10,nm,czero,tmp1,nm)
+        call zgemm('n','c',nm,nm,nm,cone,tmp1,nm,xR,nm,czero,tmp2,nm)
+        wL_NN=FL+tmp2
+        !
+        call zgemm('n','n',nm,nm,nm,cone,M10,nm,wL_NN,nm,czero,tmp1,nm)
+        call zgemm('n','c',nm,nm,nm,cone,tmp1,nm,M10,nm,czero,dLL11,nm)
+        dLL11=dLL11-(AL-transpose(conjg(AL)))
+        !greater component
+        call zgemm('n','n',nm,nm,nm,cone,iV,nm,FG,nm,czero,tmp1,nm)
+        call zgemm('n','c',nm,nm,nm,cone,tmp1,nm,iV,nm,czero,yG_NN,nm)
+        yG_NN=yG_NN/(1.0d0 - sum(E*conjg(E)))
+        call zgemm('n','n',nm,nm,nm,cone,V,nm,yG_NN,nm,czero,tmp1,nm)
+        call zgemm('n','c',nm,nm,nm,cone,tmp1,nm,V,nm,czero,wG_NN,nm)
+        !refinement iteration
+        call zgemm('n','n',nm,nm,nm,cone,xR,nm,M10,nm,czero,tmp1,nm)
+        call zgemm('n','n',nm,nm,nm,cone,tmp1,nm,wG_NN,nm,czero,tmp2,nm)
+        call zgemm('n','c',nm,nm,nm,cone,tmp2,nm,M10,nm,czero,tmp1,nm)
+        call zgemm('n','c',nm,nm,nm,cone,tmp1,nm,xR,nm,czero,tmp2,nm)
+        wG_NN=FG+tmp2
+        !
+        call zgemm('n','n',nm,nm,nm,cone,M10,nm,wG_NN,nm,czero,tmp1,nm)
+        call zgemm('n','c',nm,nm,nm,cone,tmp1,nm,M10,nm,czero,dLG11,nm)
+        dLG11=dLG11-(AG-transpose(conjg(AG)))
+    end subroutine get_dL_OBC_for_W
+
+
+    FUNCTION eigv(NN, A)
+        INTEGER, INTENT(IN) :: NN
+        COMPLEX(8), INTENT(INOUT), DIMENSION(:,:) :: A
+        REAL(8) :: eigv(NN)
+        real(8) :: W(1:NN)
+        integer :: INFO,LWORK,liwork, lrwork
+        complex(8), allocatable :: work(:)
+        real(8), allocatable :: RWORK(:)
+        !integer, allocatable :: iwork(:) 
+        lwork= max(1,2*NN-1)
+        lrwork= max(1,3*NN-2)
+        allocate(work(lwork))
+        allocate(rwork(lrwork))
+        
+        CALL zheev( 'V','U', NN, A, NN, W, WORK, LWORK, RWORK, INFO )
+        
+        deallocate(work,rwork)
+        if (INFO.ne.0)then
+           write(*,*)'SEVERE WARNING: ZHEEV HAS FAILED. INFO=',INFO
+           call abort
         endif
-        if (present(at_kz)) then
-            kcenter(2)=at_kz
+        eigv(:)=W(:)
+    END FUNCTION eigv
+
+    subroutine open_boundary_conditions(nm,M00,M01,M10,V10,xR,dM,dV,cond)
+        integer,intent(in)::nm
+        complex(8),intent(in),dimension(nm,nm)::M00,M01,M10,V10
+        complex(8),intent(out),dimension(nm,nm)::xR,dM,dV
+        real(8),intent(out)::cond
+        complex(8),dimension(nm,nm)::tmp1
+        call surface_function(nm,M00,M01,M10,xR,cond);
+        !dM=M01*xR*M10
+        call zgemm('n','n',nm,nm,nm,cone,M01,nm,xR,nm,czero,tmp1,nm)
+        call zgemm('n','n',nm,nm,nm,cone,tmp1,nm,M10,nm,czero,dM,nm)
+        !dV=M01*xR*V10
+        call zgemm('n','n',nm,nm,nm,cone,M01,nm,xR,nm,czero,tmp1,nm)
+        call zgemm('n','n',nm,nm,nm,cone,tmp1,nm,V10,nm,czero,dV,nm)
+    end subroutine open_boundary_conditions
+
+
+    ! a slightly modified version of sancho
+    subroutine surface_function(nm,M00,M01,M10,SF,cond)
+        integer,intent(in)::nm
+        complex(8),intent(in),dimension(nm,nm)::M00,M01,M10
+        complex(8),intent(out),dimension(nm,nm)::SF
+        real(8),intent(out)::cond
+        real(8)::cond_limit
+        integer::max_iteration,IC
+        complex(8),dimension(:,:),allocatable::alpha,beta,Eps,Eps_surf,inv_element,a_i_b,b_i_a,i_alpha,i_beta
+        allocate(alpha(nm,nm))
+        allocate(beta(nm,nm))
+        allocate(Eps(nm,nm))
+        allocate(Eps_surf(nm,nm))
+        allocate(inv_element(nm,nm))
+        allocate(i_alpha(nm,nm))
+        allocate(i_beta(nm,nm))
+        allocate(a_i_b(nm,nm))
+        allocate(b_i_a(nm,nm))
+        cond=1.0d10;
+        cond_limit=1.0d-10;
+        max_iteration=5000;
+        IC=1;
+        alpha=M01
+        beta=M10
+        Eps=M00
+        Eps_surf=M00
+        do while ((cond>cond_limit).and.(IC<max_iteration))      
+            inv_element=Eps
+            call invert_inplace(inv_element,nm)
+            i_alpha=matmul(inv_element,alpha)
+            i_beta=matmul(inv_element,beta)
+            a_i_b=matmul(alpha,i_beta)
+            b_i_a=matmul(beta,i_alpha)
+            Eps=Eps-a_i_b-b_i_a
+            Eps_surf=Eps_surf-a_i_b
+            alpha=matmul(alpha,i_alpha)
+            beta=matmul(beta,i_beta)
+            !
+            cond=sum(abs(alpha)+abs(beta))/2.0d0;
+            !
+            IC=IC+1;
+        end do
+        if (cond>cond_limit) then 
+        write(*,*) 'SEVERE warning: nmax reached in surface function!!!',cond
         endif
-        dky=1.0d0/dble(nky)
-        dkz=1.0d0/dble(nkz)
-        open(unit=11,file=trim(dataset)//i_str//'_ky.dat',status='unknown')
-        do ie = 1,nen
-            ikz=max(min(nkz/2+ floor(kcenter(2)/dkz)+1 , nkz) , 1)            
-            do iky=1,nky
-                tr=0.0d0          
-                do j = 1,length
-                    do ib=1,nb
-                        tr = tr+G((j-1)*nb+ib,(j-1)*nb+ib,ie,ikz+nkz*(iky-1))            
-                    enddo
-                end do
-                write(11,'(4E18.4)') dble(iky)/dble(nky), en(ie), dble(tr)*coeff(1), aimag(tr)*coeff(2)        
-            enddo
-            write(11,*)    
-        enddo
-        close(11)
+        call invert_inplace(Eps_surf,nm)
+        SF=Eps_surf
+        deallocate(alpha,beta,Eps,Eps_surf,inv_element,a_i_b,b_i_a,i_alpha,i_beta)
+    end subroutine surface_function
+    
 
-        open(unit=11,file=trim(dataset)//i_str//'_kz.dat',status='unknown')
-        do ie = 1,nen
-            iky=max(min(nky/2+ floor(kcenter(1)/dky)+1 , nkz) , 1)           
-            do ikz=1,nkz
-                tr=0.0d0          
-                do j = 1,length
-                    do ib=1,nb
-                        tr = tr+G((j-1)*nb+ib,(j-1)*nb+ib,ie,ikz+nkz*(iky-1))            
-                    enddo
-                end do
-                write(11,'(4E18.4)') dble(ikz)/dble(nkz), en(ie), dble(tr)*coeff(1), aimag(tr)*coeff(2)        
-            enddo
-            write(11,*)    
-        enddo
-        close(11)
-    end subroutine write_spectrum_per_kz
-
-
-    ! write spectrum into file (pm3d map)
-    subroutine write_spectrum_summed_over_kz(dataset,i,G,nen,en,nkz,length,NB,Lx,coeff)
-        character(len=*), intent(in) :: dataset
-        complex(8), intent(in) :: G(:,:,:,:)
-        integer, intent(in)::i,nen,length,NB,nkz
-        real(8), intent(in)::Lx,en(nen),coeff(2)
-        integer:: ie,j,ib,ikz
-        complex(8)::tr
-        character(len=4) :: i_str
-        character(len=8) :: fmt
-        fmt = '(I4.4)'
-        write (i_str, fmt) i 
-        open(unit=11,file=trim(dataset)//i_str//'.dat',status='unknown')
-        do ie = 1,nen
-            do j = 1,length
-                tr=0.0d0          
-                do ib=1,nb
-                do ikz=1,nkz
-                    tr = tr+ G((j-1)*nb+ib,(j-1)*nb+ib,ie,ikz)            
-                enddo
-                enddo
-                tr=tr/dble(nkz)
-                write(11,'(4E18.4)') dble(j-1)*Lx, en(ie), dble(tr)*coeff(1), aimag(tr)*coeff(2)        
-            end do
-            write(11,*)    
-        enddo
-        close(11)
-    end subroutine write_spectrum_summed_over_kz
-
-
-
+    
 end module gf_dense
+
 
