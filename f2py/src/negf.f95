@@ -1465,3 +1465,149 @@ module gf_dense
 end module gf_dense
 
 
+module bse_dense
+    use linalg
+    use parameters_mod,only:dp,twopi,pi,e_charge,epsilon0,m0_charge,hbar,c1i,czero,cone
+    contains
+
+
+    ! solve the full Bethe-Salpeter Equation
+    subroutine bse_fullsolve(spindeg,nm_dev,ndiag,nen,En,nop,G_lesser,G_greater,G_retarded,W_retarded,V,P_retarded,P4_retarded)
+        use gf_dense, only: invert_inplace
+        integer,intent(in)::nm_dev,nen,nop,ndiag
+        real(dp),intent(in)::en(nen),spindeg
+        complex(dp),intent(in),dimension(nm_dev,nm_dev,nen),optional:: G_lesser,G_greater,G_retarded ! electron GFs
+        complex(dp),intent(in),dimension(nm_dev,nm_dev) :: W_retarded ! W_0 static screened Coulomb interaction
+        complex(dp),intent(in),dimension(nm_dev,nm_dev) :: V ! bare Coulomb interaction
+        complex(dp),intent(out),dimension(nm_dev,nm_dev):: P_retarded ! 2-point polarization function with interacting electron-hole at frequency [[nop]]        
+        complex(dp),intent(out),dimension(nm_dev,nm_dev,nm_dev,nm_dev),optional:: P4_retarded ! 4-point polarization function with interacting electron-hole 
+        !---------
+        complex(dp),dimension(:,:),allocatable :: Lmat ! two-particle Green's function 
+        complex(dp),dimension(:,:),allocatable :: Mmat ! 4-point Kernel
+        complex(dp),dimension(:,:),allocatable :: Amat ! 
+        complex(dp) :: dE
+        real(dp) :: start, finish, alpha
+        integer :: N,i,j,k,l,p,q,ie,row,col, ne_margin
+        !  
+        alpha = 0.99_dp
+        ne_margin = nen/20 ! margin of energy window
+        N = nm_dev*nm_dev
+        dE = ( En(2) - En(1) ) / twopi * spindeg 
+        !
+        allocate(Lmat(N,N))
+        allocate(Mmat(N,N))
+        allocate(Amat(N,N))
+        print *,'  start computation L0_ijkl = G_jl G_ki ...'
+        start = omp_get_wtime()
+        Lmat=czero      
+        !
+        !$omp parallel default(shared) private(i,j,k,l,row,col,ie)
+        !$omp do
+        do i=1,nm_dev
+            do j=max(1,i-ndiag),min(nm_dev,i+ndiag)
+                do k=max(1,i-ndiag),min(nm_dev,i+ndiag)
+                    do l=max(1,i-ndiag),min(nm_dev,i+ndiag)           
+                        row= (i-1)*nm_dev + j                
+                        col= (k-1)*nm_dev + l                                
+                        ! calculate P4_IPA from -iGG
+                        do ie=nop+1,nen
+                            Lmat(row,col) = Lmat(row,col) + &
+                                    (1.0_dp - alpha) * ( G_lesser(j,l,ie) * conjg(G_retarded(i,k,ie-nop)) + &
+                                                        G_retarded(j,l,ie) * G_lesser(k,i,ie-nop) ) + &
+                                    alpha * 0.5_dp * ( G_greater(j,l,ie) * G_lesser(k,i,ie-nop) - & 
+                                                        G_lesser(j,l,ie)  * G_greater(k,i,ie-nop) ) 
+                        enddo          
+                        Lmat(row,col) = Lmat(row,col) * dE                 
+                    enddo
+                enddo
+            enddo
+        enddo
+        !$omp end do
+        !$omp end parallel
+        !
+        finish = omp_get_wtime()
+        print '("  computation time = ", F0.3 ," seconds.")', finish-start
+        start = finish
+        !
+        Mmat=czero  
+        print *,'  start computation -L0 K'
+        !
+        !$omp parallel default(shared) private(i,j,row,col)
+        !$omp do
+        do i=1,nm_dev
+            do j=1,nm_dev
+                ! exchange part
+                row= (i-1)*nm_dev + i                
+                col= (j-1)*nm_dev + j
+                Mmat(row,col) = Mmat(row,col) - c1i *  V(i,j) * spindeg
+                ! direct part
+                row= (i-1)*nm_dev + j
+                col= row 
+                Mmat(row,col) = Mmat(row,col) + c1i *  W_retarded(i,j) 
+            enddo
+        enddo    
+        !$omp end do
+        !$omp end parallel  
+        !call save_matrix('bse_M.dat',N, Mmat)
+        !call save_matrix('bse_L0.dat',N, Lmat)
+        !  
+        call zgemm('n','n',N,N,N,-cone,Lmat,N,Mmat,N,czero,Amat,N) 
+        !
+        finish = omp_get_wtime()
+        print '("  computation time = ", F0.3 ," seconds.")', finish-start
+        start = finish
+        ! (I - L0 K) -> A
+        do i=1,N 
+        Amat(i,i) = Amat(i,i) + dcmplx(1.0_dp, 0.0_dp)
+        enddo  
+        print *,'  start invert (I - L0 K)'
+        !
+        call invert_inplace(Amat,N)
+        !
+        finish = omp_get_wtime()
+        print '("  computation time = ", F0.3 ," seconds.")', finish-start
+        start = finish
+        !
+        print *,'  start computation L = (I - L0 K) \ L0  '
+        !
+        call zgemm('n','n',N,N,N,cone,Amat,N,Lmat,N,czero,Mmat,N) 
+        !
+        !call save_matrix('bse_L.dat',N, Mmat)
+        !
+        P_retarded = czero
+        !$omp parallel default(shared) private(i,j,row,col)
+        !$omp do
+        do i=1,nm_dev
+            do j=1,nm_dev      
+                row= (i-1)*nm_dev + i                
+                col= (j-1)*nm_dev + j
+                P_retarded(i,j) = - c1i * Mmat(row,col)                
+            enddo
+        enddo
+        !$omp end do
+        !$omp end parallel
+        if (present(P4_retarded)) then 
+        !$omp parallel default(shared) private(i,j,k,l,row,col)
+        !$omp do
+        do i=1,nm_dev
+            do j=1,nm_dev      
+                do k=1,nm_dev
+                    do l=1,nm_dev
+                        row= (i-1)*nm_dev + j                
+                        col= (k-1)*nm_dev + l
+                        P4_retarded(i,j,k,l) = - c1i * Mmat(row,col) 
+                    enddo
+                enddo
+            enddo
+        enddo
+        !$omp end do
+        !$omp end parallel
+        endif 
+        finish = omp_get_wtime()
+        print '("  computation time = ", F0.3 ," seconds.")', finish-start
+        !
+        deallocate(Lmat,Mmat,Amat)
+    end subroutine bse_fullsolve
+  
+
+end module bse_dense
