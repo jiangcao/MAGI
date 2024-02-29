@@ -1610,4 +1610,140 @@ module bse_dense
     end subroutine bse_fullsolve
   
 
+
+    ! solve the Bethe-Salpeter Equation under approximation
+    subroutine bse_solve(spindeg,nm_dev,nen,En,nop,G_lesser,G_greater,G_retarded,W_retarded,V,P_retarded)
+        integer,intent(in)::nm_dev,nen,nop
+        real(dp),intent(in)::en(nen),spindeg
+        complex(dp),intent(in),dimension(nm_dev,nm_dev,nen):: G_lesser,G_greater,G_retarded ! electron GF
+        complex(dp),intent(in),dimension(nm_dev,nm_dev) :: W_retarded ! W_0 static screened Coulomb interaction
+        complex(dp),intent(in),dimension(nm_dev,nm_dev) :: V ! bare Coulomb interaction
+        complex(dp),intent(out),dimension(nm_dev,nm_dev):: P_retarded ! 2-point polarization function with interacting electron-hole
+        !---------
+        integer :: ie,i,j,k,l,m,n,p
+        integer :: nn,nm,pp,pq
+        complex(dp),allocatable :: L0xx(:,:),A(:,:),B(:,:),Kxx(:,:), Mxx(:,:), Sxx(:,:)
+        complex(dp) :: Qijkl, L0Kdd
+        real(dp) :: dE ,alpha 
+        allocate( L0xx(nm_dev,nm_dev) )
+        allocate( Mxx(nm_dev,nm_dev) )
+        allocate( Sxx(nm_dev,nm_dev) )
+        allocate( Kxx(nm_dev,nm_dev) )
+        allocate( A(nm_dev,nm_dev) )
+        L0xx = czero
+        alpha = 0.99_dp
+        print *,'  start computation L0_xx'
+        !$omp parallel default(shared) private(i,j,ie)
+        !$omp do
+        do i=1,nm_dev
+            do j=1,nm_dev
+            do ie=nop+1,nen
+                L0xx(i,j) = L0xx(i,j) + &
+                            (1.0_dp - alpha) * ( G_lesser(j,i,ie) * conjg(G_retarded(i,j,ie-nop)) + &
+                                                G_retarded(j,i,ie) * G_lesser(j,i,ie-nop) ) + &
+                                alpha * 0.5_dp * ( G_greater(j,i,ie) * G_lesser(j,i,ie-nop) - & 
+                                                G_lesser(j,i,ie)  * G_greater(j,i,ie-nop) ) 
+            enddo
+            enddo
+        enddo
+        !$omp end do
+        !$omp end parallel 
+        dE = (en(2) - en(1)) / twopi
+        L0xx = L0xx * dE * spindeg
+        Kxx(:,:) = - c1i*V(:,:)
+        do i=1,nm_dev
+            Kxx(i,i) = Kxx(i,i) + c1i*W_retarded(i,i)
+        enddo
+        !
+        print *,'  start computation L0_xx K_xx'
+        call zgemm('n','n',nm_dev,nm_dev,nm_dev,-cone,L0xx,nm_dev,Kxx,nm_dev,czero,A,nm_dev) 
+        do i=1,nm_dev
+            A(i,i) = A(i,i) + cone
+        enddo
+        !
+        Sxx = czero
+        Mxx = czero  
+        print *,'  start computation S and M'
+        !$omp parallel default(shared) private(i,j,k,l,Qijkl,L0Kdd,p,ie)
+        !$omp do
+        do i=1,nm_dev
+            do j=1,nm_dev
+            do k=1,nm_dev
+                do l=1,nm_dev
+                if (k/=l) then
+                    Qijkl=czero
+                    do ie=nop+1,nen
+                        ! L0xd * L0dx
+                    Qijkl = Qijkl + (1.0_dp - alpha) * ( G_lesser(i,l,ie) * conjg(G_retarded(i,k,ie-nop))*G_lesser(l,j,ie) * conjg(G_retarded(k,j,ie-nop)) + &
+                                                        G_retarded(i,l,ie) * G_lesser(k,i,ie-nop) * G_retarded(l,j,ie) * G_lesser(j,k,ie-nop) ) + &
+                            alpha * 0.5d0*( G_greater(i,l,ie) * G_lesser(k,i,ie-nop) * G_greater(l,j,ie) * G_lesser(j,k,ie-nop) &
+                                            - G_lesser(i,l,ie) * G_greater(k,i,ie-nop) * G_lesser(l,j,ie) * G_greater(j,k,ie-nop) )
+                                                                            
+                    enddo
+                    Qijkl = - c1i * Qijkl * dE
+                    !
+                    Qijkl = Qijkl * W_retarded(k,l) 
+                    L0Kdd=czero
+                    do ie=nop+1,nen
+                    L0Kdd = L0Kdd + &
+                            (1.0_dp - alpha) * ( G_lesser(k,k,ie) * conjg(G_retarded(l,l,ie-nop)) + &
+                                                G_retarded(k,k,ie) * G_lesser(l,l,ie-nop) ) + &
+                                alpha *0.5d0*( G_greater(k,k,ie) * G_lesser(l,l,ie-nop)   &
+                                            - G_lesser(k,k,ie) * G_greater(l,l,ie-nop)   ) 
+                                                                            
+                    enddo
+                    L0Kdd = L0Kdd * dE
+                    !
+                    L0Kdd = cone - c1i * L0Kdd * W_retarded(k,l) 
+                    Qijkl = Qijkl / L0Kdd
+                    Sxx(i,j) = Sxx(i,j) + Qijkl
+                    do p=1,nm_dev
+                    Mxx(i,p) = Mxx(i,p) - c1i * Qijkl * ( W_retarded(j,j) - V(j,p) ) 
+                    enddo
+                endif
+                enddo
+            enddo
+            enddo
+        enddo
+        !$omp end do
+        !$omp end parallel
+        !
+        ! call save_matrix('Sxx.dat',nm_dev, Sxx)
+        ! call save_matrix('Mxx.dat',nm_dev, Mxx)
+        ! call save_matrix('A.dat',nm_dev, A)
+        ! call save_matrix('Kxx.dat',nm_dev, Kxx)
+        ! call save_matrix('L0xx.dat',nm_dev, L0xx)  
+        !
+        A(:,:) = A(:,:) - Mxx(:,:)
+        !
+        print *,'  start computation Axx^{-1}'
+        call invert_inplace(A,nm_dev)
+        Sxx(:,:) = L0xx(:,:) - Sxx(:,:)
+        call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,A,nm_dev,Sxx,nm_dev,czero,L0xx,nm_dev) 
+        P_retarded = - c1i * L0xx
+        !
+        ! call save_matrix('pr.dat',nm_dev, P_retarded)  
+        !
+        deallocate(L0xx,Mxx,Sxx,Kxx,A)
+    end subroutine bse_solve
+
+    ! save a complex matrix to a file in row-column-value format for non-zero entries
+    subroutine save_matrix(filename, nm, Mat)
+        character(len=*),intent(in)::filename ! file name
+        integer,intent(in)::nm ! number of bands
+        complex(dp), intent(in) :: Mat(nm,nm) ! matrix        
+        ! ----
+        integer::i,j        
+        open(unit=11, file=filename, status='unknown')                
+        do i=1,nm
+            do j=1,nm
+                if ( abs(Mat(i,j)) .gt. 0.0d0 ) then
+                    write(11,'(2I10,2E18.6)') i,j,dble(Mat(i,j)),aimag(Mat(i,j))
+                endif
+            enddo
+            write(11,*)
+        enddo        
+        close(11)
+    end subroutine save_matrix
+    
 end module bse_dense
