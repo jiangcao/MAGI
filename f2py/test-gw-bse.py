@@ -73,4 +73,7 @@ if __name__=='__main__':
                                                         ham=ham,h00lead=lead_h00,h10lead=lead_h10,t=lead_coupling,v=v,
                                                         ldiag=True,flatband=False)
 
-   P_retarded = bse_dense.bse_fullsolve(spindeg=2.0,nm_dev=nb*length,ndiag=ns*nb,nen=nen,en=energies,nop=10,g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,w_retarded=v[:,:,0],v=v[:,:,0])                                                        
+#    P_retarded = bse_dense.bse_fullsolve(spindeg=2.0,nm_dev=nb*length,ndiag=ns*nb,nen=nen,en=energies,nop=10,g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,w_retarded=v[:,:,0],v=v[:,:,0])                                                        
+
+   P_retarded = bse_dense.bse_solve(spindeg=2.0,nm_dev=nb*length,nen=nen,en=energies,nop=10,g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,w_retarded=v[:,:,0],v=v[:,:,0])                                                        
+   

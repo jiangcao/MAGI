@@ -1465,8 +1465,7 @@ module gf_dense
 end module gf_dense
 
 
-module bse_dense
-    use linalg
+module bse_dense    
     use parameters_mod,only:dp,twopi,pi,e_charge,epsilon0,m0_charge,hbar,c1i,czero,cone
     contains
 
@@ -1497,8 +1496,7 @@ module bse_dense
         allocate(Lmat(N,N))
         allocate(Mmat(N,N))
         allocate(Amat(N,N))
-        print *,'  start computation L0_ijkl = G_jl G_ki ...'
-        start = omp_get_wtime()
+        print *,'  start computation L0_ijkl = G_jl G_ki ...'        
         Lmat=czero      
         !
         !$omp parallel default(shared) private(i,j,k,l,row,col,ie)
@@ -1525,10 +1523,6 @@ module bse_dense
         !$omp end do
         !$omp end parallel
         !
-        finish = omp_get_wtime()
-        print '("  computation time = ", F0.3 ," seconds.")', finish-start
-        start = finish
-        !
         Mmat=czero  
         print *,'  start computation -L0 K'
         !
@@ -1553,9 +1547,6 @@ module bse_dense
         !  
         call zgemm('n','n',N,N,N,-cone,Lmat,N,Mmat,N,czero,Amat,N) 
         !
-        finish = omp_get_wtime()
-        print '("  computation time = ", F0.3 ," seconds.")', finish-start
-        start = finish
         ! (I - L0 K) -> A
         do i=1,N 
         Amat(i,i) = Amat(i,i) + dcmplx(1.0_dp, 0.0_dp)
@@ -1563,10 +1554,6 @@ module bse_dense
         print *,'  start invert (I - L0 K)'
         !
         call invert_inplace(Amat,N)
-        !
-        finish = omp_get_wtime()
-        print '("  computation time = ", F0.3 ," seconds.")', finish-start
-        start = finish
         !
         print *,'  start computation L = (I - L0 K) \ L0  '
         !
@@ -1603,8 +1590,6 @@ module bse_dense
         !$omp end do
         !$omp end parallel
         endif 
-        finish = omp_get_wtime()
-        print '("  computation time = ", F0.3 ," seconds.")', finish-start
         !
         deallocate(Lmat,Mmat,Amat)
     end subroutine bse_fullsolve
@@ -1613,6 +1598,7 @@ module bse_dense
 
     ! solve the Bethe-Salpeter Equation under approximation
     subroutine bse_solve(spindeg,nm_dev,nen,En,nop,G_lesser,G_greater,G_retarded,W_retarded,V,P_retarded)
+        use gf_dense, only: invert_inplace
         integer,intent(in)::nm_dev,nen,nop
         real(dp),intent(in)::en(nen),spindeg
         complex(dp),intent(in),dimension(nm_dev,nm_dev,nen):: G_lesser,G_greater,G_retarded ! electron GF
