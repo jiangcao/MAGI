@@ -67,13 +67,17 @@ if __name__=='__main__':
    # plt.plot(energies, cur[:,0] )
    # plt.show()
 
-   G_retarded,G_lesser,G_greater = gf_dense.solve_gw_3d(niter=niter,nm_dev=nb*length,lx=4.26,length=length,spindeg=2.0,
+   G_retarded,G_lesser,G_greater,W0 = gf_dense.solve_gw_3d(niter=niter,nm_dev=nb*length,lx=4.26,length=length,spindeg=2.0,
                                                         temps=300.0,tempd=300.0,mus=mu[0],mud=mu[1],alpha_mix=0.5,
                                                         nen=nen,en=energies,nb=nb,ns=ns,nphiy=nky,nphiz=nkz,
                                                         ham=ham,h00lead=lead_h00,h10lead=lead_h10,t=lead_coupling,v=v,
                                                         ldiag=True,flatband=False)
 
-#    P_retarded = bse_dense.bse_fullsolve(spindeg=2.0,nm_dev=nb*length,ndiag=ns*nb,nen=nen,en=energies,nop=10,g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,w_retarded=v[:,:,0],v=v[:,:,0])                                                        
+   for nop in range(10,nen):
+       print( nop )
+       P_retarded = bse_dense.bse_fullsolve(spindeg=2.0,nm_dev=nb*length,ndiag=ns*nb,nen=nen,en=energies,nop=nop,
+                                            g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,
+                                            w_retarded=W0[:,:,0],v=v[:,:,0])                                                        
 
-   P_retarded = bse_dense.bse_solve(spindeg=2.0,nm_dev=nb*length,nen=nen,en=energies,nop=10,g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,w_retarded=v[:,:,0],v=v[:,:,0])                                                        
+#    P_retarded = bse_dense.bse_solve(spindeg=2.0,nm_dev=nb*length,nen=nen,en=energies,nop=nop,g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,w_retarded=v[:,:,0],v=v[:,:,0])                                                        
    

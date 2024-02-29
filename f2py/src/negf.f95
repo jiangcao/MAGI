@@ -373,6 +373,49 @@ module output
 end module output
 
 
+module legendre
+    contains 
+    ! gauleg.f90     P145 Numerical Recipes in Fortran
+    ! compute x(i) and w(i)  i=1,n  Legendre ordinates and weights
+    ! on interval -1.0 to 1.0 (length is 2.0)
+    ! use ordinates and weights for Gauss Legendre integration
+    !
+    subroutine gaulegf(x1, x2, x, w, n)
+        implicit none
+        integer, intent(in) :: n
+        double precision, intent(in) :: x1, x2
+        double precision, dimension(n), intent(out) :: x, w
+        integer :: i, j, m
+        double precision :: p1, p2, p3, pp, xl, xm, z, z1
+        double precision, parameter :: eps=3.d-14
+            
+        m = (n+1)/2
+        xm = 0.5d0*(x2+x1)
+        xl = 0.5d0*(x2-x1)
+        do i=1,m
+        z = cos(3.141592654d0*(i-0.25d0)/(n+0.5d0))
+        z1 = 0.0
+        do while(abs(z-z1) .gt. eps)
+            p1 = 1.0d0
+            p2 = 0.0d0
+            do j=1,n
+            p3 = p2
+            p2 = p1
+            p1 = ((2.0d0*j-1.0d0)*z*p2-(j-1.0d0)*p3)/j
+            end do
+            pp = n*(z*p1-p2)/(z*z-1.0d0)
+            z1 = z
+            z = z1 - p1/pp
+        end do
+        x(i) = xm - xl*z
+        x(n+1-i) = xm + xl*z
+        w(i) = (2.0d0*xl)/((1.0d0-z*z)*pp*pp)
+        w(n+1-i) = w(i)
+        end do
+    end subroutine gaulegf
+end module legendre
+
+
 
 module gf_dense 
     use parameters_mod
@@ -385,7 +428,7 @@ module gf_dense
     ! iterating G -> P -> W -> Sig 
     subroutine solve_gw_3D(niter,nm_dev,Lx,length,spindeg,temps,tempd,mus,mud,&
         alpha_mix,nen,En,nb,ns,nphiy,nphiz,Ham,H00lead,H10lead,T,V,&
-        G_retarded,G_lesser,G_greater,ldiag,flatband)
+        ldiag,flatband,G_retarded,G_lesser,G_greater,W0_retarded)
     !
     use fft_mod, only : conv1d => conv1d2, corr1d => corr1d2  
     use parameters_mod
@@ -397,6 +440,7 @@ module gf_dense
     logical,intent(in)::ldiag
     logical,intent(in)::flatband
     complex(8),intent(out),dimension(nm_dev,nm_dev,nen,nphiy*nphiz) ::  G_retarded,G_lesser,G_greater
+    complex(8),intent(out),dimension(nm_dev,nm_dev,nphiy*nphiz) ::  W0_retarded
     !------
     complex(8),dimension(nm_dev,nm_dev,nen,nphiy*nphiz) ::  P_retarded,P_lesser,P_greater
     complex(8),dimension(nm_dev,nm_dev,nen,nphiy*nphiz) ::  W_retarded,W_lesser,W_greater
@@ -689,6 +733,7 @@ module gf_dense
     deallocate(sumcur,cur,tot_cur,tot_ecur,sumtot_cur,sumtot_ecur)
     deallocate(Ispec,Itot)
     deallocate(Tr,Te,sumTr,sumTe)
+    W0_retarded = W_retarded(:,:,nen/2,:)
     end subroutine solve_gw_3D
   
   
@@ -1484,7 +1529,8 @@ module bse_dense
         complex(dp),dimension(:,:),allocatable :: Lmat ! two-particle Green's function 
         complex(dp),dimension(:,:),allocatable :: Mmat ! 4-point Kernel
         complex(dp),dimension(:,:),allocatable :: Amat ! 
-        complex(dp) :: dE
+        complex(dp),dimension(:,:),allocatable :: epsilon_M ! 
+        complex(dp) :: dE, epsM
         real(dp) :: start, finish, alpha
         integer :: N,i,j,k,l,p,q,ie,row,col, ne_margin
         !  
@@ -1592,6 +1638,16 @@ module bse_dense
         endif 
         !
         deallocate(Lmat,Mmat,Amat)
+        !
+        allocate(epsilon_M(nm_dev,nm_dev))
+        call zgemm('n','n',nm_dev,nm_dev,nm_dev,-cone,V,nm_dev,P_retarded,nm_dev,czero,epsilon_M,nm_dev) 
+        do j=1,nm_dev 
+            epsilon_M(j,j) = epsilon_M(j,j) + cone
+        enddo      
+        open(unit=99,file='bse_epsilonM.dat',status='unknown', position="append", action="write")    
+        epsM = sum( epsilon_M(nm_dev/2,nb*ns+1:nm_dev-nb*ns) )
+        write(99,*) dble(nop)*(En(2)-En(1)) , aimag(epsM), dble(epsM) ! Im \epsilon_M -> absorption
+        close(99)
     end subroutine bse_fullsolve
   
 
