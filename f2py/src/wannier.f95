@@ -29,19 +29,21 @@ IMPLICIT NONE
 
 CONTAINS
 
-    SUBROUTINE load_from_file(fname,lreorder_axis,axis,nb,nx,ny,nz,hr,wannier_center,n_range,cell)    
+    SUBROUTINE load_from_file(fname,lreorder_axis,axis,nb,nx,ny,nz,hr,wannier_center,n_range,cell,length)    
         character(len=*), intent(in) :: fname
         logical, intent(in) :: lreorder_axis
         integer, intent(in) :: axis(3),nb,nx,ny,nz
         complex(8), intent(out) :: hr(nb,nb,nx,ny,nz)
         real(8), intent(out) :: wannier_center(3,nb)
-        real(8), intent(out) :: cell(3,3)    
+        real(8), intent(out) :: cell(3,3)  
+        real(8), intent(out) :: length(3)    
         integer, intent(out) :: n_range(9) ! [nb,xmin,xmax,ymin,ymax,zmin,zmax,nvb,nspin]
         ! ----
         integer :: fid
         integer :: n,i,rc
         character(len=40) :: comment
-        REAL(8) :: aux2(3,3),alpha(3),beta(3),gamm(3)    
+        REAL(8) :: aux2(3,3)
+        real(8), dimension(3):: alpha,beta,gamm,xhat,yhat,zhat    
         REAL(8), allocatable :: ham(:,:), energ(:,:), aux3(:,:)
         open(action='read', file=trim(fname), iostat=rc, newunit=fid)
         read(fid,*) n_range(8), n_range(9) ! number of VBs, spin-degeneracy
@@ -72,7 +74,7 @@ CONTAINS
             ham = aux3        
             deallocate(aux3)
         end if
-        n_range(1) = nint(maxval(ham(:,4))) ! number of WFs
+        n_range(1)=nint(maxval(ham(:,4))) ! number of WFs
         n_range(2)=nint(minval(ham(:,1))) ! xmin
         n_range(3)=nint(maxval(ham(:,1))) ! xmax
         n_range(4)=nint(minval(ham(:,2))) ! ymin
@@ -99,6 +101,13 @@ CONTAINS
         end if    
         deallocate(ham)
         close(fid)
+        xhat = alpha/norm(alpha)
+        yhat = - cross(xhat,gamm)
+        yhat = yhat/norm(yhat)
+        zhat = gamm/norm(gamm)
+        length(2)=abs(dot_product(beta,yhat)); ! L is in unit of A
+        length(1)=abs(dot_product(alpha,xhat));
+        length(3)=norm(gamm)
     END SUBROUTINE load_from_file
 
 

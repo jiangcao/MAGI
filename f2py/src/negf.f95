@@ -420,6 +420,7 @@ end module legendre
 module gf_dense 
     use parameters_mod
     use output
+    use legendre
     implicit none 
 
     contains
@@ -427,19 +428,19 @@ module gf_dense
     ! 3D GW solver with two periodic directions (y,z)
     ! iterating G -> P -> W -> Sig 
     subroutine solve_gw_3D(niter,nm_dev,Lx,length,spindeg,temps,tempd,mus,mud,&
-        alpha_mix,nen,En,nb,ns,nphiy,nphiz,Ham,H00lead,H10lead,T,V,&
+        alpha_mix,nen,nsub,En,nb,ns,nphiy,nphiz,Ham,H00lead,H10lead,T,V,&
         ldiag,flatband,G_retarded,G_lesser,G_greater,W0_retarded)
     !
     use fft_mod, only : conv1d => conv1d2, corr1d => corr1d2  
     use parameters_mod
     !  
-    integer, intent(in) :: nen, nb, ns,niter,nm_dev,length, nphiz, nphiy
+    integer, intent(in) :: nen, nsub, nb, ns,niter,nm_dev,length, nphiz, nphiy
     real(8), intent(in) :: En(nen), temps,tempd, mus, mud, alpha_mix,Lx,spindeg
     complex(8),intent(in) :: Ham(nm_dev,nm_dev,nphiy*nphiz),H00lead(NB*NS,NB*NS,2,nphiy*nphiz),H10lead(NB*NS,NB*NS,2,nphiy*nphiz),T(NB*NS,nm_dev,2,nphiy*nphiz)
     complex(8), intent(in):: V(nm_dev,nm_dev,nphiy*nphiz)
     logical,intent(in)::ldiag
     logical,intent(in)::flatband
-    complex(8),intent(out),dimension(nm_dev,nm_dev,nen,nphiy*nphiz) ::  G_retarded,G_lesser,G_greater
+    complex(8),intent(out),dimension(nm_dev,nm_dev,nen,nsub,nphiy*nphiz) ::  G_retarded,G_lesser,G_greater
     complex(8),intent(out),dimension(nm_dev,nm_dev,nphiy*nphiz) ::  W0_retarded
     !------
     complex(8),dimension(nm_dev,nm_dev,nen,nphiy*nphiz) ::  P_retarded,P_lesser,P_greater
@@ -455,11 +456,15 @@ module gf_dense
     real(8),allocatable::sumTr(:,:) ! current spectrum on leads summed over k
     real(8),allocatable::sumTe(:,:,:) ! transmission matrix spectrum summed over k
     integer :: iter,ie,nopmax
-    integer :: i,j,nm,nop,l,h,iop,ndiag,ikz,iqz,ikzd,iky,iqy,ikyd,ik,iq,ikd        
+    integer :: i,j,nm,nop,l,h,iop,ndiag,ikz,iqz,ikzd,iky,iqy,ikyd,ik,iq,ikd,isub        
     complex(8) :: dE
     real(8)::nelec(2),mu(2),pelec(2),temp(2)
+    real(8)::weights(nsub),xen(nsub)
     !
     print *,'============ green_solve_gw_3D ============'
+    dE = En(2) - En(1)
+    call gaulegf(0.0d0, dble(dE), xen, weights, nsub) ! obtain the Legendre ordinates and weights    
+    !
     allocate(siglead(NB*NS,NB*NS,nen,2,nphiy*nphiz))
     ! get leads sigma
     do ikz=1, nphiy*nphiz
@@ -495,18 +500,21 @@ module gf_dense
         sumtot_ecur=0.0d0
         sumcur=0.0d0
         do ikz=1,nphiy*nphiz
-        !  print *, ' ik=', ikz,'/',nphiy*nphiz
-        call calc_gf(nen,En,2,nm_dev,(/nb*ns,nb*ns/),nb*ns,Ham(:,:,ikz),H00lead(:,:,:,ikz),H10lead(:,:,:,ikz),Siglead(:,:,:,:,ikz),&
-            T(:,:,:,ikz),Sig_retarded(:,:,:,ikz),Sig_lesser(:,:,:,ikz),Sig_greater(:,:,:,ikz),G_retarded(:,:,:,ikz),G_lesser(:,:,:,ikz),&
-            G_greater(:,:,:,ikz),Tr,Te,mu,temp,flatband)
-        !call write_spectrum('ldos_kz'//string(ikz)//'_',iter,G_retarded(:,:,:,ikz),nen,En,length,NB,Lx,(/1.0d0,-2.0d0/))
-        call calc_bond_current(Ham(:,:,ikz),G_lesser(:,:,:,ikz),nen,en,spindeg,nm_dev,tot_cur,tot_ecur,cur)    
-        !call write_current_spectrum('Jdens_kz'//string(ikz)//'_',iter,cur,nen,en,length,NB,Lx)    
-        sumcur=sumcur+cur
-        sumtot_cur=sumtot_cur+tot_cur
-        sumtot_ecur=sumtot_ecur+tot_ecur
-        sumTr=sumTr+Tr
-        sumTe=sumTe+Te
+            do isub=1,nsub
+                call calc_gf(nen,En+xen(isub),2,nm_dev,(/nb*ns,nb*ns/),nb*ns,&
+                    Ham(:,:,ikz),H00lead(:,:,:,ikz),H10lead(:,:,:,ikz),Siglead(:,:,:,:,ikz),&
+                    T(:,:,:,ikz),Sig_retarded(:,:,:,ikz),Sig_lesser(:,:,:,ikz),Sig_greater(:,:,:,ikz),&
+                    G_retarded(:,:,:,isub,ikz),G_lesser(:,:,:,isub,ikz),&
+                    G_greater(:,:,:,isub,ikz),Tr,Te,mu,temp,flatband)
+                !call write_spectrum('ldos_kz'//string(ikz)//'_',iter,G_retarded(:,:,:,ikz),nen,En,length,NB,Lx,(/1.0d0,-2.0d0/))
+                call calc_bond_current(Ham(:,:,ikz),G_lesser(:,:,:,isub,ikz),nen,en,spindeg,nm_dev,tot_cur,tot_ecur,cur)    
+                !call write_current_spectrum('Jdens_kz'//string(ikz)//'_',iter,cur,nen,en,length,NB,Lx)    
+                sumcur=sumcur + cur * weights(isub)
+                sumtot_cur=sumtot_cur + tot_cur * weights(isub)
+                sumtot_ecur=sumtot_ecur + tot_ecur * weights(isub)
+                sumTr=sumTr + Tr * weights(isub)
+                sumTe=sumTe + Te * weights(isub)
+            enddo
         enddo
         sumcur=sumcur/dble(nphiy)/dble(nphiz)
         sumtot_cur=sumtot_cur/dble(nphiy)/dble(nphiz)
@@ -515,14 +523,14 @@ module gf_dense
         sumTe=sumTe/dble(nphiz)/dble(nphiy)
         if (flatband) then
             print *,'flatband'
-            ! call write_spectrum_per_kz('gw_ldos',iter,G_retarded,nen,En,nphiy,nphiz,length,NB,Lx,(/1.0d0,-2.0d0/),at_ky=kt_cbm/(twopi/Ly),at_kz=ktz_cbm/(twopi/Lz))
-            ! call write_spectrum_per_kz('gw_gamma-centered_ldos',iter,G_retarded,nen,En,nphiy,nphiz,length,NB,Lx,(/1.0d0,-2.0d0/),at_ky=0.0_dp,at_kz=0.0_dp)
-            call write_spectrum_summed_over_kz('gw_ldos',iter,G_retarded,nen,En,nphiy*nphiz,length,NB,Lx,(/1.0d0,-2.0d0/))
+            ! call write_spectrum_per_kz('gw_ldos',iter,G_retarded(:,:,:,1,:),nen,En,nphiy,nphiz,length,NB,Lx,(/1.0d0,-2.0d0/),at_ky=kt_cbm/(twopi/Ly),at_kz=ktz_cbm/(twopi/Lz))
+            ! call write_spectrum_per_kz('gw_gamma-centered_ldos',iter,G_retarded(:,:,:,1,:),nen,En,nphiy,nphiz,length,NB,Lx,(/1.0d0,-2.0d0/),at_ky=0.0_dp,at_kz=0.0_dp)
+            call write_spectrum_summed_over_kz('gw_ldos',iter,G_retarded(:,:,:,1,:),nen,En,nphiy*nphiz,length,NB,Lx,(/1.0d0,-2.0d0/))
     
         else
-            call write_spectrum_summed_over_kz('gw_ldos',iter,G_retarded,nen,En,nphiy*nphiz,length,NB,Lx,(/1.0d0,-2.0d0/))
-            call write_spectrum_summed_over_kz('gw_ndos',iter,G_lesser,nen,En,nphiy*nphiz,length,NB,Lx,(/1.0d0,1.0d0/))
-            call write_spectrum_summed_over_kz('gw_pdos',iter,G_greater,nen,En,nphiy*nphiz,length,NB,Lx,(/1.0d0,-1.0d0/))
+            call write_spectrum_summed_over_kz('gw_ldos',iter,G_retarded(:,:,:,1,:),nen,En,nphiy*nphiz,length,NB,Lx,(/1.0d0,-2.0d0/))
+            call write_spectrum_summed_over_kz('gw_ndos',iter,G_lesser(:,:,:,1,:),nen,En,nphiy*nphiz,length,NB,Lx,(/1.0d0,1.0d0/))
+            call write_spectrum_summed_over_kz('gw_pdos',iter,G_greater(:,:,:,1,:),nen,En,nphiy*nphiz,length,NB,Lx,(/1.0d0,-1.0d0/))
         endif
         call write_current_spectrum('gw_Jdens',iter,sumcur,nen,en,length,NB,Lx)
         call write_current('gw_I',iter,sumtot_cur,length,NB,NS,Lx)
@@ -547,27 +555,16 @@ module gf_dense
         if (ldiag) ndiag=0  
         print *,'ndiag=',ndiag
         ! Pij^<>(hw,kz') = \int_dE Gij^<>(E,kz) * Gji^><(E-hw,kz-kz')
-        ! Pij^r(hw,kz')  = \int_dE Gij^<(E,kz) * Gji^a(E-hw,kz-kz') + Gij^r(E,kz) * Gji^<(E-hw,kz-kz')
-        !$omp parallel default(shared) private(l,h,ikz,ikzd,iqz,dE,i,j,iky,ikyd,iqy,ik,iq,ikd) 
-        !$omp do
-        !do nop=-nopmax,nopmax
-        do iq=1,nphiy*nphiz
-    !    do iqy=1,nphiy
-    !      do iqz=1,nphiz
-            !iop=nop+nen/2
-    !        iq=iqz+(iqy-1)*nphiz
+        ! Pij^r(hw,kz')  = \int_dE Gij^<(E,kz) * Gji^a(E-hw,kz-kz') + Gij^r(E,kz) * Gji^<(E-hw,kz-kz')        
+        do iq=1,nphiy*nphiz    
             iqz = mod(iq-1,nphiz)+1
             iqy = (iq-1) / nphiz +1
             P_lesser(:,:,:,iq) = dcmplx(0.0d0,0.0d0)
             P_greater(:,:,:,iq) = dcmplx(0.0d0,0.0d0)    
-            P_retarded(:,:,:,iq) = dcmplx(0.0d0,0.0d0)    
-            ! do ie = max(nop+1,1),min(nen,nen+nop) 
-                do iky=1,nphiy
+            P_retarded(:,:,:,iq) = dcmplx(0.0d0,0.0d0)                
+            do iky=1,nphiy
                 do ikz=1,nphiz              
                     ik=ikz + (iky-1)*nphiz
-                    do i = 1, nm_dev        
-                    l=max(i-ndiag,1)
-                    h=min(nm_dev,i+ndiag)
                     ikzd=ikz-iqz + nphiz/2
                     ikyd=iky-iqy + nphiy/2
                     if (ikzd<1) ikzd=ikzd+nphiz
@@ -577,22 +574,26 @@ module gf_dense
                     if (nphiy==1)   ikyd=1
                     if (nphiz==1)   ikzd=1             
                     ikd=ikzd + (ikyd-1)*nphiz
-                    do j = l,h
-                        P_lesser(i,j,:,iq) = P_lesser(i,j,:,iq) + corr1d(nen,G_lesser(i,j,:,ik),G_greater(j,i,:,ikd),method='fft') 
-                        P_greater(i,j,:,iq) = P_greater(i,j,:,iq) + corr1d(nen,G_greater(i,j,:,ik),G_lesser(j,i,:,ikd),method='fft')         
-                        P_retarded(i,j,:,iq) = P_retarded(i,j,:,iq) + corr1d(nen,G_lesser(i,j,:,ik),conjg(G_retarded(i,j,:,ikd)),method='fft') &
-                                                                    + corr1d(nen,G_retarded(i,j,:,ik),G_lesser(j,i,:,ikd),method='fft') 
+                    !$omp parallel default(shared) private(l,h,i,j,isub) 
+                    !$omp do        
+                    do i = 1, nm_dev        
+                        l=max(i-ndiag,1)
+                        h=min(nm_dev,i+ndiag)                        
+                        do j = l,h
+                            do isub = 1,nsub
+                                P_lesser(i,j,:,iq) = P_lesser(i,j,:,iq) + corr1d(nen,G_lesser(i,j,:,isub,ik),G_greater(j,i,:,isub,ikd),method='fft') * weights(isub)
+                                P_greater(i,j,:,iq) = P_greater(i,j,:,iq) + corr1d(nen,G_greater(i,j,:,isub,ik),G_lesser(j,i,:,isub,ikd),method='fft') * weights(isub)         
+                                P_retarded(i,j,:,iq) = P_retarded(i,j,:,iq) + corr1d(nen,G_lesser(i,j,:,isub,ik),conjg(G_retarded(i,j,:,isub,ikd)),method='fft') * weights(isub) &
+                                                                            + corr1d(nen,G_retarded(i,j,:,isub,ik),G_lesser(j,i,:,isub,ikd),method='fft') * weights(isub) 
+                            enddo
+                        enddo
                     enddo
-                    enddo
+                    !$omp end do
+                    !$omp end parallel
                 enddo
-                enddo
-            ! enddo
-        ! enddo
-        enddo
-        !enddo
-        !$omp end do
-        !$omp end parallel
-        dE = dcmplx(0.0d0 , -1.0d0*( En(2) - En(1) ) / 2.0d0 / pi ) * spindeg /dble(nphiy)/dble(nphiz) 
+            enddo                    
+        enddo                
+        dE = dcmplx(0.0d0 , -1.0d0 / 2.0d0 / pi ) * spindeg /dble(nphiy)/dble(nphiz) 
         P_lesser=dE*P_lesser
         P_greater=dE*P_greater
         P_retarded=dE*P_retarded
@@ -601,24 +602,25 @@ module gf_dense
             ! call write_spectrum_per_kz('PR',iter,P_retarded,nen,En-en(nen/2),nphiy,nphiz,length,NB,Lx,(/1.0d0,1.0d0/))
         endif 
         ! call write_spectrum_summed_over_kz('PR',iter,P_retarded,nen,En-en(nen/2),nphiy*nphiz,length,NB,Lx,(/1.0d0,1.0d0/))
-    !  call write_spectrum_summed_over_kz('PL',iter,P_lesser  ,nen,En-en(nen/2),nphiy*nphiz,length,NB,Lx,(/1.0,1.0/))
-    !  call write_spectrum_summed_over_kz('PG',iter,P_greater ,nen,En-en(nen/2),nphiy*nphiz,length,NB,Lx,(/1.0,1.0/))
+        !  call write_spectrum_summed_over_kz('PL',iter,P_lesser  ,nen,En-en(nen/2),nphiy*nphiz,length,NB,Lx,(/1.0,1.0/))
+        !  call write_spectrum_summed_over_kz('PG',iter,P_greater ,nen,En-en(nen/2),nphiy*nphiz,length,NB,Lx,(/1.0,1.0/))
         !
         print *, 'calc W'
         !
-        do iq=1,nphiy*nphiz
-        !  print *, ' iq=', iq,'/',nphiy*nphiz
-        !$omp parallel default(shared) private(nop)
-        !$omp do
-        do nop=-nopmax+nen/2,nopmax+nen/2       
-            if (flatband) then
-                call calc_w(0,NB,NS,nm_dev,P_retarded(:,:,nop,iq),P_lesser(:,:,nop,iq),P_greater(:,:,nop,iq),V(:,:,iq),W_retarded(:,:,nop,iq),W_lesser(:,:,nop,iq),W_greater(:,:,nop,iq))
-            else      
-                call calc_w(1,NB,NS,nm_dev,P_retarded(:,:,nop,iq),P_lesser(:,:,nop,iq),P_greater(:,:,nop,iq),V(:,:,iq),W_retarded(:,:,nop,iq),W_lesser(:,:,nop,iq),W_greater(:,:,nop,iq))
-            endif
-        enddo
-        !$omp end do
-        !$omp end parallel
+        do iq=1,nphiy*nphiz        
+            !$omp parallel default(shared) private(nop)
+            !$omp do
+            do nop=-nopmax+nen/2,nopmax+nen/2       
+                if (flatband) then
+                    call calc_w(0,NB,NS,nm_dev,P_retarded(:,:,nop,iq),P_lesser(:,:,nop,iq),P_greater(:,:,nop,iq),&
+                                V(:,:,iq),W_retarded(:,:,nop,iq),W_lesser(:,:,nop,iq),W_greater(:,:,nop,iq))
+                else      
+                    call calc_w(1,NB,NS,nm_dev,P_retarded(:,:,nop,iq),P_lesser(:,:,nop,iq),P_greater(:,:,nop,iq),&
+                                V(:,:,iq),W_retarded(:,:,nop,iq),W_lesser(:,:,nop,iq),W_greater(:,:,nop,iq))
+                endif
+            enddo
+            !$omp end do
+            !$omp end parallel
         enddo  
         if (flatband) then
             print *,'flatband'
@@ -630,8 +632,8 @@ module gf_dense
             endif
         endif 
         ! call write_spectrum_summed_over_kz('WR',iter,W_retarded,nen,En-en(nen/2),nphiy*nphiz,length,NB,Lx,(/1.0d0,1.0d0/))
-    !  call write_spectrum_summed_over_kz('WL',iter,W_lesser,  nen,En-en(nen/2),nphiy*nphiz,length,NB,Lx,(/1.0,1.0/))
-    !  call write_spectrum_summed_over_kz('WG',iter,W_greater, nen,En-en(nen/2),nphiy*nphiz,length,NB,Lx,(/1.0,1.0/))
+        !  call write_spectrum_summed_over_kz('WL',iter,W_lesser,  nen,En-en(nen/2),nphiy*nphiz,length,NB,Lx,(/1.0,1.0/))
+        !  call write_spectrum_summed_over_kz('WG',iter,W_greater, nen,En-en(nen/2),nphiy*nphiz,length,NB,Lx,(/1.0,1.0/))
         !
         print *, 'calc SigGW'
         !  
@@ -642,46 +644,44 @@ module gf_dense
         Sig_greater_new = dcmplx(0.0d0,0.0d0)
         Sig_lesser_new = dcmplx(0.0d0,0.0d0)
         Sig_retarded_new = dcmplx(0.0d0,0.0d0)      
-        ! hw from -inf to +inf: Sig^<>_ij(E) = (i/2pi) \int_dhw G^<>_ij(E-hw) W^<>_ij(hw)
-        !$omp parallel default(shared) private(l,h,i,j,ikz,ikzd,iqz,iky,ikyd,iqy,ik,iq,ikd)
-        !$omp do  
-        do ik=1,nphiy*nphiz
-    !  do iky=1,nphiy
-    !    do ikz=1,nphiz      
-    !      ik=ikz+(iky-1)*nphiz
+        ! hw from -inf to +inf: Sig^<>_ij(E) = (i/2pi) \int_dhw G^<>_ij(E-hw) W^<>_ij(hw)        
+        do ik=1,nphiy*nphiz    
             ikz = mod(ik-1,nphiz)+1
             iky = (ik-1) / nphiz +1
             do iqy=1,nphiy
-            do iqz=1,nphiz
-                iq=iqz+(iqy-1)*nphiz         
-                ikzd=ikz-iqz + nphiz/2            
-                if (ikzd<1) ikzd=ikzd+nphiz
-                if (ikzd>nphiz) ikzd=ikzd-nphiz
-                ikyd=iky-iqy + nphiy/2            
-                if (ikyd<1) ikyd=ikyd+nphiy
-                if (ikyd>nphiy) ikyd=ikyd-nphiy
-                if (nphiy==1)   ikyd=1
-                if (nphiz==1)   ikzd=1
-                ikd=ikzd+(ikyd-1)*nphiz
-                do i = 1,nm_dev   
-                l=max(i-ndiag,1)
-                h=min(nm_dev,i+ndiag)       
-                do j = l,h
-                    Sig_lesser_new(i,j,:,ik)=Sig_lesser_new(i,j,:,ik) + conv1d(nen,G_lesser(i,j,:,ikd),W_lesser(i,j,:,iq),method='fft') 
-                    Sig_greater_new(i,j,:,ik)=Sig_greater_new(i,j,:,ik) + conv1d(nen,G_greater(i,j,:,ikd),W_greater(i,j,:,iq),method='fft') 
-                    Sig_retarded_new(i,j,:,ik)=Sig_retarded_new(i,j,:,ik) &
-                                                + conv1d(nen,G_lesser(i,j,:,ikd),W_retarded(i,j,:,iq),method='fft') &
-                                                + conv1d(nen,G_retarded(i,j,:,ikd),W_lesser(i,j,:,iq),method='fft') &
-                                                + conv1d(nen,G_retarded(i,j,:,ikd),W_retarded(i,j,:,iq),method='fft')                                               
+                do iqz=1,nphiz
+                    iq=iqz+(iqy-1)*nphiz         
+                    ikzd=ikz-iqz + nphiz/2            
+                    if (ikzd<1) ikzd=ikzd+nphiz
+                    if (ikzd>nphiz) ikzd=ikzd-nphiz
+                    ikyd=iky-iqy + nphiy/2            
+                    if (ikyd<1) ikyd=ikyd+nphiy
+                    if (ikyd>nphiy) ikyd=ikyd-nphiy
+                    if (nphiy==1)   ikyd=1
+                    if (nphiz==1)   ikzd=1
+                    ikd=ikzd+(ikyd-1)*nphiz
+                    !$omp parallel default(shared) private(l,h,i,j,isub)
+                    !$omp do  
+                    do i = 1,nm_dev   
+                        l=max(i-ndiag,1)
+                        h=min(nm_dev,i+ndiag)       
+                        do j = l,h
+                            do isub = 1,nsub
+                                Sig_lesser_new(i,j,:,ik)=Sig_lesser_new(i,j,:,ik) + conv1d(nen,G_lesser(i,j,:,isub,ikd),W_lesser(i,j,:,iq),method='fft') * weights(isub)
+                                Sig_greater_new(i,j,:,ik)=Sig_greater_new(i,j,:,ik) + conv1d(nen,G_greater(i,j,:,isub,ikd),W_greater(i,j,:,iq),method='fft') * weights(isub) 
+                                Sig_retarded_new(i,j,:,ik)=Sig_retarded_new(i,j,:,ik) &
+                                                            + conv1d(nen,G_lesser(i,j,:,isub,ikd),W_retarded(i,j,:,iq),method='fft') * weights(isub) &
+                                                            + conv1d(nen,G_retarded(i,j,:,isub,ikd),W_lesser(i,j,:,iq),method='fft') * weights(isub) &
+                                                            + conv1d(nen,G_retarded(i,j,:,isub,ikd),W_retarded(i,j,:,iq),method='fft') * weights(isub)                                               
+                            enddo 
+                        enddo
+                    enddo      
+                    !$omp end do
+                    !$omp end parallel
                 enddo
-                enddo      
-            enddo
-            enddo        
-    !    enddo
-        enddo
-        !$omp end do
-        !$omp end parallel
-        dE = dcmplx(0.0d0, (En(2)-En(1))/2.0d0/pi) /dble(nphiy)/dble(nphiz)
+            enddo            
+        enddo        
+        dE = dcmplx(0.0d0, 1.0d0/twopi) /dble(nphiy)/dble(nphiz)
         Sig_lesser_new = Sig_lesser_new  * dE
         Sig_greater_new= Sig_greater_new * dE
         Sig_retarded_new=Sig_retarded_new* dE
@@ -726,9 +726,59 @@ module gf_dense
             ! call write_spectrum_per_kz('gw_SigR',iter,Sig_retarded,nen,En,nphiy,nphiz,length,NB,Lx,(/1.0d0,1.0d0/),at_ky=kt_cbm/(twopi/Ly),at_kz=ktz_cbm/(twopi/Lz))
         endif 
         ! call write_spectrum_summed_over_kz('gw_SigR',iter,Sig_retarded,nen,En,nphiy*nphiz,length,NB,Lx,(/1.0d0,1.0d0/))
-    !  call write_spectrum_summed_over_kz('SigL',iter,Sig_lesser,nen,En,nphiy*nphiz,length,NB,Lx,(/1.0,1.0/))
-    !  call write_spectrum_summed_over_kz('SigG',iter,Sig_greater,nen,En,nphiy*nphiz,length,NB,Lx,(/1.0,1.0/))
+        !  call write_spectrum_summed_over_kz('SigL',iter,Sig_lesser,nen,En,nphiy*nphiz,length,NB,Lx,(/1.0,1.0/))
+        !  call write_spectrum_summed_over_kz('SigG',iter,Sig_greater,nen,En,nphiy*nphiz,length,NB,Lx,(/1.0,1.0/))
     end do  
+    ! calculate GF for the last time    
+    print *, 'calc G for the last time'  
+    sumtot_cur=0.0d0
+    sumtot_ecur=0.0d0
+    sumcur=0.0d0
+    do ikz=1,nphiy*nphiz
+        do isub=1,nsub
+            call calc_gf(nen,En+xen(isub),2,nm_dev,(/nb*ns,nb*ns/),nb*ns,&
+                Ham(:,:,ikz),H00lead(:,:,:,ikz),H10lead(:,:,:,ikz),Siglead(:,:,:,:,ikz),&
+                T(:,:,:,ikz),Sig_retarded(:,:,:,ikz),Sig_lesser(:,:,:,ikz),Sig_greater(:,:,:,ikz),&
+                G_retarded(:,:,:,isub,ikz),G_lesser(:,:,:,isub,ikz),&
+                G_greater(:,:,:,isub,ikz),Tr,Te,mu,temp,flatband)
+            !call write_spectrum('ldos_kz'//string(ikz)//'_',iter,G_retarded(:,:,:,ikz),nen,En,length,NB,Lx,(/1.0d0,-2.0d0/))
+            call calc_bond_current(Ham(:,:,ikz),G_lesser(:,:,:,isub,ikz),nen,en,spindeg,nm_dev,tot_cur,tot_ecur,cur)    
+            !call write_current_spectrum('Jdens_kz'//string(ikz)//'_',iter,cur,nen,en,length,NB,Lx)    
+            sumcur=sumcur + cur * weights(isub)
+            sumtot_cur=sumtot_cur + tot_cur * weights(isub)
+            sumtot_ecur=sumtot_ecur + tot_ecur * weights(isub)
+            sumTr=sumTr + Tr * weights(isub)
+            sumTe=sumTe + Te * weights(isub)
+        enddo
+    enddo
+    sumcur=sumcur/dble(nphiy)/dble(nphiz)
+    sumtot_cur=sumtot_cur/dble(nphiy)/dble(nphiz)
+    sumtot_ecur=sumtot_ecur/dble(nphiy)/dble(nphiz)
+    sumTr=sumTr/dble(nphiz)/dble(nphiy)
+    sumTe=sumTe/dble(nphiz)/dble(nphiy)
+    if (flatband) then
+        print *,'flatband'
+        ! call write_spectrum_per_kz('gw_ldos',iter,G_retarded(:,:,:,1,:),nen,En,nphiy,nphiz,length,NB,Lx,(/1.0d0,-2.0d0/),at_ky=kt_cbm/(twopi/Ly),at_kz=ktz_cbm/(twopi/Lz))
+        ! call write_spectrum_per_kz('gw_gamma-centered_ldos',iter,G_retarded(:,:,:,1,:),nen,En,nphiy,nphiz,length,NB,Lx,(/1.0d0,-2.0d0/),at_ky=0.0_dp,at_kz=0.0_dp)
+        call write_spectrum_summed_over_kz('gw_ldos',iter,G_retarded(:,:,:,1,:),nen,En,nphiy*nphiz,length,NB,Lx,(/1.0d0,-2.0d0/))
+
+    else
+        call write_spectrum_summed_over_kz('gw_ldos',iter,G_retarded(:,:,:,1,:),nen,En,nphiy*nphiz,length,NB,Lx,(/1.0d0,-2.0d0/))
+        call write_spectrum_summed_over_kz('gw_ndos',iter,G_lesser(:,:,:,1,:),nen,En,nphiy*nphiz,length,NB,Lx,(/1.0d0,1.0d0/))
+        call write_spectrum_summed_over_kz('gw_pdos',iter,G_greater(:,:,:,1,:),nen,En,nphiy*nphiz,length,NB,Lx,(/1.0d0,-1.0d0/))
+    endif
+    call write_current_spectrum('gw_Jdens',iter,sumcur,nen,en,length,NB,Lx)
+    call write_current('gw_I',iter,sumtot_cur,length,NB,NS,Lx)
+    call write_current('gw_EI',iter,sumtot_ecur,length,NB,NS,Lx)
+    call write_transmission_spectrum('gw_trL',iter,sumTr(:,1)*spindeg,nen,En)
+    call write_transmission_spectrum('gw_trR',iter,sumTr(:,2)*spindeg,nen,En)
+    ! call write_transmission_spectrum('gw_TE_LR',iter,sumTe(:,1,2)*spindeg,nen,En)
+    ! call write_transmission_spectrum('gw_TE_RL',iter,sumTe(:,2,1)*spindeg,nen,En)
+    open(unit=101,file='gw_Id_iteration.dat',status='unknown',position='append')
+    write(101,'(I4,2E16.6)') iter, sum(sumTr(:,1))*(En(2)-En(1))*e_charge/twopi/hbar*e_charge*dble(spindeg), &
+                                sum(sumTr(:,2))*(En(2)-En(1))*e_charge/twopi/hbar*e_charge*dble(spindeg)
+    close(101)
+    !
     deallocate(siglead,B)
     deallocate(sumcur,cur,tot_cur,tot_ecur,sumtot_cur,sumtot_ecur)
     deallocate(Ispec,Itot)

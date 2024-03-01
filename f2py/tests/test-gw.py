@@ -22,11 +22,12 @@ if __name__=='__main__':
 
    # ham = wannierham.full_device_mat_def(ky=0.0,kz=0.0,nb=nb,ns=2,length=length,hr=hr,cell=cell,n_range=n_range)
 
-   nen = 6400
+   nen = 1600 # number of energy points
+   nsub = 4 # number of Legendre nodes in each interval
    nky=1
    nkz=1
    nk=nky*nkz
-   niter=50
+   niter=10
    eps_screen=2.5
    r0=3.0
    emin=-10.0
@@ -36,7 +37,8 @@ if __name__=='__main__':
    ham = np.zeros((nb*length,nb*length,nk), dtype='complex')  
 
    ham[:,:,0] = wannierham.full_device_mat_def(ky=0.0,kz=0.0,nb=nb,ns=2,length=length,hr=hr,cell=cell,n_range=n_range)
-   v[:,:,0] = wannierham.full_device_bare_coulomb(ky=0.0,kz=0.0,length=length,eps=eps_screen,r0=r0,ldiag=True,nb=nb,ns=ns,method='pointlike',n_range=n_range,wannier_center=wannier_center,cell=cell)
+   v[:,:,0] = wannierham.full_device_bare_coulomb(ky=0.0,kz=0.0,length=length,eps=eps_screen,r0=r0,ldiag=True,nb=nb,ns=ns,
+                                                  method='pointlike',n_range=n_range,wannier_center=wannier_center,cell=cell)
 
    energies = np.linspace(emin,emax,nen)
 
@@ -72,8 +74,8 @@ if __name__=='__main__':
    # plt.plot(energies, cur[:,0] )
    # plt.show()
 
-   G_retarded,G_lesser,G_greater = gf_dense.solve_gw_3d(niter=niter,nm_dev=nb*length,lx=4.26,length=length,spindeg=2.0,
+   G_retarded,G_lesser,G_greater,W0 = gf_dense.solve_gw_3d(niter=niter,nm_dev=nb*length,lx=4.26,length=length,spindeg=2.0,
                                                         temps=300.0,tempd=300.0,mus=mu[0],mud=mu[1],alpha_mix=0.5,
-                                                        nen=nen,en=energies,nb=nb,ns=ns,nphiy=nky,nphiz=nkz,
+                                                        nen=nen,nsub=nsub,en=energies,nb=nb,ns=ns,nphiy=nky,nphiz=nkz,
                                                         ham=ham,h00lead=lead_h00,h10lead=lead_h10,t=lead_coupling,v=v,
-                                                        ldiag=True,flatband=False)
+                                                        ldiag=False,flatband=False)
