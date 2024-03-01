@@ -22,11 +22,11 @@ if __name__=='__main__':
 
    # ham = wannierham.full_device_mat_def(ky=0.0,kz=0.0,nb=nb,ns=2,length=length,hr=hr,cell=cell,n_range=n_range)
 
-   nen = 3200
+   nen = 6400
    nky=1
    nkz=1
    nk=nky*nkz
-   niter=5
+   niter=50
    eps_screen=2.5
    r0=3.0
    emin=-10.0

@@ -75,7 +75,7 @@ if __name__=='__main__':
 
    for nop in range(10,nen):
        print( nop )
-       P_retarded = bse_dense.bse_fullsolve(spindeg=2.0,nm_dev=nb*length,ndiag=ns*nb,nen=nen,en=energies,nop=nop,
+       P_retarded = bse_dense.bse_fullsolve(spindeg=2.0,nm_dev=nb*length,ndiag=2,nen=nen,en=energies,nop=nop,
                                             g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,
                                             w_retarded=W0[:,:,0],v=v[:,:,0])                                                        
 
