@@ -508,7 +508,7 @@ module gf_dense
                     G_greater(:,:,:,isub,ikz),Tr,Te,mu,temp,flatband)
                 !call write_spectrum('ldos_kz'//string(ikz)//'_',iter,G_retarded(:,:,:,ikz),nen,En,length,NB,Lx,(/1.0d0,-2.0d0/))
                 call calc_bond_current(Ham(:,:,ikz),G_lesser(:,:,:,isub,ikz),nen,en,spindeg,nm_dev,tot_cur,tot_ecur,cur)    
-                !call write_current_spectrum('Jdens_kz'//string(ikz)//'_',iter,cur,nen,en,length,NB,Lx)    
+                call write_current_spectrum('last_Jdens',ikz*10+isub,cur,nen,en,length,NB,Lx)    
                 sumcur=sumcur + cur * weights(isub)
                 sumtot_cur=sumtot_cur + tot_cur * weights(isub)
                 sumtot_ecur=sumtot_ecur + tot_ecur * weights(isub)
@@ -1562,15 +1562,60 @@ end module gf_dense
 
 module bse_dense    
     use parameters_mod,only:dp,twopi,pi,e_charge,epsilon0,m0_charge,hbar,c1i,czero,cone
+    use legendre
     contains
 
+    subroutine four_polarization_dense(nm_dev,nen,nsub,en,nop,ndiag,G_lesser,G_greater,G_retarded,Lmat)
+        integer,intent(in) :: nm_dev,nen,nsub,nop,ndiag 
+        real(dp),intent(in) :: en(nen)
+        complex(dp),intent(in),dimension(nm_dev,nm_dev,nen,nsub) :: G_lesser,G_greater,G_retarded
+        complex(dp),intent(out),dimension(nm_dev*nm_dev,nm_dev*nm_dev) :: Lmat
+        ! ---
+        real(dp) :: alpha , dE, weights(nsub), xen(nsub)
+        integer :: ne_margin, N, i, j, k, l, row, col, ie, isub 
+        !        
+        alpha = 0.99_dp
+        ne_margin = nen/20 ! margin of energy window
+        N = nm_dev*nm_dev
+        dE = ( En(2) - En(1) )  
+        call gaulegf(0.0d0, dble(dE), xen, weights, nsub) ! obtain the Legendre ordinates and weights    
+        !                 
+        Lmat=czero      
+        !
+        !$omp parallel default(shared) private(i,j,k,l,row,col,ie,isub)
+        !$omp do
+        do i=1,nm_dev
+            do j=max(1,i-ndiag),min(nm_dev,i+ndiag)
+                do k=max(1,i-ndiag),min(nm_dev,i+ndiag)
+                    do l=max(1,i-ndiag),min(nm_dev,i+ndiag)           
+                        row= (i-1)*nm_dev + j                
+                        col= (k-1)*nm_dev + l                                
+                        ! calculate P4_IPA from GG
+                        do ie=nop+1,nen
+                            do isub=1,nsub
+                                Lmat(row,col) = Lmat(row,col) + &
+                                        (1.0_dp - alpha) * ( G_lesser(j,l,ie,isub) * conjg(G_retarded(i,k,ie-nop,isub)) + &
+                                                            G_retarded(j,l,ie,isub) * G_lesser(k,i,ie-nop,isub) )  * weights(isub) + &
+                                        alpha * 0.5_dp * ( G_greater(j,l,ie,isub) * G_lesser(k,i,ie-nop,isub) - & 
+                                                            G_lesser(j,l,ie,isub)  * G_greater(k,i,ie-nop,isub) )  * weights(isub) 
+                            enddo 
+                        enddo          
+                        Lmat(row,col) = Lmat(row,col) / twopi * spindeg               
+                    enddo
+                enddo
+            enddo
+        enddo
+        !$omp end do
+        !$omp end parallel
+        !
+    end subroutine four_polarization_dense
 
     ! solve the full Bethe-Salpeter Equation
-    subroutine bse_fullsolve(spindeg,nm_dev,ndiag,nen,En,nop,G_lesser,G_greater,G_retarded,W_retarded,V,P_retarded,P4_retarded)
+    subroutine bse_fullsolve(spindeg,nm_dev,ndiag,nen,nsub,En,nop,G_lesser,G_greater,G_retarded,W_retarded,V,P_retarded,P4_retarded)
         use gf_dense, only: invert_inplace
-        integer,intent(in)::nm_dev,nen,nop,ndiag
+        integer,intent(in)::nm_dev,nen,nop,ndiag,nsub
         real(dp),intent(in)::en(nen),spindeg
-        complex(dp),intent(in),dimension(nm_dev,nm_dev,nen),optional:: G_lesser,G_greater,G_retarded ! electron GFs
+        complex(dp),intent(in),dimension(nm_dev,nm_dev,nen,nsub):: G_lesser,G_greater,G_retarded ! electron GFs
         complex(dp),intent(in),dimension(nm_dev,nm_dev) :: W_retarded ! W_0 static screened Coulomb interaction
         complex(dp),intent(in),dimension(nm_dev,nm_dev) :: V ! bare Coulomb interaction
         complex(dp),intent(out),dimension(nm_dev,nm_dev):: P_retarded ! 2-point polarization function with interacting electron-hole at frequency [[nop]]        
@@ -1580,44 +1625,17 @@ module bse_dense
         complex(dp),dimension(:,:),allocatable :: Mmat ! 4-point Kernel
         complex(dp),dimension(:,:),allocatable :: Amat ! 
         complex(dp),dimension(:,:),allocatable :: epsilon_M ! 
-        complex(dp) :: dE, epsM
+        complex(dp) :: epsM
         real(dp) :: start, finish, alpha
-        integer :: N,i,j,k,l,p,q,ie,row,col, ne_margin
-        !  
-        alpha = 0.99_dp
-        ne_margin = nen/20 ! margin of energy window
-        N = nm_dev*nm_dev
-        dE = ( En(2) - En(1) ) / twopi * spindeg 
+        integer :: N,i,j,k,l,p,q,ie,row,col
+        !          
+        N = nm_dev*nm_dev        
         !
         allocate(Lmat(N,N))
         allocate(Mmat(N,N))
         allocate(Amat(N,N))
         print *,'  start computation L0_ijkl = G_jl G_ki ...'        
-        Lmat=czero      
-        !
-        !$omp parallel default(shared) private(i,j,k,l,row,col,ie)
-        !$omp do
-        do i=1,nm_dev
-            do j=max(1,i-ndiag),min(nm_dev,i+ndiag)
-                do k=max(1,i-ndiag),min(nm_dev,i+ndiag)
-                    do l=max(1,i-ndiag),min(nm_dev,i+ndiag)           
-                        row= (i-1)*nm_dev + j                
-                        col= (k-1)*nm_dev + l                                
-                        ! calculate P4_IPA from -iGG
-                        do ie=nop+1,nen
-                            Lmat(row,col) = Lmat(row,col) + &
-                                    (1.0_dp - alpha) * ( G_lesser(j,l,ie) * conjg(G_retarded(i,k,ie-nop)) + &
-                                                        G_retarded(j,l,ie) * G_lesser(k,i,ie-nop) ) + &
-                                    alpha * 0.5_dp * ( G_greater(j,l,ie) * G_lesser(k,i,ie-nop) - & 
-                                                        G_lesser(j,l,ie)  * G_greater(k,i,ie-nop) ) 
-                        enddo          
-                        Lmat(row,col) = Lmat(row,col) * dE                 
-                    enddo
-                enddo
-            enddo
-        enddo
-        !$omp end do
-        !$omp end parallel
+        call four_polarization_dense(nm_dev,nen,nsub,en,nop,ndiag,G_lesser,G_greater,G_retarded,Lmat)        
         !
         Mmat=czero  
         print *,'  start computation -L0 K'
@@ -1645,7 +1663,7 @@ module bse_dense
         !
         ! (I - L0 K) -> A
         do i=1,N 
-        Amat(i,i) = Amat(i,i) + dcmplx(1.0_dp, 0.0_dp)
+            Amat(i,i) = Amat(i,i) + dcmplx(1.0_dp, 0.0_dp)
         enddo  
         print *,'  start invert (I - L0 K)'
         !
