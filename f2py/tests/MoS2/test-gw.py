@@ -14,15 +14,15 @@ if __name__=='__main__':
 
    hr,wannier_center,n_range,cell,L = wannierham.load_from_file(fname='ham_dat',lreorder_axis=False,axis=[1,2,3],nb=nb,nx=nx,ny=ny,nz=nz)
 
-   ns = 2
+   ns = 4
    length = 10 
-   nen = 1600 # number of energy points
+   nen = 3200 # number of energy points
    nsub = 4 # number of Legendre nodes in each interval
-   nky=9
+   nky=1
    nkz=1
    nk=nky*nkz
-   niter=10
-   eps_screen=2.5
+   niter=50
+   eps_screen=6.5
    r0=3.0
    emin=-10.0
    emax=4.0
@@ -36,7 +36,7 @@ if __name__=='__main__':
 
    dim_lead = np.ones(2)* nb*ns
    temp =  np.ones(2)* 300.0
-   mu = np.array( [-1, -1.2] )
+   mu = np.array( [-0.25, -0.50] )
 
    v = np.zeros((nb*length,nb*length,nk), dtype='complex')  
    ham = np.zeros((nb*length,nb*length,nk), dtype='complex')  
@@ -78,4 +78,4 @@ if __name__=='__main__':
                                                         temps=300.0,tempd=300.0,mus=mu[0],mud=mu[1],alpha_mix=0.5,
                                                         nen=nen,nsub=nsub,en=energies,nb=nb,ns=ns,nphiy=nky,nphiz=nkz,
                                                         ham=ham,h00lead=lead_h00,h10lead=lead_h10,t=lead_coupling,v=v,
-                                                        ldiag=False,flatband=False)
+                                                        ldiag=True,flatband=False)

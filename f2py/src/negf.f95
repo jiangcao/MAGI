@@ -540,7 +540,7 @@ module gf_dense
         ! call write_transmission_spectrum('gw_TE_LR',iter,sumTe(:,1,2)*spindeg,nen,En)
         ! call write_transmission_spectrum('gw_TE_RL',iter,sumTe(:,2,1)*spindeg,nen,En)
         open(unit=101,file='gw_Id_iteration.dat',status='unknown',position='append')
-        write(101,'(I4,2E16.6)') iter, sum(sumTr(:,1))*(En(2)-En(1))*e_charge/twopi/hbar*e_charge*dble(spindeg), &
+        write(101,'(I4,2E16.6)') iter, -sum(sumTr(:,1))*(En(2)-En(1))*e_charge/twopi/hbar*e_charge*dble(spindeg), &
                                     sum(sumTr(:,2))*(En(2)-En(1))*e_charge/twopi/hbar*e_charge*dble(spindeg)
         close(101)
         !
@@ -775,7 +775,7 @@ module gf_dense
     ! call write_transmission_spectrum('gw_TE_LR',iter,sumTe(:,1,2)*spindeg,nen,En)
     ! call write_transmission_spectrum('gw_TE_RL',iter,sumTe(:,2,1)*spindeg,nen,En)
     open(unit=101,file='gw_Id_iteration.dat',status='unknown',position='append')
-    write(101,'(I4,2E16.6)') iter, sum(sumTr(:,1))*(En(2)-En(1))*e_charge/twopi/hbar*e_charge*dble(spindeg), &
+    write(101,'(I4,2E16.6)') iter, -sum(sumTr(:,1))*(En(2)-En(1))*e_charge/twopi/hbar*e_charge*dble(spindeg), &
                                 sum(sumTr(:,2))*(En(2)-En(1))*e_charge/twopi/hbar*e_charge*dble(spindeg)
     close(101)
     !
