@@ -14,11 +14,11 @@ if __name__=='__main__':
 
    hr,wannier_center,n_range,cell,L = wannierham.load_from_file(fname='ham_dat',lreorder_axis=False,axis=[1,2,3],nb=nb,nx=nx,ny=ny,nz=nz)
 
-   ns = 4
-   length = 10 
+   ns = 3
+   length = 12 
    nen = 3200 # number of energy points
-   nsub = 4 # number of Legendre nodes in each interval
-   nky=1
+   nsub = 3 # number of Legendre nodes in each interval
+   nky=21
    nkz=1
    nk=nky*nkz
    niter=50
