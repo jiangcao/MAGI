@@ -29,6 +29,7 @@ if __name__=='__main__':
 
    Lz=L[2]
    Ly=L[1]
+   Lx=L[0]
    dkz=2.0*np.pi/Lz / nkz
    dky=2.0*np.pi/Ly / nky
 
@@ -74,8 +75,8 @@ if __name__=='__main__':
    # plt.plot(energies, cur[:,0] )
    # plt.show()
 
-   G_retarded,G_lesser,G_greater,W0 = gf_dense.solve_gw_3d(niter=niter,nm_dev=nb*length,lx=4.26,length=length,spindeg=2.0,
-                                                        temps=300.0,tempd=300.0,mus=mu[0],mud=mu[1],alpha_mix=0.5,
+   G_retarded,G_lesser,G_greater,W0 = gf_dense.solve_gw_3d(niter=niter,nm_dev=nb*length,lx=Lx,length=length,spindeg=2.0,
+                                                        temps=temp[0],tempd=temp[1],mus=mu[0],mud=mu[1],alpha_mix=0.5,
                                                         nen=nen,nsub=nsub,en=energies,nb=nb,ns=ns,nphiy=nky,nphiz=nkz,
                                                         ham=ham,h00lead=lead_h00,h10lead=lead_h10,t=lead_coupling,v=v,
                                                         ldiag=True,flatband=False)
