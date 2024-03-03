@@ -1560,23 +1560,58 @@ module gf_dense
 end module gf_dense
 
 
+module observ
+use parameters_mod
+use legendre
+implicit none
+contains
+
+! calculate number of electrons and holes from G< and G> 
+subroutine calc_charge(G_lesser,G_greater,nen,nsub,E,NS,NB,nm_dev,nelec,pelec,midgap)
+    complex(8), intent(in) :: G_lesser(nm_dev,nm_dev,nen,nsub)
+    complex(8), intent(in) :: G_greater(nm_dev,nm_dev,nen,nsub)
+    real(8), intent(in)    :: E(nen),midgap(nm_dev)
+    integer, intent(in)    :: NS,NB,nm_dev,nen,nsub
+    real(8), intent(out)   :: nelec(nm_dev),pelec(nm_dev)
+    real(8)::dE, weights(nsub), xen(nsub)
+    integer::i,j,isub
+    call gaulegf(0.0d0, dble(dE), xen, weights, nsub) ! obtain the Legendre ordinates and weights    
+    nelec=0.0d0
+    pelec=0.0d0
+    dE=E(2)-E(1)
+    do j=1,nm_dev
+        do isub=1,nsub
+            do i=1,nen
+                if (E(i)>midgap(1))then
+                    nelec(j)=nelec(j)+aimag(G_lesser(j,j,i,isub))*weights(isub)
+                else
+                    pelec(j)=pelec(j)-aimag(G_greater(j,j,i,isub))*weights(isub)
+                endif
+            enddo
+        enddo
+    enddo
+end subroutine calc_charge
+
+end module observ
+
+
 module bse_dense    
     use parameters_mod,only:dp,twopi,pi,e_charge,epsilon0,m0_charge,hbar,c1i,czero,cone
     use legendre
+    implicit none
     contains
 
-    subroutine four_polarization_dense(nm_dev,nen,nsub,en,nop,ndiag,G_lesser,G_greater,G_retarded,Lmat)
-        integer,intent(in) :: nm_dev,nen,nsub,nop,ndiag 
+    subroutine four_polarization_dense(nm_dev,nen,nsub,en,nop,nk,ndiag,G_lesser,G_greater,G_retarded,Lmat)
+        integer,intent(in) :: nm_dev,nen,nsub,nop,ndiag ,nk
         real(dp),intent(in) :: en(nen)
-        complex(dp),intent(in),dimension(nm_dev,nm_dev,nen,nsub) :: G_lesser,G_greater,G_retarded
+        complex(dp),intent(in),dimension(nm_dev,nm_dev,nen,nsub,nk) :: G_lesser,G_greater,G_retarded
         complex(dp),intent(out),dimension(nm_dev*nm_dev,nm_dev*nm_dev) :: Lmat
         ! ---
         real(dp) :: alpha , dE, weights(nsub), xen(nsub)
-        integer :: ne_margin, N, i, j, k, l, row, col, ie, isub 
-        !        
-        alpha = 0.99_dp
-        ne_margin = nen/20 ! margin of energy window
-        N = nm_dev*nm_dev
+        integer :: i, j, k, l, row, col, ie, isub , ik,ikd
+        ik=1
+        ikd=1        
+        alpha = 0.5_dp
         dE = ( En(2) - En(1) )  
         call gaulegf(0.0d0, dble(dE), xen, weights, nsub) ! obtain the Legendre ordinates and weights    
         !                 
@@ -1591,16 +1626,16 @@ module bse_dense
                         row= (i-1)*nm_dev + j                
                         col= (k-1)*nm_dev + l                                
                         ! calculate P4_IPA from GG
-                        do ie=nop+1,nen
-                            do isub=1,nsub
+                        do isub=1,nsub
+                            do ie=nop+1,nen                            
                                 Lmat(row,col) = Lmat(row,col) + &
-                                        (1.0_dp - alpha) * ( G_lesser(j,l,ie,isub) * conjg(G_retarded(i,k,ie-nop,isub)) + &
-                                                            G_retarded(j,l,ie,isub) * G_lesser(k,i,ie-nop,isub) )  * weights(isub) + &
-                                        alpha * 0.5_dp * ( G_greater(j,l,ie,isub) * G_lesser(k,i,ie-nop,isub) - & 
-                                                            G_lesser(j,l,ie,isub)  * G_greater(k,i,ie-nop,isub) )  * weights(isub) 
+                                        (1.0_dp - alpha) * ( G_lesser(j,l,ie,isub,ik) * conjg(G_retarded(i,k,ie-nop,isub,ikd)) + &
+                                                            G_retarded(j,l,ie,isub,ik) * G_lesser(k,i,ie-nop,isub,ikd) )  * weights(isub) + &
+                                          alpha * 0.5_dp * ( G_greater(j,l,ie,isub,ik) * G_lesser(k,i,ie-nop,isub,ikd) - & 
+                                                            G_lesser(j,l,ie,isub,ik)  * G_greater(k,i,ie-nop,isub,ikd) )  * weights(isub) 
                             enddo 
                         enddo          
-                        Lmat(row,col) = Lmat(row,col) / twopi * spindeg               
+                        Lmat(row,col) = Lmat(row,col) / twopi                
                     enddo
                 enddo
             enddo
@@ -1611,11 +1646,11 @@ module bse_dense
     end subroutine four_polarization_dense
 
     ! solve the full Bethe-Salpeter Equation
-    subroutine bse_fullsolve(spindeg,nm_dev,ndiag,nen,nsub,En,nop,G_lesser,G_greater,G_retarded,W_retarded,V,P_retarded,P4_retarded)
+    subroutine bse_fullsolve(spindeg,nm_dev,ndiag,nen,nsub,En,nop,nk,G_lesser,G_greater,G_retarded,W_retarded,V,P_retarded,P4_retarded)
         use gf_dense, only: invert_inplace
-        integer,intent(in)::nm_dev,nen,nop,ndiag,nsub
+        integer,intent(in)::nm_dev,nen,nop,ndiag,nsub,nk
         real(dp),intent(in)::en(nen),spindeg
-        complex(dp),intent(in),dimension(nm_dev,nm_dev,nen,nsub):: G_lesser,G_greater,G_retarded ! electron GFs
+        complex(dp),intent(in),dimension(nm_dev,nm_dev,nen,nsub,nk):: G_lesser,G_greater,G_retarded ! electron GFs
         complex(dp),intent(in),dimension(nm_dev,nm_dev) :: W_retarded ! W_0 static screened Coulomb interaction
         complex(dp),intent(in),dimension(nm_dev,nm_dev) :: V ! bare Coulomb interaction
         complex(dp),intent(out),dimension(nm_dev,nm_dev):: P_retarded ! 2-point polarization function with interacting electron-hole at frequency [[nop]]        
@@ -1635,7 +1670,7 @@ module bse_dense
         allocate(Mmat(N,N))
         allocate(Amat(N,N))
         print *,'  start computation L0_ijkl = G_jl G_ki ...'        
-        call four_polarization_dense(nm_dev,nen,nsub,en,nop,ndiag,G_lesser,G_greater,G_retarded,Lmat)        
+        call four_polarization_dense(nm_dev,nen,nsub,en,nop,nk,ndiag,G_lesser,G_greater,G_retarded,Lmat)        
         !
         Mmat=czero  
         print *,'  start computation -L0 K'
@@ -1713,7 +1748,7 @@ module bse_dense
             epsilon_M(j,j) = epsilon_M(j,j) + cone
         enddo      
         open(unit=99,file='bse_epsilonM.dat',status='unknown', position="append", action="write")    
-        epsM = sum( epsilon_M(nm_dev/2,nb*ns+1:nm_dev-nb*ns) )
+        epsM = sum( epsilon_M(nm_dev/2,:) )
         write(99,*) dble(nop)*(En(2)-En(1)) , aimag(epsM), dble(epsM) ! Im \epsilon_M -> absorption
         close(99)
     end subroutine bse_fullsolve
