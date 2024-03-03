@@ -1566,31 +1566,34 @@ use legendre
 implicit none
 contains
 
-! calculate number of electrons and holes from G< and G> 
-subroutine calc_charge(G_lesser,G_greater,nen,nsub,E,NS,NB,nm_dev,nelec,pelec,midgap)
-    complex(8), intent(in) :: G_lesser(nm_dev,nm_dev,nen,nsub)
-    complex(8), intent(in) :: G_greater(nm_dev,nm_dev,nen,nsub)
-    real(8), intent(in)    :: E(nen),midgap(nm_dev)
-    integer, intent(in)    :: NS,NB,nm_dev,nen,nsub
-    real(8), intent(out)   :: nelec(nm_dev),pelec(nm_dev)
-    real(8)::dE, weights(nsub), xen(nsub)
-    integer::i,j,isub
-    call gaulegf(0.0d0, dble(dE), xen, weights, nsub) ! obtain the Legendre ordinates and weights    
-    nelec=0.0d0
-    pelec=0.0d0
-    dE=E(2)-E(1)
-    do j=1,nm_dev
-        do isub=1,nsub
-            do i=1,nen
-                if (E(i)>midgap(1))then
-                    nelec(j)=nelec(j)+aimag(G_lesser(j,j,i,isub))*weights(isub)
-                else
-                    pelec(j)=pelec(j)-aimag(G_greater(j,j,i,isub))*weights(isub)
-                endif
+    ! calculate number of electrons and holes from G< and G> 
+    subroutine calc_charge(G_lesser,G_greater,nen,nsub,nk,E,NS,NB,nm_dev,nelec,pelec,midgap)
+        complex(8), intent(in) :: G_lesser(nm_dev,nm_dev,nen,nsub,nk)
+        complex(8), intent(in) :: G_greater(nm_dev,nm_dev,nen,nsub,nk)
+        real(8), intent(in)    :: E(nen),midgap(nm_dev)
+        integer, intent(in)    :: NS,NB,nm_dev,nen,nsub,nk
+        real(8), intent(out)   :: nelec(nm_dev),pelec(nm_dev)
+        real(8)::dE, weights(nsub), xen(nsub)
+        integer::i,j,isub,ik
+        dE=E(2)-E(1)
+        call gaulegf(0.0d0, dble(dE), xen, weights, nsub) ! obtain the Legendre ordinates and weights    
+        weights=weights/dble(nk)
+        nelec=0.0d0
+        pelec=0.0d0        
+        do ik=1,nk
+            do j=1,nm_dev
+                do isub=1,nsub
+                    do i=1,nen
+                        if (E(i)>midgap(1))then
+                            nelec(j)=nelec(j)+aimag(G_lesser(j,j,i,isub,ik))*weights(isub)
+                        else
+                            pelec(j)=pelec(j)-aimag(G_greater(j,j,i,isub,ik))*weights(isub)
+                        endif
+                    enddo
+                enddo
             enddo
         enddo
-    enddo
-end subroutine calc_charge
+    end subroutine calc_charge
 
 end module observ
 
