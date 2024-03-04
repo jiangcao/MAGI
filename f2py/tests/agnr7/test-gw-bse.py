@@ -20,7 +20,7 @@ if __name__=='__main__':
 
    ns = 2
    length = 10 
-   nen = 1200
+   nen = 2000
    nsub = 3
    nky=1
    nkz=1
@@ -86,7 +86,7 @@ if __name__=='__main__':
     #    plt.spy(np.abs(P4))
     #    plt.show()
 
-       P_retarded, system = bse_dense.bse_fullsolve(spindeg=2.0,nm_dev=nb*length,ndiag=4,nen=nen,nsub=nsub,en=energies,nop=nop,nk=nk,
+       P_retarded, system = bse_dense.bse_fullsolve(alpha=0.99,spindeg=2.0,nm_dev=nb*length,ndiag=nb,nen=nen,nsub=nsub,en=energies,nop=nop,nk=nk,
                                             g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,
                                             w_retarded=W0[:,:,0],v=v[:,:,0])                                                        
        plt.spy(system)
