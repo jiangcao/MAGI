@@ -19,14 +19,14 @@ if __name__=='__main__':
    Lx=L[0]
 
    ns = 2
-   length = 10 
-   nen = 1000
+   length = 6 
+   nen = 400
    nsub = 3
    nky=1
    nkz=1
    nk=nky*nkz
    niter=0
-   eps_screen=2.5
+   eps_screen=1.0
    r0=3.0
    emin=-10.0
    emax=4.0
@@ -41,8 +41,8 @@ if __name__=='__main__':
    energies = np.linspace(emin,emax,nen)
 
    dim_lead = np.ones(2)* nb*ns
-   temp =  np.ones(2)* 300.0
-   mu = np.array( [-1, -1.2] )
+   temp =  np.ones(2)* 7.0
+   mu = np.array( [-2.0, -2.0] )
 
    siglead = np.zeros((nb*ns,nb*ns,nen,2,nk), dtype='complex')
 
@@ -78,11 +78,18 @@ if __name__=='__main__':
                                                         ham=ham,h00lead=lead_h00,h10lead=lead_h10,t=lead_coupling,v=v,
                                                         ldiag=True,flatband=False)
 
-   for nop in range(10,nen):
+   for nop in range(150,151):
        print( nop )
-       P_retarded = bse_dense.bse_fullsolve(spindeg=2.0,nm_dev=nb*length,ndiag=0,nen=nen,nsub=nsub,en=energies,nop=nop,
+    #    P4 = bse_dense.four_polarization_dense(nm_dev=nb*length,nen=nen,nsub=nsub,nk=nk,en=energies,nop=nop,ndiag=0,
+    #                                           g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded)
+       
+    #    plt.spy(np.abs(P4))
+    #    plt.show()
+
+       P_retarded, system = bse_dense.bse_fullsolve(spindeg=2.0,nm_dev=nb*length,ndiag=nb,nen=nen,nsub=nsub,en=energies,nop=nop,nk=nk,
                                             g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,
                                             w_retarded=W0[:,:,0],v=v[:,:,0])                                                        
-
+       plt.spy(system)
+       plt.show()
 #    P_retarded = bse_dense.bse_solve(spindeg=2.0,nm_dev=nb*length,nen=nen,en=energies,nop=nop,g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,w_retarded=v[:,:,0],v=v[:,:,0])                                                        
    
