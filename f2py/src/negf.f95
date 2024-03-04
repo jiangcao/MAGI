@@ -1654,7 +1654,7 @@ module bse_dense
     end subroutine four_polarization
 
     ! solve the full Bethe-Salpeter Equation
-    subroutine bse_fullsolve(spindeg,nm_dev,ndiag,nen,nsub,En,nop,nk,G_lesser,G_greater,G_retarded,W_retarded,V,P_retarded,Amat)
+    subroutine bse_fullsolve(spindeg,nm_dev,ndiag,nen,nsub,En,nop,nk,G_lesser,G_greater,G_retarded,W_retarded,V,P_retarded,system)
         use gf_dense, only: invert_inplace
         integer,intent(in)::nm_dev,nen,nop,ndiag,nsub,nk
         real(dp),intent(in)::en(nen),spindeg
@@ -1662,46 +1662,50 @@ module bse_dense
         complex(dp),intent(in),dimension(nm_dev,nm_dev) :: W_retarded ! W_0 static screened Coulomb interaction
         complex(dp),intent(in),dimension(nm_dev,nm_dev) :: V ! bare Coulomb interaction
         complex(dp),intent(out),dimension(nm_dev,nm_dev):: P_retarded ! 2-point polarization function with interacting electron-hole at frequency [[nop]]        
-        complex(dp),intent(out),dimension(nm_dev*nm_dev,nm_dev*nm_dev):: Amat ! system matrix
+        complex(dp),intent(out),dimension(nm_dev*(ndiag*2 + 1) ,nm_dev*(ndiag*2 + 1) ):: system ! system matrix
         !complex(dp),intent(out),dimension(nm_dev,nm_dev,nm_dev,nm_dev),optional:: P4_retarded ! 4-point polarization function with interacting electron-hole 
         !---------
         complex(dp),dimension(:,:),allocatable :: Lmat ! two-particle Green's function 
         complex(dp),dimension(:,:),allocatable :: Mmat ! 4-point Kernel
+        complex(dp),dimension(:,:),allocatable :: Amat ! system matrix
         complex(dp),dimension(:,:),allocatable :: epsilon_M ! macroscopic dielectric function
         complex(dp) :: epsM, L0ijkl
         real(dp) :: start, finish, alpha
         integer :: N,i,j,k,l,p,q,ie,row,col
         !          
-        N = nm_dev*nm_dev        
+        N = nm_dev*(ndiag*2 + 1)        
         !        
         allocate(Mmat(N,N))        
-        allocate(Lmat(N,N))        
+        allocate(Lmat(N,N))     
+        allocate(Amat(N,N))        
         Mmat=czero
         Lmat=czero
         print *,'  start computation L0_ijkl = G_jl G_ki ...'        
         ! rearrange L0 in a matrix shape of [[xx,xd],[dx,dd]]        
-        !$omp parallel default(shared) private(i,j,k,l,row,col)
+        !$omp parallel default(shared) private(i,j,k,l,row,col,L0ijkl)
         !$omp do
         do i=1,nm_dev            
-            Mmat(i,i) = Mmat(i,i) + c1i *  W_retarded(i,i)             
+            Mmat(i,i) = Mmat(i,i) + c1i *  W_retarded(i,i)                 
             do k=1,nm_dev
                 ! exchange part L0_iikk      i=j and k=l                          
                 call four_polarization(nm_dev,nen,nsub,en,nop,nk,ndiag,G_lesser,G_greater,G_retarded,L0ijkl,i,i,k,k)
                 Lmat(i,k) = L0ijkl
-                Mmat(i,k) = Mmat(i,k) - c1i *  V(i,k) * spindeg
-                ! other parts
+                Mmat(i,k) = Mmat(i,k) - c1i *  V(i,k) * spindeg                
+                ! other parts in L0
                 row=0
                 do j=max(1,i-ndiag), min(nm_dev,i+ndiag)                     
                     if (i /= j) then                    
-                        row=row+nm_dev
-                        Mmat(i+row,i+row) = c1i *  W_retarded(i,j)
+                        row=row+nm_dev                        
                         col=0
                         do l=max(1,k-ndiag), min(nm_dev,k+ndiag)
                             if (l /= k) then 
                                 ! i/=j and l/=k
                                 col=col+nm_dev
                                 call four_polarization(nm_dev,nen,nsub,en,nop,nk,ndiag,G_lesser,G_greater,G_retarded,L0ijkl,i,j,k,l)                            
-                                Lmat(i+row,k+col)=L0ijkl                                
+                                Lmat(i+row,k+col)=L0ijkl  
+                                if ((i==l).and.(j==k)) then 
+                                    Mmat(i+row,k+col)= c1i *  W_retarded(i,j) 
+                                endif
                             else
                                 ! i/=j but l=k
                                 call four_polarization(nm_dev,nen,nsub,en,nop,nk,ndiag,G_lesser,G_greater,G_retarded,L0ijkl,i,j,k,l)                            
@@ -1735,57 +1739,41 @@ module bse_dense
             Amat(i,i) = Amat(i,i) + dcmplx(1.0_dp, 0.0_dp)
         enddo  
         !
-        ! print *,'  start invert (I - L0 K)'
+        system = Amat
+        print *,'  start invert (I - L0 K)'
+        !
+        call invert_inplace(Amat,N)
+        !
+        print *,'  start computation L = (I - L0 K) \ L0  '
+        !
+        call zgemm('n','n',N,N,N,cone,Amat,N,Lmat,N,czero,Mmat,N) 
+        !
+        !call save_matrix('bse_L.dat',N, Mmat)
+        !
+        P_retarded(1:nm_dev,1:nm_dev) =  - c1i * Mmat(1:nm_dev,1:nm_dev)                                
+        !        
         ! !
-        ! call invert_inplace(Amat,N)
-        ! !
-        ! print *,'  start computation L = (I - L0 K) \ L0  '
-        ! !
-        ! call zgemm('n','n',N,N,N,cone,Amat,N,Lmat,N,czero,Mmat,N) 
-        ! !
-        ! !call save_matrix('bse_L.dat',N, Mmat)
-        ! !
-        ! P_retarded = czero
-        ! !$omp parallel default(shared) private(i,j,row,col)
-        ! !$omp do
-        ! do i=1,nm_dev
-        !     do j=1,nm_dev      
-        !         row= (i-1)*nm_dev + i                
-        !         col= (j-1)*nm_dev + j
-        !         P_retarded(i,j) = - c1i * Mmat(row,col)                
-        !     enddo
-        ! enddo
-        ! !$omp end do
-        ! !$omp end parallel
-        ! if (present(P4_retarded)) then 
-        ! !$omp parallel default(shared) private(i,j,k,l,row,col)
-        ! !$omp do
-        ! do i=1,nm_dev
-        !     do j=1,nm_dev      
-        !         do k=1,nm_dev
-        !             do l=1,nm_dev
-        !                 row= (i-1)*nm_dev + j                
-        !                 col= (k-1)*nm_dev + l
-        !                 P4_retarded(i,j,k,l) = - c1i * Mmat(row,col) 
-        !             enddo
-        !         enddo
-        !     enddo
-        ! enddo
-        ! !$omp end do
-        ! !$omp end parallel
-        ! endif 
-        ! !
-        deallocate(Mmat,Lmat)
-        ! !
-        ! allocate(epsilon_M(nm_dev,nm_dev))
-        ! call zgemm('n','n',nm_dev,nm_dev,nm_dev,-cone,V,nm_dev,P_retarded,nm_dev,czero,epsilon_M,nm_dev) 
-        ! do j=1,nm_dev 
-        !     epsilon_M(j,j) = epsilon_M(j,j) + cone
-        ! enddo      
-        ! open(unit=99,file='bse_epsilonM.dat',status='unknown', position="append", action="write")    
-        ! epsM = sum( epsilon_M(nm_dev/2,:) )
-        ! write(99,*) dble(nop)*(En(2)-En(1)) , aimag(epsM), dble(epsM) ! Im \epsilon_M -> absorption
-        ! close(99)
+        allocate(epsilon_M(nm_dev,nm_dev))
+        call zgemm('n','n',nm_dev,nm_dev,nm_dev,-cone,V,nm_dev,P_retarded,nm_dev,czero,epsilon_M,nm_dev) 
+        do j=1,nm_dev 
+            epsilon_M(j,j) = epsilon_M(j,j) + cone
+        enddo      
+        open(unit=99,file='bse_epsilonM.dat',status='unknown', position="append", action="write")    
+        epsM = sum( epsilon_M(nm_dev/2,:) )
+        write(99,*) dble(nop)*(En(2)-En(1)) , aimag(epsM), dble(epsM) ! Im \epsilon_M -> absorption
+        close(99)
+        !
+        call zgemm('n','n',nm_dev,nm_dev,nm_dev,c1i,V,nm_dev,Lmat(1:nm_dev,1:nm_dev),nm_dev,czero,epsilon_M,nm_dev) 
+        do j=1,nm_dev 
+            epsilon_M(j,j) = epsilon_M(j,j) + cone
+        enddo      
+        call invert_inplace(epsilon_M,nm_dev)
+        open(unit=99,file='gw_epsilonM.dat',status='unknown', position="append", action="write")    
+        epsM = sum( epsilon_M(nm_dev/2,:) )
+        write(99,*) dble(nop)*(En(2)-En(1)) , -aimag(epsM), dble(epsM) ! - Im \epsilon^{-1} -> EELS
+        close(99)
+        deallocate(epsilon_M)
+        deallocate(Mmat,Lmat,Amat)
     end subroutine bse_fullsolve
   
 
