@@ -1686,7 +1686,7 @@ module bse_dense
             Mmat(i,i) = Mmat(i,i) + c1i *  W_retarded(i,i)             
             do k=1,nm_dev
                 ! exchange part L0_iikk      i=j and k=l                          
-                call four_polarization_dense(nm_dev,nen,nsub,en,nop,nk,ndiag,G_lesser,G_greater,G_retarded,L0ijkl,i,i,k,k)
+                call four_polarization(nm_dev,nen,nsub,en,nop,nk,ndiag,G_lesser,G_greater,G_retarded,L0ijkl,i,i,k,k)
                 Lmat(i,k) = L0ijkl
                 Mmat(i,k) = Mmat(i,k) - c1i *  V(i,k) * spindeg
                 ! other parts
