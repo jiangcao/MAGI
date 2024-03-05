@@ -19,7 +19,7 @@ if __name__=='__main__':
    Lx=L[0]
 
    ns = 2
-   length = 10 
+   length = 6 
    nen = 2000
    nsub = 3
    nky=1
@@ -78,7 +78,7 @@ if __name__=='__main__':
                                                         ham=ham,h00lead=lead_h00,h10lead=lead_h10,t=lead_coupling,v=v,
                                                         ldiag=True,flatband=False)
 
-   for nop in range(10,int(5.0/(energies[1]-energies[0])),4):
+   for nop in range(10,int(3.0/(energies[1]-energies[0])),4):
        print( nop,nop*(energies[1]-energies[0]) )
     #    P4 = bse_dense.four_polarization_dense(nm_dev=nb*length,nen=nen,nsub=nsub,nk=nk,en=energies,nop=nop,ndiag=0,
     #                                           g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded)
@@ -86,10 +86,13 @@ if __name__=='__main__':
     #    plt.spy(np.abs(P4))
     #    plt.show()
 
-       P_retarded, system = bse_dense.bse_fullsolve(alpha=0.99,spindeg=2.0,nm_dev=nb*length,ndiag=nb,nen=nen,nsub=nsub,en=energies,nop=nop,nk=nk,
+       P_retarded, system = bse_dense.bse_fullsolve(alpha=0.5,spindeg=2.0,nm_dev=nb*length,ndiag=6,nen=nen,nsub=nsub,
+                                            en=energies,nop=nop,nk=nk,
                                             g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,
                                             w_retarded=W0[:,:,0],v=v[:,:,0])                                                        
-       plt.spy(system)
-       plt.savefig('pattern.png')
+       if (nop == 10):
+         plt.spy(system)
+         plt.savefig('pattern.png')
+         # plt.show()
 #    P_retarded = bse_dense.bse_solve(spindeg=2.0,nm_dev=nb*length,nen=nen,en=energies,nop=nop,g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,w_retarded=v[:,:,0],v=v[:,:,0])                                                        
    
