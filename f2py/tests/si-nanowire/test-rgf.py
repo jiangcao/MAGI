@@ -13,9 +13,9 @@ if __name__=='__main__':
 
    hr,wannier_center,n_range,cell,L = wannierham.load_from_file(fname='ham_dat',lreorder_axis=False,axis=[1,2,3],nb=nb,nx=nx,ny=ny,nz=nz)
 
-   ns = 2
-   length = 5
-   nen = 100 # number of energy points
+   ns = 4
+   length = 13
+   nen = 1000 # number of energy points
    nsub = 3 # number of Legendre nodes in each interval
    nky=1
    nkz=1
@@ -34,13 +34,14 @@ if __name__=='__main__':
 
    energies = np.linspace(emin,emax,nen)
 
+   print('prepare matrices')
 
    dev_h00 = np.zeros((nb*ns,nb*ns,length), dtype='complex')
    dev_s00 = np.zeros((nb*ns,nb*ns,length), dtype='complex')
    dev_h10 = np.zeros((nb*ns,nb*ns,length+1), dtype='complex')
 
-   sig_l = np.zeros((nb*ns,nb*ns,length), dtype='complex')
-   sig_r = np.zeros((nb*ns,nb*ns,length), dtype='complex')
+   sig_l = np.zeros((nb*ns,nb*ns,length,nen), dtype='complex')
+   sig_r = np.zeros((nb*ns,nb*ns,length,nen), dtype='complex')
 
    mul = np.ones((nb*ns,nb*ns), dtype='double') * -1.5
    mur = np.ones((nb*ns,nb*ns), dtype='double') * -1.6
@@ -63,14 +64,22 @@ if __name__=='__main__':
       dev_h10[:,:,ix] = h10
       dev_s00[:,:,ix] = np.eye(nb*ns)
    dev_h10[:,:,length] = h10
+
+   dE=energies[1]=energies[0]
+   nop = 10
    
-   for ie in range(nen):
-      print(ie, energies[ie])
-      G_r, G_lesser, G_greater, Jdens, tr[ie], tre[ie] = rgf.rgf_std(nx=length,mm=nb*ns,nm=nm, en=energies[ie], mul=mul, mur=mur, templ=templ, tempr=tempr, 
+   for it in range(5):
+      print('iteration:',it)
+      G_r, G_lesser, G_greater, Jdens, tr, tre = rgf.rgf_energies(nx=length,mm=nb*ns,nm=nm,nen=nen,energies=energies, mul=mul, mur=mur, templ=templ, tempr=tempr, 
                                                             hii=dev_h00, h1i=dev_h10, sii=dev_s00, 
                                                             sigma_lesser_ph=sig_l, sigma_r_ph=sig_r, verbose=False)
-      
-   plt.plot(energies,tr)
-   plt.plot(energies,tre)
-   plt.show()
+
+      print('IDS=',sum(tr),-sum(tre))                                                            
+         
+      sig_r,sig_l,sig_g = rgf.selfenergy_eph_mono(nm=nb*ns,length=length,nen=nen,en=energies,nop=nop,mii=dev_s00,
+         g_lesser=G_lesser,g_greater=G_greater,pre_fact=1.0,intensity=1.0,hw=dE*nop)
+
+   # plt.plot(energies,tr)
+   # plt.plot(energies,tre)
+   # plt.show()
       
