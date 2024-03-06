@@ -205,7 +205,7 @@ end module fft_mod
 
 
 module output 
-
+    implicit none
     contains 
 
     ! write spectrum into file (pm3d map)
@@ -1040,7 +1040,7 @@ module gf_dense
         nopmax=nen/2-1  
         ndiag=nm_dev !NB*NS
         if (ldiag) ndiag=0  
-        print *,'ndiag=',ndiag
+        ! print *,'ndiag=',ndiag
         ! Pij^<>(hw,kz') = \int_dE Gij^<>(E,kz) * Gji^><(E-hw,kz-kz')
         ! Pij^r(hw,kz')  = \int_dE Gij^<(E,kz) * Gji^a(E-hw,kz-kz') + Gij^r(E,kz) * Gji^<(E-hw,kz-kz')        
         do iq=1,nphiy*nphiz    
@@ -1126,7 +1126,7 @@ module gf_dense
         !  
         ndiag=nm_dev !nb*ns
         if (ldiag) ndiag=0  
-        print *,'ndiag=',ndiag
+        ! print *,'ndiag=',ndiag
         nopmax=nen/2-1
         Sig_greater_new = dcmplx(0.0d0,0.0d0)
         Sig_lesser_new = dcmplx(0.0d0,0.0d0)
@@ -2050,3 +2050,369 @@ module bse_dense
     end subroutine save_matrix
     
 end module bse_dense
+
+
+
+module matrix_c 
+    use parameters_mod
+    implicit none 
+    contains 
+
+
+    pure function trace(A) result(tr)
+        implicit none
+        complex(dp), intent(in) :: A(:, :)
+        complex(dp):: tr
+        integer :: ii
+        tr = sum((/(A(ii, ii), ii=1, size(A, 1))/))
+    end function trace
+
+
+    subroutine triMUL_C(A, B, C, R, trA, trB, trC)
+        complex(8), intent(in), dimension(:, :) :: A, B, C
+        complex(8), intent(out), allocatable :: R(:, :)
+        character, intent(in) :: trA, trB, trC
+        complex(8), allocatable, dimension(:, :) :: tmp
+        integer :: n, m, k, kb
+        if ((trA .ne. 'n') .and. (trA .ne. 'N') .and. (trA .ne. 't') .and. (trA .ne. 'T') &
+            .and. (trA .ne. 'c') .and. (trA .ne. 'C')) then
+            write (*, *) "ERROR in triMUL_C! trA is wrong: ", trA
+            call abort()
+        end if
+        if ((trB .ne. 'n') .and. (trB .ne. 'N') .and. (trB .ne. 't') .and. (trB .ne. 'T') &
+            .and. (trB .ne. 'c') .and. (trB .ne. 'C')) then
+            write (*, *) "ERROR in triMUL_C! trB is wrong: ", trB
+            call abort()
+        end if
+        if ((trA .eq. 'n') .or. (trA .eq. 'N')) then
+            k = size(A, 2)
+            m = size(A, 1)
+        else
+            k = size(A, 1)
+            m = size(A, 2)
+        end if
+        if ((trB .eq. 'n') .or. (trB .eq. 'N')) then
+            kb = size(B, 1)
+            n = size(B, 2)
+        else
+            kb = size(B, 2)
+            n = size(B, 1)
+        end if
+        if (k .ne. kb) then
+            write (*, *) "ERROR in triMUL_C! Matrix dimension is wrong", k, kb
+            call abort()
+        end if
+        call MUL_C(A, B, trA, trB, tmp)
+        call MUL_C(tmp, C, 'n', trC, R)
+        deallocate (tmp)
+    end subroutine triMUL_C
+
+    subroutine MUL_C(A, B, trA, trB, R)
+        complex(8), intent(in) :: A(:, :), B(:, :)
+        complex(8), intent(out), allocatable :: R(:, :)
+        CHARACTER, intent(in) :: trA, trB
+        integer :: n, m, k, kb, lda, ldb
+        if ((trA .ne. 'n') .and. (trA .ne. 'N') .and. (trA .ne. 't') .and. (trA .ne. 'T') &
+            .and. (trA .ne. 'c') .and. (trA .ne. 'C')) then
+            write (*, *) "ERROR in MUL_C! trA is wrong: ", trA
+            call abort()
+        end if
+        if ((trB .ne. 'n') .and. (trB .ne. 'N') .and. (trB .ne. 't') .and. (trB .ne. 'T') &
+            .and. (trB .ne. 'c') .and. (trB .ne. 'C')) then
+            write (*, *) "ERROR in MUL_C! trB is wrong: ", trB
+            call abort()
+        end if
+        lda = size(A, 1)
+        ldb = size(B, 1)
+        if ((trA .eq. 'n') .or. (trA .eq. 'N')) then
+            k = size(A, 2)
+            m = size(A, 1)
+        else
+            k = size(A, 1)
+            m = size(A, 2)
+        end if
+        if ((trB .eq. 'n') .or. (trB .eq. 'N')) then
+            kb = size(B, 1)
+            n = size(B, 2)
+        else
+            kb = size(B, 2)
+            n = size(B, 1)
+        end if
+        if (k .ne. kb) then
+            write (*, *) "ERROR in MUL_C! Matrix dimension is wrong", k, kb
+            call abort()
+        end if
+        if (allocated(R)) then
+            if ((size(R, 1) .ne. m) .or. (size(R, 2) .ne. n)) then
+                deallocate (R)
+                Allocate (R(m, n))
+            end if
+        else
+            Allocate (R(m, n))
+        end if        
+        call zgemm(trA, trB, m, n, k, dcmplx(1.0d0, 0.0d0), A, lda, B, ldb, dcmplx(0.0d0, 0.0d0), R, m)
+    end subroutine MUL_C
+
+end module matrix_c
+
+
+
+module rgf
+    use parameters_mod
+    use open_boundary 
+    use gf_dense,only: invert => invert_inplace
+    use matrix_c, only: MUL_C, triMUL_C, trace
+    use omp_lib
+    implicit none 
+    contains
+
+    !!  Fermi distribution function
+    elemental Function ferm(a)
+        Real(dp), intent(in) ::  a
+        real(dp) :: ferm
+        ferm = 1.0d0/(1.0d0 + Exp(a))
+    End Function ferm
+
+    subroutine rgf_std(nx,mm,nm, En, mul, mur, TEMPl, TEMPr, Hii, H1i, Sii, sigma_lesser_ph, &
+            sigma_r_ph, G_r, G_lesser, G_greater, Jdens, tr, tre, verbose)
+    !!  Recursive Green's solver, solves these two equations together and compute the current
+    !!  $$[zI-H-\Sigma^r] G^r = I$$
+    !!  $$G^{<>} = G^r \Sigma^{<>} (G^r)^\dagger$$
+    !!  $$J = [H,G^<]$$         
+    integer, intent(in) :: mm !! max size of blocks
+    integer, intent(in) :: nx !! lenght of the device    
+    complex(dp), intent(in) :: Hii(mm,mm,nx), H1i(mm,mm,nx + 1), Sii(mm,mm,nx), sigma_lesser_ph(mm,mm,nx), sigma_r_ph(mm,mm,nx)
+    real(dp), intent(in)       :: En, mul(:, :), mur(:, :), TEMPr(:, :), TEMPl(:, :)    
+    integer, intent(in) :: nm(nx) !! size of each block
+    logical, intent(in) :: verbose
+    complex(dp), intent(out) :: G_greater(mm,mm,nx), G_lesser(mm,mm,nx), G_r(mm,mm,nx), Jdens(mm,mm,nx)            
+    real(dp), intent(out)      :: tr, tre    
+    !---- local variables
+    complex(dp) :: Gl(mm,mm,nx), Gln(mm,mm,nx)    
+    integer    :: M, M1, ii, jj
+    complex(dp) :: z
+    real(dp)    :: tim, start, finish, start_0
+    complex(dp), allocatable :: sig(:, :), H00(:, :), H10(:, :)
+    complex(dp), allocatable :: A(:, :), B(:, :), C(:, :), G00(:, :), GBB(:, :), sigmar(:, :), sigmal(:, :), GN0(:, :)
+    !                
+    z = dcmplx(En, 0.0d0)
+    ! on the left contact
+    ii = 1
+    M = nm(ii)
+    allocate (H00(M, M))
+    allocate (H10(M, M))
+    allocate (G00(M, M))
+    allocate (GBB(M, M))
+    allocate (sigmal(M, M))
+    allocate (sig(M, M))
+    Gl = czero
+    Gln= czero
+    !
+    start = omp_get_wtime()
+    start_0=start
+    !
+    !! $$H00 = H(i,i) + \Sigma_{ph}(i) * S(i,i)$$
+    call MUL_c(sigma_r_ph(1:M,1:M,ii), Sii(1:M,1:M,ii), 'n', 'n', B)
+    !
+    H00 = Hii(1:M,1:M,ii) + B
+    H10 = H1i(1:M,1:M,ii)
+    call sancho(M, En, Sii(1:M,1:M,ii), H00, transpose(conjg(H10)), G00, GBB)
+    !
+    if (verbose) then 
+    !$omp critical
+        open (unit=10, file='sancho_g00.dat', position='append')
+        write (10, *) En, 2, -aimag(trace(G00))
+        close (10)
+        open (unit=10, file='sancho_gbb.dat', position='append')
+        write (10, *) En, 2, -aimag(trace(Gbb))
+        close (10)
+    !$omp end critical
+    endif
+    !
+    !! $$\Sigma^R = H_{i,i+1} * G_{00} * H_{i+1,i}$$
+    !! $$Gl(i) = [E*S_{i,i} - H00 - \Sigma_R]^{-1}$$
+    call triMUL_c(H10, G00, H10, sigmal, 'n', 'n', 'c')
+    B = z* Sii(1:M,1:M,ii) - H00 - sigmal
+    call invert(B, M)
+    Gl(1:M,1:M,ii) = B
+    !
+    !! $$Gln(i) = Gl(i) * [\Sigma_{ph}^<(i)*S(i,i) + (-(\Sigma^R - \Sigma_R^\dagger)*ferm(..))] * Gl(i)^\dagger$$
+    call MUL_c(sigma_lesser_ph(1:M,1:M,ii), Sii(1:M,1:M,ii), 'n', 'n', B)
+    sig = -(sigmal - transpose(conjg(sigmal)))*ferm((En - mur)/(BOLTZ*TEMPr))
+    !
+    sig = sig + B
+    call triMUL_c(Gl(1:M,1:M,ii), sig, Gl(1:M,1:M,ii), B, 'n', 'n', 'c')
+    Gln(1:M,1:M,ii) = B
+    deallocate (G00, GBB, sig, H10)
+    !
+    finish = omp_get_wtime()
+    if (verbose) print *, "--- left contact took seconds", finish - start
+    start = finish
+    !
+    allocate (A(M, M))
+    ! inside device l -> r
+    do ii = 2, nx - 1
+        M1= M
+        M = nm(ii)
+        if (size(H00, 1) .ne. M) then
+            deallocate (H00, A)
+            allocate (H00(M, M))
+            allocate (A(M, M))
+        end if
+        call MUL_c(sigma_r_ph(1:M,1:M,ii), Sii(1:M,1:M,ii), 'n', 'n', B)
+        H00 = Hii(1:M,1:M,ii) + B
+        !
+        !! $$H00 = H(i,i) + \Sigma_{ph}(i) * S(i,i)$$
+        !! $$Gl(i) = [E*S(i,i) - H00 - H(i,i-1) * Gl(i-1) * H(i-1,i)]^{-1}$$
+        call triMUL_c(H1i(1:M,1:M1,ii), Gl(1:M1,1:M1,ii - 1), H1i(1:M,1:M1,ii), B, 'n', 'n', 'c')
+        A = z*Sii(1:M,1:M,ii) - H00 - B
+        call invert(A, M)
+        Gl(1:M,1:M,ii) = A
+        !
+        !! $$Gln(i) = Gl(i) * [\Sigma_{ph}^<(i)*S(i,i) + H(i,i+1)*Gln(i+1)*H(i+1,i)] * Gl(i)^\dagger$$
+        call triMUL_c(H1i(1:M,1:M1,ii), Gln(1:M1,1:M1,ii - 1), H1i(1:M,1:M1,ii), B, 'n', 'n', 'c')
+        call MUL_c(sigma_lesser_ph(1:M,1:M,ii), Sii(1:M,1:M,ii), 'n', 'n', A)
+        B = B + A
+        call triMUL_c(Gl(1:M,1:M,ii), B, Gl(1:M,1:M,ii), A, 'n', 'n', 'c')
+        Gln(1:M,1:M,ii) = A
+    end do
+    !
+    finish = omp_get_wtime()
+    if (verbose) print *, "--- first pass took seconds", finish - start
+    start = finish
+    !
+    ! on the right contact
+    ii = nx
+    M1= M
+    M = nm(ii)
+    allocate (H10(M, M))
+    allocate (G00(M, M))
+    allocate (GBB(M, M))
+    allocate (sig(M, M))
+    allocate (sigmar(M, M))
+    if (size(H00, 1) .ne. M) then
+        deallocate (H00)
+        allocate (H00(M, M))
+    end if
+    !
+    call MUL_c(sigma_r_ph(1:M,1:M,ii), Sii(1:M,1:M,ii), 'n', 'n', B)
+    H00 = Hii(1:M,1:M,ii) + B
+    H10 = H1i(1:M,1:M,nx + 1)
+    !
+    call sancho(M, En, Sii(1:M,1:M,ii), H00, H10, G00, GBB)
+    !
+    call triMUL_c(H10, G00, H10, sigmar, 'c', 'n', 'n')
+    !
+    if (verbose) then 
+    !$omp critical
+        open (unit=10, file='sancho_g00.dat', position='append')
+        write (10, *) En, 1, -aimag(trace(G00))
+        close (10)
+        open (unit=10, file='sancho_gbb.dat', position='append')
+        write (10, *) En, 1, -aimag(trace(Gbb))
+        close (10)
+    !$omp end critical
+    endif
+    !
+    call triMUL_c(H1i(1:M1,1:M,nx), Gl(1:M1,1:M1,nx - 1), H1i(1:M1,1:M,nx), B, 'n', 'n', 'c')
+    A = z*Sii(1:M,1:M,ii) - H00 - B - sigmar
+    !
+    call invert(A, M)
+    G_r(1:M,1:M,ii) = A
+    Gl(1:M,1:M,ii) = A
+    !
+    !! $$\Sigma^< = \Sigma_11^< + \Sigma_{ph}^< + \Sigma_s^<$$
+    call triMUL_c(H1i(1:M1,1:M,nx), Gln(1:M1,1:M1,nx - 1), H1i(1:M1,1:M,nx), B, 'n', 'n', 'c')
+    call MUL_c(sigma_lesser_ph(1:M,1:M,nx), Sii(1:M,1:M,nx), 'n', 'n', A)
+    sig = -(sigmar - transpose(conjg(sigmar)))*ferm((En - mul)/(BOLTZ*TEMPl))
+    sig = sig + A + B
+    !
+    !! $$G^< = G * \Sigma^< * G^\dagger$$
+    call triMUL_c(G_r(1:M,1:M,ii), sig, G_r(1:M,1:M,ii), B, 'n', 'n', 'c')
+    !
+    G_lesser(1:M,1:M,ii) = B
+    G_greater(1:M,1:M,ii) = G_lesser(1:M,1:M,ii) + (G_r(1:M,1:M,ii) - transpose(conjg(G_r(1:M,1:M,ii))))
+    !
+    A = -(sigmar - transpose(conjg(sigmar)))*ferm((En - mul)/(BOLTZ*TEMPl))
+    call MUL_c(A, G_greater(1:M,1:M,ii), 'n', 'n', B)
+    A = -(sigmar - transpose(conjg(sigmar)))*(ferm((En - mul)/(BOLTZ*TEMPl)) - 1.0d0)
+    call MUL_c(A, G_lesser(1:M,1:M,ii), 'n', 'n', C)
+    !
+    Jdens(1:M,1:M,ii) = B - C
+    !
+    tim = 0.0d0
+    do jj = 1, M
+        tim = tim + dble(Jdens(jj,jj,ii))
+    end do
+    tr = tim ! transmission
+    deallocate (sigmar, sig, G00, GBB, H10)
+    allocate (GN0(M, M))
+    !
+    !
+    finish = omp_get_wtime()
+    if (verbose) print *, "--- right contact took seconds", finish - start
+    start = finish
+    !
+    ! inside device r -> l
+    do ii = nx - 1, 1, -1
+        M1= M
+        M = nm(ii)
+        !! $$A = G^<(i+1) * H(i+1,i) * Gl(i)^\dagger + G(i+1) * H(i+1,i) * Gln(i)$$
+        call triMUL_c(G_lesser(1:M1,1:M1,ii + 1), H1i(1:M1,1:M,ii), Gl(1:M,1:M,ii), A, 'n', 'n', 'c')
+        call triMUL_c(G_r(1:M1,1:M1,ii + 1), H1i(1:M1,1:M,ii), Gln(1:M,1:M,ii), B, 'n', 'n', 'n')
+        A = A + B
+        !! $$B = H(i,i+1) * A$$
+        !! $$Jdens(i) = -2 * B$$
+        call MUL_c(H1i(1:M1,1:M,ii), A, 'c', 'n', B)
+        Jdens(1:M,1:M,ii) = -2.0d0*B(:, :)
+        !
+        !! $$GN0 = Gl(i) * H(i,i+1) * G(i+1)$$
+        !! $$G(i) = Gl(i) + GN0 * H(i+1,i) * Gl(i)$$
+        call MUL_c(Gl(1:M,1:M,ii), H1i(1:M1,1:M,ii), 'n', 'c', B)
+        call MUL_c(B, G_r(1:M1,1:M1,ii + 1), 'n', 'n', GN0)
+        call MUL_c(GN0, H1i(1:M1,1:M,ii), 'n', 'n', C)
+        call MUL_c(C, Gl(1:M,1:M,ii), 'n', 'n', A)
+        G_r(1:M,1:M,ii) = Gl(1:M,1:M,ii) + A
+        !
+        !! $$G^<(i) = Gln(i) + Gl(i) * H(i,i+1) * G^<(i+1) * H(i+1,i) *Gl(i)^\dagger$$
+        call MUL_c(Gl(1:M,1:M,ii), H1i(1:M1,1:M,ii), 'n', 'c', B)
+        call MUL_c(B, G_lesser(1:M1,1:M1,ii + 1), 'n', 'n', C)
+        call MUL_c(C, H1i(1:M1,1:M,ii), 'n', 'n', A)
+        call MUL_c(A, Gl(1:M,1:M,ii), 'n', 'c', C)
+        G_lesser(1:M,1:M,ii) = Gln(1:M,1:M,ii) + C
+        !
+        !! $$G^<(i) = G^<(i) + GN0 * H(i+1,i) * Gln(i)$$
+        call MUL_c(GN0, H1i(1:M1,1:M,ii), 'n', 'n', B)
+        call MUL_c(B, Gln(1:M,1:M,ii), 'n', 'n', C)
+        G_lesser(1:M,1:M,ii) = G_lesser(1:M,1:M,ii) + C
+        !
+        !! $$G^<(i) = G^<(i) + Gln(i) * H(i,i+1) * GN0$$
+        call MUL_c(Gln(1:M,1:M,ii), H1i(1:M1,1:M,ii), 'n', 'c', B)
+        call MUL_c(B, GN0, 'n', 'c', C)
+        G_lesser(1:M,1:M,ii) = G_lesser(1:M,1:M,ii) + C
+        !
+        !! $$G^>(i) = G^<(i) + [G(i) - G(i)^\dagger]$$
+        G_greater(1:M,1:M,ii) = G_lesser(1:M,1:M,ii) + (G_r(1:M,1:M,ii) - transpose(conjg(G_r(1:M,1:M,ii))))
+    end do
+    !
+    finish = omp_get_wtime()
+    if (verbose) print *, "--- second pass took seconds", finish - start
+    start = finish
+    !
+    ii = 1
+    M = nm(ii)
+    ! on the left contact
+    A = -(sigmal - transpose(conjg(sigmal)))*ferm((En - mur)/(BOLTZ*TEMPr))
+    call MUL_c(A, G_greater(1:M,1:M,ii), 'n', 'n', B)
+    A = -(sigmal - transpose(conjg(sigmal)))*(ferm((En - mur)/(BOLTZ*TEMPr)) - 1.0d0)
+    call MUL_c(A, G_lesser(1:M,1:M,ii), 'n', 'n', C)
+    tim = 0.0d0
+    do jj = 1, M
+        tim = tim + dble(B(jj, jj) - C(jj, jj))
+    end do
+    tre = tim
+    deallocate (B, A, C, GN0, sigmal)
+    !           
+    end subroutine rgf_std
+
+end module rgf
