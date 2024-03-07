@@ -17,8 +17,8 @@ if __name__=='__main__':
    ns = 1
    length = 1 
 
-   nky=41
-   nkz=41
+   nky=61
+   nkz=61
    nk=nky*nkz
 
    Lz=L[2]
@@ -52,8 +52,8 @@ if __name__=='__main__':
          ek[:,ik] = np.real(np.linalg.eigvalsh(ham[:,:,ik]))
          ek[:,ik] = np.sort(ek[:,ik])
 
-   x=np.linspace(0.0, 2.0*np.pi/Lz, nkz)
-   y=np.linspace(0.0, 2.0*np.pi/Ly, nky)
+   x=np.linspace(kz_min,kz_max, nkz)
+   y=np.linspace(ky_min,ky_max, nky)
 
    for ib in range(nb):
       val=np.reshape( ek[ib,:], (nky,nkz))
