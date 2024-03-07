@@ -916,7 +916,7 @@ module gf_dense
     ! iterating G -> P -> W -> Sig 
     subroutine solve_gw_3D(niter,nm_dev,Lx,length,spindeg,temps,tempd,mus,mud,&
         alpha_mix,nen,nsub,En,nb,ns,nphiy,nphiz,Ham,H00lead,H10lead,T,V,&
-        ldiag,flatband,G_retarded,G_lesser,G_greater,W0_retarded)
+        ndiag,flatband,G_retarded,G_lesser,G_greater,W0_retarded)
     !
     use fft_mod, only : conv1d => conv1d2, corr1d => corr1d2  
     use parameters_mod
@@ -925,7 +925,7 @@ module gf_dense
     real(8), intent(in) :: En(nen), temps,tempd, mus, mud, alpha_mix,Lx,spindeg
     complex(8),intent(in) :: Ham(nm_dev,nm_dev,nphiy*nphiz),H00lead(NB*NS,NB*NS,2,nphiy*nphiz),H10lead(NB*NS,NB*NS,2,nphiy*nphiz),T(NB*NS,nm_dev,2,nphiy*nphiz)
     complex(8), intent(in):: V(nm_dev,nm_dev,nphiy*nphiz)
-    logical,intent(in)::ldiag
+    integer,intent(in)::ndiag
     logical,intent(in)::flatband
     complex(8),intent(out),dimension(nm_dev,nm_dev,nen,nsub,nphiy*nphiz) ::  G_retarded,G_lesser,G_greater
     complex(8),intent(out),dimension(nm_dev,nm_dev,nphiy*nphiz) ::  W0_retarded
@@ -943,7 +943,7 @@ module gf_dense
     real(8),allocatable::sumTr(:,:) ! current spectrum on leads summed over k
     real(8),allocatable::sumTe(:,:,:) ! transmission matrix spectrum summed over k
     integer :: iter,ie,nopmax
-    integer :: i,j,nm,nop,l,h,iop,ndiag,ikz,iqz,ikzd,iky,iqy,ikyd,ik,iq,ikd,isub        
+    integer :: i,j,nm,nop,l,h,iop,ikz,iqz,ikzd,iky,iqy,ikyd,ik,iq,ikd,isub        
     complex(8) :: dE
     real(8)::nelec(2),mu(2),pelec(2),temp(2)
     real(8)::weights(nsub),xen(nsub)
@@ -1037,9 +1037,7 @@ module gf_dense
         !        
         print *, 'calc P'
         !
-        nopmax=nen/2-1  
-        ndiag=nm_dev !NB*NS
-        if (ldiag) ndiag=0  
+        nopmax=nen/2-1           
         ! print *,'ndiag=',ndiag
         ! Pij^<>(hw,kz') = \int_dE Gij^<>(E,kz) * Gji^><(E-hw,kz-kz')
         ! Pij^r(hw,kz')  = \int_dE Gij^<(E,kz) * Gji^a(E-hw,kz-kz') + Gij^r(E,kz) * Gji^<(E-hw,kz-kz')        
@@ -1123,9 +1121,7 @@ module gf_dense
         !  call write_spectrum_summed_over_kz('WG',iter,W_greater, nen,En-en(nen/2),nphiy*nphiz,length,NB,Lx,(/1.0,1.0/))
         !
         print *, 'calc SigGW'
-        !  
-        ndiag=nm_dev !nb*ns
-        if (ldiag) ndiag=0  
+        !          
         ! print *,'ndiag=',ndiag
         nopmax=nen/2-1
         Sig_greater_new = dcmplx(0.0d0,0.0d0)
@@ -2210,11 +2206,11 @@ module rgf
         integer, intent(in) :: mm !! max size of blocks
         integer, intent(in) :: nx !! lenght of the device    
         complex(dp), intent(in) :: Hii(mm,mm,nx), H1i(mm,mm,nx + 1), Sii(mm,mm,nx), sigma_lesser_ph(mm,mm,nx), sigma_r_ph(mm,mm,nx)
-        real(dp), intent(in)       :: En, mul(:, :), mur(:, :), TEMPr(:, :), TEMPl(:, :)    
+        real(dp), intent(in) :: En, mul(:, :), mur(:, :), TEMPr(:, :), TEMPl(:, :)    
         integer, intent(in) :: nm(nx) !! size of each block
         logical, intent(in) :: verbose
         complex(dp), intent(out) :: G_greater(mm,mm,nx), G_lesser(mm,mm,nx), G_r(mm,mm,nx), Jdens(mm,mm,nx)            
-        real(dp), intent(out)      :: tr, tre    
+        real(dp), intent(out) :: tr, tre    
         !---- local variables
         complex(dp) :: Gl(mm,mm,nx), Gln(mm,mm,nx)    
         integer    :: M, M1, ii, jj
@@ -2445,13 +2441,14 @@ module rgf
 
 
     ! calculate e-photon/phonon self-energies in the monochromatic assumption
-    subroutine selfenergy_eph_mono(nm,length,nen,En,nop,Mii,G_lesser,G_greater,&
+    subroutine selfenergy_eph_mono(nm,nx,nen,En,nop,Mii,M1i,Mi1,G_lesser,G_greater,&
         Sig_retarded,Sig_lesser,Sig_greater,n_bose)
-        integer,intent(in)::nm,length,nen,nop
+        integer,intent(in)::nm,nx,nen,nop
         real(8),intent(in)::en(nen),n_bose
-        complex(8),intent(in),dimension(nm,nm,length)::Mii ! interaction matrix diag blocks
-        complex(8),intent(in),dimension(nm,nm,length,nen)::G_lesser,G_greater
-        complex(8),intent(out),dimension(nm,nm,length,nen)::Sig_retarded,Sig_lesser,Sig_greater
+        complex(8),intent(in),dimension(nm,nm,nx)::Mii ! interaction matrix diag blocks
+        complex(8),intent(in),dimension(nm,nm,nx+1)::M1i,Mi1 ! interaction matrix 1st offdiag blocks
+        complex(8),intent(in),dimension(nm,nm,nx,nen)::G_lesser,G_greater
+        complex(8),intent(out),dimension(nm,nm,nx,nen)::Sig_retarded,Sig_lesser,Sig_greater
         !---------
         integer::ie,ix
         complex(8),allocatable::B(:,:),A(:,:) ! tmp matrix
@@ -2459,28 +2456,58 @@ module rgf
         Sig_greater=czero
         Sig_retarded=czero
         print *, 'calc Sigma'
-        ! Sig^<>(E) = M [ N G^<>(E -+ hw) + (N+1) G^<>(E +- hw)] M
-        !           ~ M [ G^<>(E -+ hw) + G^<>(E +- hw)] M * N
+        ! Sig^<>(E) = M [ N G^<>(E -+ hw) + (N+1) G^<>(E +- hw)] M        
         !$omp parallel default(shared) private(ie,A,B,ix) 
         allocate(B(nm,nm))
         allocate(A(nm,nm))  
         !$omp do
         do ie=1,nen
-            do ix=1,length
-            ! Sig^<(E)
-            A = czero
-            if (ie-nop>=1) A =A+ G_lesser(:,:,ix,ie-nop) * n_bose
-            if (ie+nop<=nen) A =A+ G_lesser(:,:,ix,ie+nop) * (n_bose+1.0_dp)
-            call zgemm('n','n',nm,nm,nm,cone,Mii(:,:,ix),nm,A,nm,czero,B,nm) 
-            call zgemm('n','n',nm,nm,nm,cone,B,nm,Mii(:,:,ix),nm,czero,A,nm)     
-            Sig_lesser(:,:,ix,ie) = A 
-            ! Sig^>(E)
-            A = czero
-            if (ie-nop>=1) A =A+ G_greater(:,:,ix,ie-nop) * (n_bose+1.0_dp)
-            if (ie+nop<=nen) A =A+ G_greater(:,:,ix,ie+nop) * n_bose
-            call zgemm('n','n',nm,nm,nm,cone,Mii(:,:,ix),nm,A,nm,czero,B,nm) 
-            call zgemm('n','n',nm,nm,nm,cone,B,nm,Mii(:,:,ix),nm,czero,A,nm)     
-            Sig_greater(:,:,ix,ie) = A
+            do ix=1,nx
+                ! Sig^<(E)
+                ! i,i = i,i @ i,i @ i,i
+                A = czero
+                if (ie-nop>=1) A =A+ G_lesser(:,:,ix,ie-nop) * n_bose
+                if (ie+nop<=nen) A =A+ G_lesser(:,:,ix,ie+nop) * (n_bose+1.0_dp)
+                call zgemm('n','n',nm,nm,nm,cone,Mii(:,:,ix),nm,A,nm,czero,B,nm) 
+                call zgemm('n','n',nm,nm,nm,cone,B,nm,Mii(:,:,ix),nm,czero,A,nm)     
+                Sig_lesser(:,:,ix,ie) = A 
+                ! i,i = i,i-1 @ i-1,i-1 @ i-1,i
+                A = czero
+                if (ie-nop>=1) A =A+ G_lesser(:,:,max(1,ix-1),ie-nop) * n_bose
+                if (ie+nop<=nen) A =A+ G_lesser(:,:,max(1,ix-1),ie+nop) * (n_bose+1.0_dp)
+                call zgemm('n','n',nm,nm,nm,cone,M1i(:,:,ix),nm,A,nm,czero,B,nm) 
+                call zgemm('n','n',nm,nm,nm,cone,B,nm,Mi1(:,:,ix),nm,czero,A,nm)
+                Sig_lesser(:,:,ix,ie) = Sig_lesser(:,:,ix,ie) + A 
+                ! i,i = i,i+1 @ i+1,i+1 @ i+1,i
+                A = czero
+                if (ie-nop>=1) A =A+ G_lesser(:,:,min(nx,ix+1),ie-nop) * n_bose
+                if (ie+nop<=nen) A =A+ G_lesser(:,:,min(nx,ix+1),ie+nop) * (n_bose+1.0_dp)
+                call zgemm('n','n',nm,nm,nm,cone,Mi1(:,:,ix+1),nm,A,nm,czero,B,nm) 
+                call zgemm('n','n',nm,nm,nm,cone,B,nm,M1i(:,:,ix+1),nm,czero,A,nm)     
+                Sig_lesser(:,:,ix,ie) = Sig_lesser(:,:,ix,ie) + A 
+                !
+                ! Sig^>(E)
+                ! i,i = i,i @ i,i @ i,i
+                A = czero
+                if (ie-nop>=1) A =A+ G_greater(:,:,ix,ie-nop) * (n_bose+1.0_dp)
+                if (ie+nop<=nen) A =A+ G_greater(:,:,ix,ie+nop) * n_bose
+                call zgemm('n','n',nm,nm,nm,cone,Mii(:,:,ix),nm,A,nm,czero,B,nm) 
+                call zgemm('n','n',nm,nm,nm,cone,B,nm,Mii(:,:,ix),nm,czero,A,nm)     
+                Sig_greater(:,:,ix,ie) = A
+                ! i,i = i,i-1 @ i-1,i-1 @ i-1,i
+                A = czero
+                if (ie-nop>=1) A =A+ G_greater(:,:,max(1,ix-1),ie-nop) * (n_bose+1.0_dp)
+                if (ie+nop<=nen) A =A+ G_greater(:,:,max(1,ix-1),ie+nop) * n_bose
+                call zgemm('n','n',nm,nm,nm,cone,M1i(:,:,ix),nm,A,nm,czero,B,nm) 
+                call zgemm('n','n',nm,nm,nm,cone,B,nm,Mi1(:,:,ix),nm,czero,A,nm)     
+                Sig_greater(:,:,ix,ie) = Sig_greater(:,:,ix,ie) + A
+                ! i,i = i,i-1 @ i-1,i-1 @ i-1,i
+                A = czero
+                if (ie-nop>=1) A =A+ G_greater(:,:,min(nx,ix+1),ie-nop) * (n_bose+1.0_dp)
+                if (ie+nop<=nen) A =A+ G_greater(:,:,min(nx,ix+1),ie+nop) * n_bose
+                call zgemm('n','n',nm,nm,nm,cone,Mi1(:,:,ix+1),nm,A,nm,czero,B,nm) 
+                call zgemm('n','n',nm,nm,nm,cone,B,nm,M1i(:,:,ix+1),nm,czero,A,nm)     
+                Sig_greater(:,:,ix,ie) = Sig_greater(:,:,ix,ie) + A
             enddo
         enddo  
         !$omp end do
@@ -2491,5 +2518,7 @@ module rgf
         Sig_retarded = dcmplx(0.0d0*dble(Sig_retarded),aimag(Sig_greater-Sig_lesser)/2.0d0)
     end subroutine selfenergy_eph_mono
     
+
+     
     
 end module rgf
