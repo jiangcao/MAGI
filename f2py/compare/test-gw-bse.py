@@ -5,6 +5,13 @@ from negf import gf_dense, fft_mod, bse_dense
 from wannier import wannierham
 import matplotlib.pyplot as plt
 
+import scipy.linalg as l
+import pytest
+
+from lu_decompose import lu_dcmp_ndiags_arrowhead
+from lu_selected_inversion import lu_sinv_ndiags_arrowhead
+
+
 if __name__=='__main__':   
 
    nb=14
@@ -95,4 +102,26 @@ if __name__=='__main__':
         # plt.savefig('pattern.png')
          # plt.show()
 #    P_retarded = bse_dense.bse_solve(spindeg=2.0,nm_dev=nb*length,nen=nen,en=energies,nop=nop,g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,w_retarded=v[:,:,0],v=v[:,:,0])                                                        
+
+
+#mypart:
+   #plt.spy(system)
+   #plt.savefig('pattern.png')
+
+   #norm_M1 = np.linalg.norm(M1, 2) #2-norm of M1
+   #norm_M2 = np.linalg.norm(M2, 2) #2-norm of M2 
+   #norm_M3 = np.linalg.norm(M3, 2) #2-norm of M3
    
+   #comp_time_m1 = bse_fullsolve.comp_time_m1
+   #comp_time_m2 = bse_fullsolve.comp_time_m2d
+   #comp_time_m3 = bse_fullsolve.comp_time_m3
+   
+   #start = omp_get_wtime()
+   #finish = omp_get_wtime()
+   #comp_time1 = finish - start
+   #print *, "M1 Calculation duration in seconds", comp_time1
+
+
+#compare with SDR - LU decomp
+#L_sdr, U_sdr = lu_dcmp_ndiags_arrowhead(A, nblocks, diag_blocksize, arrow_blocksize)
+#X_sdr = lu_sinv_ndiags_arrowhead(L_sdr, U_sdr, ndiags, diag_blocksize, arrow_blocksize)
