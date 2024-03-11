@@ -21,8 +21,41 @@ module parameters_mod
    
 end module parameters_mod
 
-MODULE wannierHam
 
+module linalg
+    implicit none 
+    contains
+
+    ! calculate eigen-values of a Hermitian matrix A
+    FUNCTION eig(NN, A)
+        INTEGER, INTENT(IN) :: NN
+        COMPLEX(8), INTENT(INOUT), DIMENSION(:, :) :: A
+        ! -----
+        REAL(8) :: eig(NN)
+        real(8) :: W(1:NN)
+        integer :: INFO, LWORK, liwork, lrwork
+        complex(8), allocatable :: work(:)
+        real(8), allocatable :: RWORK(:)
+        !integer, allocatable :: iwork(:)
+        lwork = max(1, 2*NN - 1)
+        lrwork = max(1, 3*NN - 2)
+        allocate (work(lwork))
+        allocate (rwork(lrwork))
+        !
+        CALL zheev('N', 'U', NN, A, NN, W, WORK, LWORK, RWORK, INFO)
+        !
+        deallocate (work, rwork)
+        if (INFO .ne. 0) then
+            write (*, *) 'SEVERE WARNING: ZHEEV HAS FAILED. INFO=', INFO
+            call abort()
+        end if
+        eig(:) = W(:)
+    END FUNCTION eig
+end module linalg
+
+
+MODULE wannierHam
+use linalg
 use parameters_mod
 
 IMPLICIT NONE 
@@ -113,62 +146,62 @@ CONTAINS
 
     !!! construct the diagonal and off-diagonal blocks H(I,I), H(I+1,I)
     SUBROUTINE block_mat_def(Hii,H1i,kx, ky,kz,nb,ns,n_range,hr,cell)
-    ! ky in [2pi/Ang]
-    implicit none
-    integer, intent(in) :: ns,nb
-    integer, intent(in) :: n_range(9) ! [nb,xmin,xmax,ymin,ymax,zmin,zmax,nvb,nspin]
-    COMPLEX(8), INTENT(OUT), DIMENSION(nb*ns,nb*ns) :: Hii, H1i
-    COMPLEX(8), INTENT(in):: hr(:,:,:,:,:)
-    real(8), intent(in) :: cell(3,3)
-    real(8), intent(in) :: ky,kx,kz
-    integer :: i,j,k,l
-    real(8), dimension(3) :: kv, r,xhat, yhat, zhat
-    Hii(:,:) = czero
-    H1i(:,:) = czero
-    associate(nb => n_range(1))
-    associate(xmin => n_range(2))
-    associate(xmax => n_range(3))
-    associate(ymin => n_range(4))
-    associate(ymax => n_range(5))
-    associate(zmin => n_range(6))
-    associate(zmax => n_range(7))
-    associate(alpha => cell(:,1))
-    associate(beta => cell(:,2))
-    associate(gamm => cell(:,3))
-    xhat = alpha/norm(alpha)
-    yhat = - cross(xhat,gamm)
-    yhat = yhat/norm(yhat)
-    zhat = gamm/norm(gamm)
-    do i = 1,ns
-        do k = 1,ns    
-            do j = ymin,ymax
-            do l = zmin,zmax
-                kv = kx*xhat + ky*yhat + kz*zhat
-                r =  dble(i-k)*alpha + dble(j)*beta + dble(l)*gamm                   
-                if ((i-k <= xmax ) .and. (i-k >= xmin )) then                
-                    Hii(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb) = &
-                    Hii(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb) + &
-                    & Hr(:,:,i-k-xmin+1,j-ymin+1,l-zmin+1) * exp(-c1i* dot_product(r,kv) )           
-                end if                 
-                if (((i-k+ns) <= xmax) .and. ((i-k+ns) >= xmin)) then                   
-                    H1i(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb) = &
-                    H1i(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb) + & 
-                    & Hr(:,:,i-k-xmin+ns+1,j-ymin+1,l-zmin+1) * exp(-c1i* dot_product(r,kv) )            
-                end if
-            enddo
-            end do                 
-        end do
-    end do  
-    end associate
-    end associate
-    end associate
-    end associate
-    end associate
-    end associate
-    end associate
-    end associate
-    end associate
-    end associate
+        ! ky in [2pi/Ang]
+        implicit none
+        integer, intent(in) :: ns,nb
+        integer, intent(in) :: n_range(9) ! [nb,xmin,xmax,ymin,ymax,zmin,zmax,nvb,nspin]
+        COMPLEX(8), INTENT(OUT), DIMENSION(nb*ns,nb*ns) :: Hii, H1i
+        COMPLEX(8), INTENT(in):: hr(:,:,:,:,:)
+        real(8), intent(in) :: cell(3,3)
+        real(8), intent(in) :: ky,kx,kz
+        integer :: i,j,k,l
+        real(8), dimension(3) :: kv, r,xhat, yhat, zhat
+        Hii(:,:) = czero
+        H1i(:,:) = czero
+        associate(nb => n_range(1))
+        associate(xmin => n_range(2))
+        associate(xmax => n_range(3))
+        associate(ymin => n_range(4))
+        associate(ymax => n_range(5))
+        associate(zmin => n_range(6))
+        associate(zmax => n_range(7))
+        associate(alpha => cell(:,1))
+        associate(beta => cell(:,2))
+        associate(gamm => cell(:,3))
+        xhat = alpha/norm(alpha)
+        yhat = - cross(xhat,gamm)
+        yhat = yhat/norm(yhat)
+        zhat = gamm/norm(gamm)
+        do i = 1,ns
+            do k = 1,ns    
+                do j = ymin,ymax
+                do l = zmin,zmax
+                    kv = kx*xhat + ky*yhat + kz*zhat
+                    r =  dble(i-k)*alpha + dble(j)*beta + dble(l)*gamm                   
+                    if ((i-k <= xmax ) .and. (i-k >= xmin )) then                
+                        Hii(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb) = &
+                        Hii(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb) + &
+                        & Hr(:,:,i-k-xmin+1,j-ymin+1,l-zmin+1) * exp(-c1i* dot_product(r,kv) )           
+                    end if                 
+                    if (((i-k+ns) <= xmax) .and. ((i-k+ns) >= xmin)) then                   
+                        H1i(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb) = &
+                        H1i(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb) + & 
+                        & Hr(:,:,i-k-xmin+ns+1,j-ymin+1,l-zmin+1) * exp(-c1i* dot_product(r,kv) )            
+                    end if
+                enddo
+                end do                 
+            end do
+        end do  
+        end associate
+        end associate
+        end associate
+        end associate
+        end associate
+        end associate
+        end associate
+        end associate
+        end associate
+        end associate
     END SUBROUTINE block_mat_def
 
 
@@ -333,8 +366,97 @@ CONTAINS
     END FUNCTION bare_coulomb
 
     
-        
+    SUBROUTINE plot_bands_bz(nkx,nky,nkz,EN,hr,nb,length,cell,n_range)
+        implicit none
+        integer, intent(in) :: nkx,nky,nkz,nb
+        real(8), intent(in) :: length(3),cell(3,3)
+        complex(8), intent(in) :: hr(:,:,:,:,:)
+        integer, intent(in) :: n_range(:) ! [nb,xmin,xmax,ymin,ymax,zmin,zmax,nvb,nspin]
+        real(8), dimension(nb,nkx*nky*nkz), intent(out) :: EN
+        integer :: i,j,l
+        real(8) :: dkx, dky, dkz,kx, ky, kz
+        complex(8), dimension(NB,NB) :: Hii    
+        associate(Lx => length(1))
+        associate(Ly => length(2))
+        associate(Lz => length(3))
+        if (nkx > 1) then
+            dkx = 3.0_dp / dble(nkx) * pi / Lx
+        else 
+            dkx = 1.5_dp * pi / Lx
+        end if
+        if (nky > 1) then
+            dky = 3.0_dp / dble(nky) * pi / Ly
+        else
+            dky = 1.5_dp * pi / Ly
+        end if
+        if (nkz > 1) then
+            dkz = 3.0_dp / dble(nkz) * pi / Lz
+        else
+            dkz = 1.5_dp * pi / Lz
+        end if
+        do i = 1,nkx
+            do j = 1,nky
+                do l = 1,nkz
+                    kx = dble(i-1)*dkx - 1.5_dp * pi / Lx
+                    ky = dble(j-1)*dky - 1.5_dp * pi / Ly
+                    kz = dble(l-1)*dkz - 1.5_dp * pi / Lz
+                    !
+                    call mat_def_periodic(Hii, kx,ky,kz, nb,hr,cell,n_range)    
+                    !
+                    EN(1:NB,l + (j-1)*nkz + (i-1)*nkz*nky) = eig(NB,Hii)
+                enddo
+            enddo
+        enddo
+        end associate
+        end associate
+        end associate
+    END SUBROUTINE plot_bands_bz
 
+
+    !!! construct the fully periodic Hamiltonian matrix
+    SUBROUTINE mat_def_periodic(Hii,kx,ky,kz,nb,hr,cell,n_range)
+        ! kx, ky, and kz are in unit of [1/Ang] and in cartesian coordinate 
+        integer, intent(in) :: nb
+        REAL(8), INTENT(IN) :: kx, ky, kz, cell(3,3)
+        complex(8), intent(in) :: hr(:,:,:,:,:)
+        integer, intent(in) :: n_range(:) ! [nb,xmin,xmax,ymin,ymax,zmin,zmax,nvb,nspin]
+        COMPLEX(8), INTENT(OUT), DIMENSION(NB,NB) :: Hii
+        real(8), dimension(3) :: kv, r
+        real(8)::xhat(3),yhat(3),zhat(3)
+        integer :: i,j,l
+        Hii(:,:) = czero    
+        call get_cart(cell,xhat,yhat,zhat)
+        kv = kx*xhat + ky*yhat + kz*zhat
+        associate(xmin => n_range(2))
+        associate(xmax => n_range(3))
+        associate(ymin => n_range(4))
+        associate(ymax => n_range(5))
+        associate(zmin => n_range(6))
+        associate(zmax => n_range(7))
+        associate(alpha => cell(:,1))
+        associate(beta => cell(:,2))
+        associate(gamm => cell(:,3))
+        do i = xmin,xmax           
+            do j = ymin,ymax
+                do l = zmin,zmax
+                    r = dble(i)*alpha + dble(j)*beta + dble(l)*gamm                         
+                    Hii(:,:) = Hii(:,:) + Hr(:,:,i-xmin+1,j-ymin+1,l-zmin+1) &
+                              * exp(-c1i * dot_product(r,kv))             
+                enddo
+            enddo      
+        enddo           
+        end associate
+        end associate
+        end associate
+        end associate
+        end associate
+        end associate   
+        end associate
+        end associate
+        end associate   
+    END SUBROUTINE mat_def_periodic
+    
+    
     
     FUNCTION norm(vector)
         REAL(8) :: vector(3),norm
@@ -349,6 +471,23 @@ CONTAINS
         cross(2) = a(3)*b(1) - a(1)*b(3)
         cross(3) = a(1)*b(2) - a(2)*b(1)
     END FUNCTION cross
+
+
+    subroutine get_cart(cell,xhat,yhat,zhat)
+        real(8),intent(in)::cell(3,3)
+        real(8),intent(out)::xhat(3),yhat(3),zhat(3)
+        associate(alpha => cell(:,1))
+        associate(beta => cell(:,2))
+        associate(gamm => cell(:,3))
+        !
+        xhat = alpha/norm(alpha)
+        yhat = - cross(xhat,gamm)
+        yhat = yhat/norm(yhat)
+        zhat = gamm/norm(gamm)   
+        end associate
+        end associate
+        end associate
+    end subroutine get_cart
 
 
 END MODULE wannierHam

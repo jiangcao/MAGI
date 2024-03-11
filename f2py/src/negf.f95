@@ -1895,15 +1895,15 @@ module bse_dense
         write(99,*) dble(nop)*(En(2)-En(1)) , aimag(epsM), dble(epsM) ! Im \epsilon_M -> absorption
         close(99)
         !
-        call zgemm('n','n',nm_dev,nm_dev,nm_dev,c1i,V,nm_dev,Lmat(1:nm_dev,1:nm_dev),nm_dev,czero,epsilon_M,nm_dev) 
-        do j=1,nm_dev 
-            epsilon_M(j,j) = epsilon_M(j,j) + cone
-        enddo      
-        call invert_inplace(epsilon_M,nm_dev)
-        open(unit=99,file='gw_epsilonM.dat',status='unknown', position="append", action="write")    
-        epsM = sum( epsilon_M(nm_dev/2,:) )
-        write(99,*) dble(nop)*(En(2)-En(1)) , -aimag(epsM), dble(epsM) ! - Im \epsilon^{-1} -> EELS
-        close(99)
+        ! call zgemm('n','n',nm_dev,nm_dev,nm_dev,c1i,V,nm_dev,Lmat(1:nm_dev,1:nm_dev),nm_dev,czero,epsilon_M,nm_dev) 
+        ! do j=1,nm_dev 
+        !     epsilon_M(j,j) = epsilon_M(j,j) + cone
+        ! enddo      
+        ! call invert_inplace(epsilon_M,nm_dev)
+        ! open(unit=99,file='gw_epsilonM.dat',status='unknown', position="append", action="write")    
+        ! epsM = sum( epsilon_M(nm_dev/2,:) )
+        ! write(99,*) dble(nop)*(En(2)-En(1)) , -aimag(epsM), dble(epsM) ! - Im \epsilon^{-1} -> EELS
+        ! close(99)
         deallocate(epsilon_M)
         deallocate(Lmat,Mmat,Amat)
     end subroutine bse_fullsolve_orig
