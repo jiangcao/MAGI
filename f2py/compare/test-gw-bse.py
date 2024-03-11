@@ -104,21 +104,16 @@ if __name__=='__main__':
 print("Compare the algo BSEfullSolve and SDR-LU_decomposition")
 for nop in range(10,30,10):
    print(nop)
-   #P_retarded, system = bse_dense.bse_fullsolve(alpha=0.5,spindeg=2.0,nm_dev=nb*length,ndiag=6,nen=nen,nsub=nsub,
-   #                                             en=energies,nop=nop,nk=nk,g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,
-   #                                             w_retarded=W0[:,:,0],v=v[:,:,0])                                                       
+   P_retarded, system = bse_dense.bse_fullsolve(alpha=0.5,spindeg=2.0,nm_dev=nb*length,ndiag=6,nen=nen,nsub=nsub,
+                                                en=energies,nop=nop,nk=nk,g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,
+                                                w_retarded=W0[:,:,0],v=v[:,:,0])                                                       
    
    #BSE solve under approx
-   P_retarded= bse_dense.bse_solve(spindeg=2.0,nm_dev=nb*length,nen=nen,en=energies,nop=nop,g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,w_retarded=W0[:,:,0],v=v[:,:,0])                                                        
+   #P_retarded= bse_dense.bse_solve(spindeg=2.0,nm_dev=nb*length,nen=nen,en=energies,nop=nop,g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,w_retarded=W0[:,:,0],v=v[:,:,0])                                                        
 
-   
-   plt.spy(P_retarded)
-   plt.savefig('pattern_bsefullsolve_Pretarded'+str(nop)+'.png')
+   plt.spy(system)
+   plt.savefig('pattern_bsefullsolve_system'+str(nop)+'.png')
    plt.show()  
-
-   #plt.spy(system)
-   #plt.savefig('pattern_bsefullsolve_system'+str(nop)+'.png')
-   #plt.show()  
 
    #LU decomposition of P
    #L_sdr, U_sdr = lu_dcmp_ndiags_arrowhead(P_retarded, nblocks, diag_blocksize, arrow_blocksize)
@@ -141,5 +136,3 @@ for nop in range(10,30,10):
    #finish = omp_get_wtime()
    #comp_time1 = finish - start
    #print *, "M1 Calculation duration in seconds", comp_time1
-
-
