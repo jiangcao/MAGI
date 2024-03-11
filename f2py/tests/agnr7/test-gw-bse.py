@@ -20,7 +20,7 @@ if __name__=='__main__':
 
    ns = 2
    length = 6 
-   nen = 2000
+   nen = 200
    nsub = 3
    nky=1
    nkz=1
@@ -72,11 +72,11 @@ if __name__=='__main__':
    # plt.plot(energies, cur[:,0] )
    # plt.show()
 
-  # G_retarded,G_lesser,G_greater,W0 = gf_dense.solve_gw_3d(niter=niter,nm_dev=nb*length,lx=Lx,length=length,spindeg=2.0,
-   #                                                     temps=temp[0],tempd=temp[1],mus=mu[0],mud=mu[1],alpha_mix=0.5,
-    #                                                    nen=nen,nsub=nsub,en=energies,nb=nb,ns=ns,nphiy=nky,nphiz=nkz,
-     #                                                   ham=ham,h00lead=lead_h00,h10lead=lead_h10,t=lead_coupling,v=v,
-      #                                                  ldiag=True,flatband=False)
+   G_retarded,G_lesser,G_greater,W0 = gf_dense.solve_gw_3d(niter=niter,nm_dev=nb*length,lx=Lx,length=length,spindeg=2.0,
+                                                       temps=temp[0],tempd=temp[1],mus=mu[0],mud=mu[1],alpha_mix=0.5,
+                                                       nen=nen,nsub=nsub,en=energies,nb=nb,ns=ns,nphiy=nky,nphiz=nkz,
+                                                       ham=ham,h00lead=lead_h00,h10lead=lead_h10,t=lead_coupling,v=v,
+                                                       ndiag=nb,flatband=False)
 
  #  for nop in range(10,int(3.0/(energies[1]-energies[0])),4):
   #     print( nop,nop*(energies[1]-energies[0]) )
@@ -94,5 +94,6 @@ if __name__=='__main__':
        #  plt.spy(system)
         # plt.savefig('pattern.png')
          # plt.show()
-#    P_retarded = bse_dense.bse_solve(spindeg=2.0,nm_dev=nb*length,nen=nen,en=energies,nop=nop,g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,w_retarded=v[:,:,0],v=v[:,:,0])                                                        
+   nop=20         
+   P_retarded = bse_dense.bse_solve(spindeg=2.0,nm_dev=nb*length,nen=nen,nsub=nsub,en=energies,nop=nop,nk=nk,g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,w_retarded=W0[:,:,0],v=v[:,:,0])                                                        
    
