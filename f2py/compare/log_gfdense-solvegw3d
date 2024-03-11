@@ -1,0 +1,8 @@
+ ============ green_solve_gw_3D ============
+    mus=        -2.0000    mud=        -2.0000
+ + iter=           0
+ calc G
+ calc P
+ calc W
+ calc SigGW
+ calc G for the last time

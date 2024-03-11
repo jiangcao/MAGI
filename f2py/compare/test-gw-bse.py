@@ -8,8 +8,8 @@ import matplotlib.pyplot as plt
 import scipy.linalg as l
 import pytest
 
-from lu_decompose import lu_dcmp_ndiags_arrowhead
-from lu_selected_inversion import lu_sinv_ndiags_arrowhead
+#from lu_decompose import lu_dcmp_ndiags_arrowhead
+#from lu_selected_inversion import lu_sinv_ndiags_arrowhead
 
 
 if __name__=='__main__':   
@@ -38,6 +38,7 @@ if __name__=='__main__':
    emin=-10.0
    emax=4.0
 
+   W0 = np.zeros((nb*length,nb*length,nk), dtype='complex')
    v = np.zeros((nb*length,nb*length,nk), dtype='complex')  
    ham = np.zeros((nb*length,nb*length,nk), dtype='complex')  
 
@@ -69,44 +70,64 @@ if __name__=='__main__':
    sig_l = np.zeros((nb*length,nb*length,nen,nk), dtype='complex')
    sig_g = np.zeros((nb*length,nb*length,nen,nk), dtype='complex')
 
-   # G_retarded,G_lesser,G_greater,cur,te = gf_dense.calc_gf(ne=nen,e=energies,num_lead=2,nm_dev=nb*length,nm_lead=dim_lead,max_nm_lead=nb*ns,
+   #G_retarded,G_lesser,G_greater,cur,te = gf_dense.calc_gf(ne=nen,e=energies,num_lead=2,nm_dev=nb*length,nm_lead=dim_lead,max_nm_lead=nb*ns,
    #                                                          ham=ham,lead_h00=lead_h00,lead_h10=lead_h10,
    #                                                          siglead=siglead,t=lead_coupling,
    #                                                          scat_sig_retarded=sig_r,scat_sig_lesser=sig_l,scat_sig_greater=sig_g,
    #                                                          mu=mu,temp=temp,flatband=False)
 
+   #plt.plot(energies, cur[:,0] )
+   #plt.savefig('cur_versus_energies.png')
+   #plt.show()
 
-   # plt.plot(energies, cur[:,0] )
-   # plt.show()
+   G_retarded,G_lesser,G_greater,W0 = gf_dense.solve_gw_3d(niter=niter,nm_dev=nb*length,lx=Lx,length=length,spindeg=2.0,temps=temp[0],tempd=temp[1],mus=mu[0],mud=mu[1], 
+                                                       alpha_mix=0.5,nen=nen,nsub=nsub,en=energies,nb=nb,ns=ns,nphiy=nky,nphiz=nkz,ham=ham,h00lead=lead_h00,h10lead=lead_h10,t=lead_coupling,v=v,
+                                                       ndiag=6,flatband=False)
 
-  # G_retarded,G_lesser,G_greater,W0 = gf_dense.solve_gw_3d(niter=niter,nm_dev=nb*length,lx=Lx,length=length,spindeg=2.0,
-   #                                                     temps=temp[0],tempd=temp[1],mus=mu[0],mud=mu[1],alpha_mix=0.5,
-    #                                                    nen=nen,nsub=nsub,en=energies,nb=nb,ns=ns,nphiy=nky,nphiz=nkz,
-     #                                                   ham=ham,h00lead=lead_h00,h10lead=lead_h10,t=lead_coupling,v=v,
-      #                                                  ldiag=True,flatband=False)
+   #for nop in range(10,int(3.0/(energies[1]-energies[0])),4):
+      #print( nop,nop*(energies[1]-energies[0]) )
 
- #  for nop in range(10,int(3.0/(energies[1]-energies[0])),4):
-  #     print( nop,nop*(energies[1]-energies[0]) )
-    #    P4 = bse_dense.four_polarization_dense(nm_dev=nb*length,nen=nen,nsub=nsub,nk=nk,en=energies,nop=nop,ndiag=0,
-    #                                           g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded)
-       
-    #    plt.spy(np.abs(P4))
-    #    plt.show()
+      #BSE solve under approx
+      #P_retarded_approx = bse_dense.bse_solve(spindeg=2.0,nm_dev=nb*length,nen=nen,en=energies,nop=nop,g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,w_retarded=W0[:,:,0],v=v[:,:,0])                                                        
 
-   #    P_retarded, system = bse_dense.bse_fullsolve(alpha=0.5,spindeg=2.0,nm_dev=nb*length,ndiag=6,nen=nen,nsub=nsub,
-    #                                        en=energies,nop=nop,nk=nk,
-     #                                       g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,
-      #                                      w_retarded=W0[:,:,0],v=v[:,:,0])                                                        
-      # if (nop == 10):
-       #  plt.spy(system)
-        # plt.savefig('pattern.png')
-         # plt.show()
-#    P_retarded = bse_dense.bse_solve(spindeg=2.0,nm_dev=nb*length,nen=nen,en=energies,nop=nop,g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,w_retarded=v[:,:,0],v=v[:,:,0])                                                        
+      #BSE full solve
+      #P_retarded, system = bse_dense.bse_fullsolve(alpha=0.5,spindeg=2.0,nm_dev=nb*length,ndiag=6,nen=nen,nsub=nsub,
+      #                                             en=energies,nop=nop,nk=nk,g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,
+      #                                             w_retarded=W0[:,:,0],v=v[:,:,0])                                                       
+      #if (nop == 10):
+      #   plt.spy(system)
+      #   plt.savefig('pattern_bsefullsolve.png')
+      #   plt.show()
 
 
-#mypart:
+#compare-part:
+print("Compare the algo BSEfullSolve and SDR-LU_decomposition")
+for nop in range(10,30,10):
+   print(nop)
+   #P_retarded, system = bse_dense.bse_fullsolve(alpha=0.5,spindeg=2.0,nm_dev=nb*length,ndiag=6,nen=nen,nsub=nsub,
+   #                                             en=energies,nop=nop,nk=nk,g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,
+   #                                             w_retarded=W0[:,:,0],v=v[:,:,0])                                                       
+   
+   #BSE solve under approx
+   P_retarded= bse_dense.bse_solve(spindeg=2.0,nm_dev=nb*length,nen=nen,en=energies,nop=nop,g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,w_retarded=W0[:,:,0],v=v[:,:,0])                                                        
+
+   
+   plt.spy(P_retarded)
+   plt.savefig('pattern_bsefullsolve_Pretarded'+str(nop)+'.png')
+   plt.show()  
+
    #plt.spy(system)
-   #plt.savefig('pattern.png')
+   #plt.savefig('pattern_bsefullsolve_system'+str(nop)+'.png')
+   #plt.show()  
+
+   #LU decomposition of P
+   #L_sdr, U_sdr = lu_dcmp_ndiags_arrowhead(P_retarded, nblocks, diag_blocksize, arrow_blocksize)
+   #P_sdr = lu_sinv_ndiags_arrowhead(L_sdr, U_sdr, ndiags, diag_blocksize, arrow_blocksize)
+
+   #plt.spy(P_sdr)
+   #plt.savefig('pattern_SDR-LU_Pretarded'+str(nop)+'.png')
+   #plt.show()
+
 
    #norm_M1 = np.linalg.norm(M1, 2) #2-norm of M1
    #norm_M2 = np.linalg.norm(M2, 2) #2-norm of M2 
@@ -122,6 +143,3 @@ if __name__=='__main__':
    #print *, "M1 Calculation duration in seconds", comp_time1
 
 
-#compare with SDR - LU decomp
-#L_sdr, U_sdr = lu_dcmp_ndiags_arrowhead(A, nblocks, diag_blocksize, arrow_blocksize)
-#X_sdr = lu_sinv_ndiags_arrowhead(L_sdr, U_sdr, ndiags, diag_blocksize, arrow_blocksize)
