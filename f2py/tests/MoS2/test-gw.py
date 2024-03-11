@@ -22,7 +22,7 @@ if __name__=='__main__':
    nkz=1
    nk=nky*nkz
    niter=50
-   eps_screen=6.5
+   eps_screen=2.5
    r0=3.0
    emin=-10.0
    emax=4.0
@@ -51,7 +51,7 @@ if __name__=='__main__':
          ik = ikz + iky*nkz
          ky=-np.pi/Ly + dky*iky
          kz=-np.pi/Lz + dkz*ikz
-         ham[:,:,ik] = wannierham.full_device_mat_def(ky=ky,kz=kz,nb=nb,ns=2,length=length,hr=hr,cell=cell,n_range=n_range)
+         ham[:,:,ik] = wannierham.full_device_mat_def(ky=ky,kz=kz,nb=nb,ns=ns,length=length,hr=hr,cell=cell,n_range=n_range)
          v[:,:,ik] = wannierham.full_device_bare_coulomb(ky=kz,kz=kz,length=length,eps=eps_screen,r0=r0,ldiag=True,nb=nb,ns=ns,
                                                       method='pointlike',n_range=n_range,wannier_center=wannier_center,cell=cell)
    

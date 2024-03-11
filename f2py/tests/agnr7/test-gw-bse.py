@@ -19,8 +19,13 @@ if __name__=='__main__':
    Lx=L[0]
 
    ns = 2
+<<<<<<< HEAD
    length = 6 
    nen = 200
+=======
+   length = 10 
+   nen = 2000
+>>>>>>> 6d0c01987613bb6c59737a11e259da31a16d5ce7
    nsub = 3
    nky=1
    nkz=1
@@ -42,7 +47,7 @@ if __name__=='__main__':
 
    dim_lead = np.ones(2)* nb*ns
    temp =  np.ones(2)* 7.0
-   mu = np.array( [-2.0, -2.0] )
+   mu = np.array( [-2.85, -2.85] )
 
    siglead = np.zeros((nb*ns,nb*ns,nen,2,nk), dtype='complex')
 
@@ -73,6 +78,7 @@ if __name__=='__main__':
    # plt.show()
 
    G_retarded,G_lesser,G_greater,W0 = gf_dense.solve_gw_3d(niter=niter,nm_dev=nb*length,lx=Lx,length=length,spindeg=2.0,
+<<<<<<< HEAD
                                                        temps=temp[0],tempd=temp[1],mus=mu[0],mud=mu[1],alpha_mix=0.5,
                                                        nen=nen,nsub=nsub,en=energies,nb=nb,ns=ns,nphiy=nky,nphiz=nkz,
                                                        ham=ham,h00lead=lead_h00,h10lead=lead_h10,t=lead_coupling,v=v,
@@ -80,12 +86,22 @@ if __name__=='__main__':
 
  #  for nop in range(10,int(3.0/(energies[1]-energies[0])),4):
   #     print( nop,nop*(energies[1]-energies[0]) )
+=======
+                                                        temps=temp[0],tempd=temp[1],mus=mu[0],mud=mu[1],alpha_mix=0.5,
+                                                        nen=nen,nsub=nsub,en=energies,nb=nb,ns=ns,nphiy=nky,nphiz=nkz,
+                                                        ham=ham,h00lead=lead_h00,h10lead=lead_h10,t=lead_coupling,v=v,
+                                                        ndiag=nb,flatband=False)
+
+   for nop in range(int(0.5/(energies[1]-energies[0])) ,int(3.0/(energies[1]-energies[0])), 4):
+       print( nop,nop*(energies[1]-energies[0]) )
+>>>>>>> 6d0c01987613bb6c59737a11e259da31a16d5ce7
     #    P4 = bse_dense.four_polarization_dense(nm_dev=nb*length,nen=nen,nsub=nsub,nk=nk,en=energies,nop=nop,ndiag=0,
     #                                           g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded)
        
     #    plt.spy(np.abs(P4))
     #    plt.show()
 
+<<<<<<< HEAD
    #    P_retarded, system = bse_dense.bse_fullsolve(alpha=0.5,spindeg=2.0,nm_dev=nb*length,ndiag=6,nen=nen,nsub=nsub,
     #                                        en=energies,nop=nop,nk=nk,
      #                                       g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,
@@ -93,6 +109,15 @@ if __name__=='__main__':
       # if (nop == 10):
        #  plt.spy(system)
         # plt.savefig('pattern.png')
+=======
+       P_retarded, system = bse_dense.bse_fullsolve_orig(alpha=0.99,spindeg=2.0,nm_dev=nb*length,ndiag=nb,nen=nen,nsub=nsub,
+                                            en=energies,nop=nop,nk=nk,
+                                            g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,
+                                            w_retarded=W0[:,:,0],v=v[:,:,0])                                                        
+       if (nop == int(0.5/(energies[1]-energies[0]))):
+         plt.spy(system)
+         plt.savefig('pattern.png')
+>>>>>>> 6d0c01987613bb6c59737a11e259da31a16d5ce7
          # plt.show()
    nop=100         
    P_retarded1,system1,epsilon1,L1,M1 = bse_dense.bse_fullsolve(alpha=0.99,spindeg=2.0,ndiag=nb,nm_dev=nb*length,nen=nen,nsub=nsub,en=energies,nop=nop,nk=nk,g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,w=W0[:,:,0],v=v[:,:,0])                                                        
