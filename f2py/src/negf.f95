@@ -1716,7 +1716,8 @@ module bse_dense
                 j=table(2,row)
                 k=table(1,col)
                 l=table(2,col)
-                if ((abs(i-k)<=ndiag).and.(abs(j-l)<=ndiag).and.(abs(j-k)<=ndiag).and.(abs(i-l)<=ndiag)) then 
+                if ((abs(i-k)<=ndiag).and.(abs(j-l)<=ndiag).and.(abs(j-k)<=ndiag).and.&
+                    (abs(i-l)<=ndiag).and.(abs(i-j)<=ndiag).and.(abs(k-l)<=ndiag)) then 
                     call four_polarization(alpha,nm_dev,nen,nsub,en,nop,nk,ndiag,G_lesser,G_greater,G_retarded,L0ijkl,i,j,k,l)
                     Lmat(row,col) = L0ijkl
                 endif
