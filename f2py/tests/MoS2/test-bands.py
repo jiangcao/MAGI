@@ -60,6 +60,7 @@ if __name__=='__main__':
       plt.contourf(x,y,val)
       plt.colorbar()
       plt.title('band #'+str(ib+1))
+      plt.savefig("bands_MoS2.png")
       plt.show()
 
 

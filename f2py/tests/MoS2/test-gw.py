@@ -74,9 +74,9 @@ if __name__=='__main__':
    #                                                          mu=mu,temp=temp,flatband=False)
    # plt.plot(energies, cur[:,0] )
    # plt.show()
-
+   
    G_retarded,G_lesser,G_greater,W0 = gf_dense.solve_gw_3d(niter=niter,nm_dev=nb*length,lx=Lx,length=length,spindeg=2.0,
                                                         temps=temp[0],tempd=temp[1],mus=mu[0],mud=mu[1],alpha_mix=0.5,
                                                         nen=nen,nsub=nsub,en=energies,nb=nb,ns=ns,nphiy=nky,nphiz=nkz,
                                                         ham=ham,h00lead=lead_h00,h10lead=lead_h10,t=lead_coupling,v=v,
-                                                        ldiag=True,flatband=False)
+                                                        ndiag=12,flatband=False)
