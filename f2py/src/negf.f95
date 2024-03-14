@@ -1950,12 +1950,12 @@ module bse_dense
   
 
     ! solve the Bethe-Salpeter Equation under approximation
-    subroutine bse_solve(spindeg,nm_dev,nen,nsub,En,nop,nk,G_lesser,G_greater,G_retarded,W_retarded,V,P_retarded)
+    subroutine bse_solve(alpha,spindeg,nm_dev,ndiag,nen,nsub,En,nop,nk,G_lesser,G_greater,G_retarded,W,V,P_retarded)
         use gf_dense, only: invert_inplace
-        integer,intent(in)::nm_dev,nen,nop,nsub,nk
-        real(dp),intent(in)::en(nen),spindeg
+        integer,intent(in)::nm_dev,nen,nop,nsub,nk,ndiag
+        real(dp),intent(in)::en(nen),spindeg,alpha
         complex(dp),intent(in),dimension(nm_dev,nm_dev,nen,nsub,nk):: G_lesser,G_greater,G_retarded ! electron GF
-        complex(dp),intent(in),dimension(nm_dev,nm_dev) :: W_retarded ! W_0 static screened Coulomb interaction
+        complex(dp),intent(in),dimension(nm_dev,nm_dev) :: W ! W_0 static screened Coulomb interaction
         complex(dp),intent(in),dimension(nm_dev,nm_dev) :: V ! bare Coulomb interaction
         complex(dp),intent(out),dimension(nm_dev,nm_dev):: P_retarded ! 2-point polarization function with interacting electron-hole
         !---------
@@ -1963,7 +1963,7 @@ module bse_dense
         integer :: nn,nm,pp,pq
         complex(dp),allocatable :: L0xx(:,:),A(:,:),B(:,:),Kxx(:,:), Mxx(:,:), Sxx(:,:)
         complex(dp) :: Qijkl, L0Kdd
-        real(dp) :: dE ,alpha 
+        real(dp) :: dE  
         real(dp) :: weights(nsub), xen(nsub)
         integer :: isub, ik, ikd
         ! the P4 IPA tensor is computed from $P4(q,E') = \sum_{k} \int dE G(E,k) G(E-E',k-q)                
@@ -1979,22 +1979,23 @@ module bse_dense
         allocate( Sxx(nm_dev,nm_dev) )
         allocate( Kxx(nm_dev,nm_dev) )
         allocate( A(nm_dev,nm_dev) )
-        L0xx = czero
-        alpha = 0.99_dp
+        L0xx = czero        
         print *,'  start computation L0_xx'
         !$omp parallel default(shared) private(i,j,ie,isub)
         !$omp do
         do i=1,nm_dev
             do j=1,nm_dev
-                do isub=1,nsub
-                    do ie=nop+1,nen
-                        L0xx(i,j) = L0xx(i,j) + &
-                                    (1.0_dp - alpha) * ( G_lesser(j,i,ie,isub,ik) * conjg(G_retarded(i,j,ie-nop,isub,ikd)) + &
-                                                        G_retarded(j,i,ie,isub,ik) * G_lesser(j,i,ie-nop,isub,ikd) )* weights(isub) + &
-                                        alpha * 0.5_dp * ( G_greater(j,i,ie,isub,ik) * G_lesser(j,i,ie-nop,isub,ikd) - & 
-                                                        G_lesser(j,i,ie,isub,ik)  * G_greater(j,i,ie-nop,isub,ikd) )* weights(isub) 
+                if (abs(i-j)<=ndiag) then
+                    do isub=1,nsub
+                        do ie=nop+1,nen
+                            L0xx(i,j) = L0xx(i,j) + &
+                                        (1.0_dp - alpha) * ( G_lesser(j,i,ie,isub,ik) * conjg(G_retarded(i,j,ie-nop,isub,ikd)) + &
+                                                            G_retarded(j,i,ie,isub,ik) * G_lesser(j,i,ie-nop,isub,ikd) )* weights(isub) + &
+                                            alpha * 0.5_dp * ( G_greater(j,i,ie,isub,ik) * G_lesser(j,i,ie-nop,isub,ikd) - & 
+                                                            G_lesser(j,i,ie,isub,ik)  * G_greater(j,i,ie-nop,isub,ikd) )* weights(isub) 
+                        enddo
                     enddo
-                enddo
+                endif
             enddo
         enddo
         !$omp end do
@@ -2002,7 +2003,7 @@ module bse_dense
         L0xx = L0xx * spindeg
         Kxx(:,:) = - c1i*V(:,:)
         do i=1,nm_dev
-            Kxx(i,i) = Kxx(i,i) + c1i*W_retarded(i,i)
+            Kxx(i,i) = Kxx(i,i) + c1i*W(i,i)
         enddo
         !
         print *,'  start computation L0_xx K_xx'
@@ -2020,41 +2021,44 @@ module bse_dense
             do j=1,nm_dev
                 do k=1,nm_dev
                     do l=1,nm_dev
-                        if (k/=l) then
-                            Qijkl=czero
-                            do isub=1,nsub
-                                do ie=nop+1,nen
-                                    ! L0xd * L0dx
-                                    Qijkl = Qijkl + (1.0_dp - alpha) * ( G_lesser(i,l,ie,isub,ik) * conjg(G_retarded(i,k,ie-nop,isub,ikd))*G_lesser(l,j,ie,isub,ik) * conjg(G_retarded(k,j,ie-nop,isub,ikd)) + &
-                                                                        G_retarded(i,l,ie,isub,ik) * G_lesser(k,i,ie-nop,isub,ikd) * G_retarded(l,j,ie,isub,ik) * G_lesser(j,k,ie-nop,isub,ikd) )* weights(isub) + &
-                                            alpha * 0.5d0*( G_greater(i,l,ie,isub,ik) * G_lesser(k,i,ie-nop,isub,ikd) * G_greater(l,j,ie,isub,ik) * G_lesser(j,k,ie-nop,isub,ikd) &
-                                                            - G_lesser(i,l,ie,isub,ik) * G_greater(k,i,ie-nop,isub,ikd) * G_lesser(l,j,ie,isub,ik) * G_greater(j,k,ie-nop,isub,ikd) )* weights(isub)
-                                                                                        
-                                enddo
-                            enddo
-                            Qijkl = - c1i * Qijkl 
-                            !
-                            Qijkl = Qijkl * W_retarded(k,l) 
-                            L0Kdd=czero
-                            do isub=1,nsub
-                                do ie=nop+1,nen
-                                    L0Kdd = L0Kdd + &
-                                            (1.0_dp - alpha) * ( G_lesser(k,k,ie,isub,ik) * conjg(G_retarded(l,l,ie-nop,isub,ikd)) + &
-                                                                G_retarded(k,k,ie,isub,ik) * G_lesser(l,l,ie-nop,isub,ikd) )* weights(isub) + &
-                                                alpha *0.5d0*( G_greater(k,k,ie,isub,ik) * G_lesser(l,l,ie-nop,isub,ikd)   &
-                                                            - G_lesser(k,k,ie,isub,ik) * G_greater(l,l,ie-nop,isub,ikd)   )* weights(isub) 
+                        ! if (k/=l) then
+                            if ((abs(i-k)<=ndiag).and.(abs(j-l)<=ndiag).and.(abs(j-k)<=ndiag).and.&
+                                (abs(i-l)<=ndiag).and.(abs(i-j)<=ndiag).and.(abs(k-l)<=ndiag)) then 
+                                Qijkl=czero
+                                do isub=1,nsub
+                                    do ie=nop+1,nen
+                                        ! L0xd * L0dx
+                                        Qijkl = Qijkl + (1.0_dp - alpha) * ( G_lesser(i,l,ie,isub,ik) * conjg(G_retarded(i,k,ie-nop,isub,ikd))*G_lesser(l,j,ie,isub,ik) * conjg(G_retarded(k,j,ie-nop,isub,ikd)) + &
+                                                                            G_retarded(i,l,ie,isub,ik) * G_lesser(k,i,ie-nop,isub,ikd) * G_retarded(l,j,ie,isub,ik) * G_lesser(j,k,ie-nop,isub,ikd) )* weights(isub) + &
+                                                alpha * 0.5d0*( G_greater(i,l,ie,isub,ik) * G_lesser(k,i,ie-nop,isub,ikd) * G_greater(l,j,ie,isub,ik) * G_lesser(j,k,ie-nop,isub,ikd) &
+                                                                - G_lesser(i,l,ie,isub,ik) * G_greater(k,i,ie-nop,isub,ikd) * G_lesser(l,j,ie,isub,ik) * G_greater(j,k,ie-nop,isub,ikd) )* weights(isub)
                                                                                             
+                                    enddo
                                 enddo
-                            enddo
-                            L0Kdd = L0Kdd 
-                            !
-                            L0Kdd = cone - c1i * L0Kdd * W_retarded(k,l) 
-                            Qijkl = Qijkl / L0Kdd
-                            Sxx(i,j) = Sxx(i,j) + Qijkl
-                            do p=1,nm_dev
-                            Mxx(i,p) = Mxx(i,p) - c1i * Qijkl * ( W_retarded(j,j) - V(j,p) ) 
-                            enddo
-                        endif
+                                Qijkl = - c1i * Qijkl 
+                                !
+                                Qijkl = Qijkl * W(k,l) 
+                                L0Kdd=czero
+                                do isub=1,nsub
+                                    do ie=nop+1,nen
+                                        L0Kdd = L0Kdd + &
+                                                (1.0_dp - alpha) * ( G_lesser(k,k,ie,isub,ik) * conjg(G_retarded(l,l,ie-nop,isub,ikd)) + &
+                                                                    G_retarded(k,k,ie,isub,ik) * G_lesser(l,l,ie-nop,isub,ikd) )* weights(isub) + &
+                                                    alpha *0.5d0*( G_greater(k,k,ie,isub,ik) * G_lesser(l,l,ie-nop,isub,ikd)   &
+                                                                - G_lesser(k,k,ie,isub,ik) * G_greater(l,l,ie-nop,isub,ikd)   )* weights(isub) 
+                                                                                                
+                                    enddo
+                                enddo
+                                L0Kdd = L0Kdd 
+                                !
+                                L0Kdd = cone - c1i * L0Kdd * W(k,l) 
+                                Qijkl = Qijkl / L0Kdd
+                                Sxx(i,j) = Sxx(i,j) + Qijkl
+                                do p=1,nm_dev
+                                    Mxx(i,p) = Mxx(i,p) - c1i * Qijkl * ( W(j,j) - V(j,p) ) 
+                                enddo
+                            endif
+                        ! endif
                     enddo
                 enddo
             enddo

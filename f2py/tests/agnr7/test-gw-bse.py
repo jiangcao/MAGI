@@ -1,6 +1,6 @@
 
 import numpy as np
-from util import linalg
+# from util import linalg
 from negf import gf_dense, fft_mod, bse_dense
 from wannier import wannierham
 import matplotlib.pyplot as plt
@@ -19,13 +19,8 @@ if __name__=='__main__':
    Lx=L[0]
 
    ns = 2
-<<<<<<< HEAD
    length = 6 
    nen = 200
-=======
-   length = 10 
-   nen = 2000
->>>>>>> 6d0c01987613bb6c59737a11e259da31a16d5ce7
    nsub = 3
    nky=1
    nkz=1
@@ -67,62 +62,17 @@ if __name__=='__main__':
    sig_l = np.zeros((nb*length,nb*length,nen,nk), dtype='complex')
    sig_g = np.zeros((nb*length,nb*length,nen,nk), dtype='complex')
 
-   # G_retarded,G_lesser,G_greater,cur,te = gf_dense.calc_gf(ne=nen,e=energies,num_lead=2,nm_dev=nb*length,nm_lead=dim_lead,max_nm_lead=nb*ns,
-   #                                                          ham=ham,lead_h00=lead_h00,lead_h10=lead_h10,
-   #                                                          siglead=siglead,t=lead_coupling,
-   #                                                          scat_sig_retarded=sig_r,scat_sig_lesser=sig_l,scat_sig_greater=sig_g,
-   #                                                          mu=mu,temp=temp,flatband=False)
-
-
-   # plt.plot(energies, cur[:,0] )
-   # plt.show()
-
    G_retarded,G_lesser,G_greater,W0 = gf_dense.solve_gw_3d(niter=niter,nm_dev=nb*length,lx=Lx,length=length,spindeg=2.0,
-<<<<<<< HEAD
                                                        temps=temp[0],tempd=temp[1],mus=mu[0],mud=mu[1],alpha_mix=0.5,
                                                        nen=nen,nsub=nsub,en=energies,nb=nb,ns=ns,nphiy=nky,nphiz=nkz,
                                                        ham=ham,h00lead=lead_h00,h10lead=lead_h10,t=lead_coupling,v=v,
                                                        ndiag=nb,flatband=False)
 
- #  for nop in range(10,int(3.0/(energies[1]-energies[0])),4):
-  #     print( nop,nop*(energies[1]-energies[0]) )
-=======
-                                                        temps=temp[0],tempd=temp[1],mus=mu[0],mud=mu[1],alpha_mix=0.5,
-                                                        nen=nen,nsub=nsub,en=energies,nb=nb,ns=ns,nphiy=nky,nphiz=nkz,
-                                                        ham=ham,h00lead=lead_h00,h10lead=lead_h10,t=lead_coupling,v=v,
-                                                        ndiag=nb,flatband=False)
-
-   for nop in range(int(0.5/(energies[1]-energies[0])) ,int(3.0/(energies[1]-energies[0])), 4):
-       print( nop,nop*(energies[1]-energies[0]) )
->>>>>>> 6d0c01987613bb6c59737a11e259da31a16d5ce7
-    #    P4 = bse_dense.four_polarization_dense(nm_dev=nb*length,nen=nen,nsub=nsub,nk=nk,en=energies,nop=nop,ndiag=0,
-    #                                           g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded)
-       
-    #    plt.spy(np.abs(P4))
-    #    plt.show()
-
-<<<<<<< HEAD
-   #    P_retarded, system = bse_dense.bse_fullsolve(alpha=0.5,spindeg=2.0,nm_dev=nb*length,ndiag=6,nen=nen,nsub=nsub,
-    #                                        en=energies,nop=nop,nk=nk,
-     #                                       g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,
-      #                                      w_retarded=W0[:,:,0],v=v[:,:,0])                                                        
-      # if (nop == 10):
-       #  plt.spy(system)
-        # plt.savefig('pattern.png')
-=======
-       P_retarded, system = bse_dense.bse_fullsolve_orig(alpha=0.99,spindeg=2.0,nm_dev=nb*length,ndiag=nb,nen=nen,nsub=nsub,
-                                            en=energies,nop=nop,nk=nk,
-                                            g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,
-                                            w_retarded=W0[:,:,0],v=v[:,:,0])                                                        
-       if (nop == int(0.5/(energies[1]-energies[0]))):
-         plt.spy(system)
-         plt.savefig('pattern.png')
->>>>>>> 6d0c01987613bb6c59737a11e259da31a16d5ce7
-         # plt.show()
    nop=100         
    P_retarded1,system1,epsilon1,L1,M1 = bse_dense.bse_fullsolve(alpha=0.99,spindeg=2.0,ndiag=nb,nm_dev=nb*length,nen=nen,nsub=nsub,en=energies,nop=nop,nk=nk,g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,w=W0[:,:,0],v=v[:,:,0])                                                        
    plt.spy(system1)
    plt.savefig('pattern1.png')   
+   # plt.show()
    plt.spy(L1)
    plt.savefig('L-pattern1.png')  
    plt.spy(M1)
@@ -138,5 +88,18 @@ if __name__=='__main__':
    print('Max element in 2=', np.max(np.abs(P_retarded2)))
 
 
-  #  P_retarded = bse_dense.bse_solve(spindeg=2.0,nm_dev=nb*length,nen=nen,nsub=nsub,en=energies,nop=nop,nk=nk,g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,w_retarded=W0[:,:,0],v=v[:,:,0])                                                        
+   P_retarded3 = bse_dense.bse_solve(alpha=0.99,spindeg=2.0,ndiag=nb,nm_dev=nb*length,nen=nen,nsub=nsub,en=energies,nop=nop,nk=nk,g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,w=W0[:,:,0],v=v[:,:,0])                                                        
+   print('Max error=', np.max(np.abs(P_retarded3-P_retarded2)))
+   print('Max element in 3=', np.max(np.abs(P_retarded3)))
+   
+  
+   blocksize = nb*length
+   ndiag = nb
+   A = system1
+   
+   nn = blocksize*(ndiag*2-2)
+
+   A = A[-nn:,-nn:]
+
+   np.savez('system.npz', A=A, ndiag=ndiag,blocksize=blocksize)
    
