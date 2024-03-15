@@ -266,11 +266,11 @@ module output
 
 
     ! write spectrum into file (pm3d map)
-    subroutine write_spectrum_summed_over_kz(dataset,i,G,nen,nsub,en,nkz,length,NB,Lx,coeff)
+    subroutine write_spectrum_summed_over_kz(dataset,i,G,nen,nsub,en,ensub,nkz,length,NB,Lx,coeff)
         character(len=*), intent(in) :: dataset
         complex(8), intent(in) :: G(:,:,:,:,:)
         integer, intent(in)::i,nen,length,NB,nkz,nsub
-        real(8), intent(in)::Lx,en(nen),coeff(2)
+        real(8), intent(in)::Lx,en(nen),coeff(2),ensub(nsub)
         integer:: ie,j,ib,ikz,isub
         complex(8)::tr
         character(len=4) :: i_str
@@ -288,7 +288,7 @@ module output
                     enddo
                     enddo
                     tr=tr/dble(nkz)
-                    write(11,'(4E18.4)') dble(j-1)*Lx, en(ie), dble(tr)*coeff(1), aimag(tr)*coeff(2)        
+                    write(11,'(4E18.4)') dble(j-1)*Lx, en(ie)+ensub(isub), dble(tr)*coeff(1), aimag(tr)*coeff(2)        
                 end do
                 write(11,*)   
             enddo 
@@ -298,11 +298,11 @@ module output
 
 
     ! write spectrum into file (pm3d map)
-    subroutine write_spectrum(dataset,i,G,nen,nsub,en,length,NB,Lx,coeff)
+    subroutine write_spectrum(dataset,i,G,nen,nsub,en,ensub,length,NB,Lx,coeff)
         character(len=*), intent(in) :: dataset
         complex(8), intent(in) :: G(:,:,:,:)
         integer, intent(in)::i,nen,length,NB,nsub
-        real(8), intent(in)::Lx,en(nen),coeff(2)
+        real(8), intent(in)::Lx,en(nen),coeff(2),ensub(nsub)
         integer:: ie,j,ib,isub
         complex(8)::tr
         character(len=4) :: i_str
@@ -317,7 +317,7 @@ module output
                     do ib=1,nb                    
                         tr = tr+ G((j-1)*nb+ib,(j-1)*nb+ib,ie,isub)                                
                     enddo                    
-                    write(11,'(4E18.4)') dble(j-1)*Lx, en(ie), dble(tr)*coeff(1), aimag(tr)*coeff(2)        
+                    write(11,'(4E18.4)') dble(j-1)*Lx, en(ie)+ensub(isub), dble(tr)*coeff(1), aimag(tr)*coeff(2)        
                 end do
                 write(11,*)   
             enddo 
@@ -1038,7 +1038,7 @@ module gf_dense
                 !call write_spectrum('ldos_kz'//string(ikz)//'_',iter,G_retarded(:,:,:,ikz),nen,En,length,NB,Lx,(/1.0d0,-2.0d0/))
                 call calc_bond_current(Ham(:,:,ikz),G_lesser(:,:,:,isub,ikz),nen,en,spindeg,nm_dev,tot_cur,tot_ecur,cur)    
                 call write_current_spectrum('last_Jdens',ikz,cur,nen,en,length,NB,Lx)    
-                call write_spectrum('last_ldos',ikz,G_retarded(:,:,:,:,ikz),nen,nsub,En,length,NB,Lx,(/1.0d0,-2.0d0/))
+                call write_spectrum('last_ldos',ikz,G_retarded(:,:,:,:,ikz),nen,nsub,En,xen,length,NB,Lx,(/1.0d0,-2.0d0/))
                 sumcur=sumcur + cur * weights(isub)
                 sumtot_cur=sumtot_cur + tot_cur * weights(isub)
                 sumtot_ecur=sumtot_ecur + tot_ecur * weights(isub)
@@ -1056,12 +1056,12 @@ module gf_dense
                 print *,'flatband'
                 ! call write_spectrum_per_kz('gw_ldos',iter,G_retarded(:,:,:,1,:),nen,En,nphiy,nphiz,length,NB,Lx,(/1.0d0,-2.0d0/),at_ky=kt_cbm/(twopi/Ly),at_kz=ktz_cbm/(twopi/Lz))
                 ! call write_spectrum_per_kz('gw_gamma-centered_ldos',iter,G_retarded(:,:,:,1,:),nen,En,nphiy,nphiz,length,NB,Lx,(/1.0d0,-2.0d0/),at_ky=0.0_dp,at_kz=0.0_dp)
-                call write_spectrum_summed_over_kz('gw_ldos',iter,G_retarded(:,:,:,:,:),nen,nsub,En,nphiy*nphiz,length,NB,Lx,(/1.0d0,-2.0d0/))
+                call write_spectrum_summed_over_kz('gw_ldos',iter,G_retarded(:,:,:,:,:),nen,nsub,En,xen,nphiy*nphiz,length,NB,Lx,(/1.0d0,-2.0d0/))
         
             else
-                call write_spectrum_summed_over_kz('gw_ldos',iter,G_retarded(:,:,:,:,:),nen,nsub,En,nphiy*nphiz,length,NB,Lx,(/1.0d0,-2.0d0/))
-                call write_spectrum_summed_over_kz('gw_ndos',iter,G_lesser(:,:,:,:,:),nen,nsub,En,nphiy*nphiz,length,NB,Lx,(/1.0d0,1.0d0/))
-                call write_spectrum_summed_over_kz('gw_pdos',iter,G_greater(:,:,:,:,:),nen,nsub,En,nphiy*nphiz,length,NB,Lx,(/1.0d0,-1.0d0/))
+                call write_spectrum_summed_over_kz('gw_ldos',iter,G_retarded(:,:,:,:,:),nen,nsub,En,xen,nphiy*nphiz,length,NB,Lx,(/1.0d0,-2.0d0/))
+                call write_spectrum_summed_over_kz('gw_ndos',iter,G_lesser(:,:,:,:,:),nen,nsub,En,xen,nphiy*nphiz,length,NB,Lx,(/1.0d0,1.0d0/))
+                call write_spectrum_summed_over_kz('gw_pdos',iter,G_greater(:,:,:,:,:),nen,nsub,En,xen,nphiy*nphiz,length,NB,Lx,(/1.0d0,-1.0d0/))
             endif
             call write_current_spectrum('gw_Jdens',iter,sumcur,nen,en,length,NB,Lx)
             call write_current('gw_I',iter,sumtot_cur,length,NB,NS,Lx)
@@ -1236,6 +1236,16 @@ module gf_dense
             Sig_greater_new(:,:,ie,ikz) = (Sig_greater_new(:,:,ie,ikz) + B(:,:))/2.0d0
         enddo
         enddo
+        if (length>3) then
+            ! make sure self-energy is continuous near leads (by copying edge block)
+            do ie=1,nen
+                do iqz=1,nphiy*nphiz
+                    call expand_size_bycopy(Sig_retarded_new(:,:,ie,iqz),nm_dev,NB,2)
+                    call expand_size_bycopy(Sig_lesser_new(:,:,ie,iqz),nm_dev,NB,2)
+                    call expand_size_bycopy(Sig_greater_new(:,:,ie,iqz),nm_dev,NB,2)
+                enddo
+            enddo
+        endif
         scba_error = sum( abs(Sig_retarded_new - Sig_retarded)**2 ) / sum( abs(Sig_retarded_new)**2 )
         ! mixing with previous ones
         Sig_retarded = Sig_retarded+ alpha_mix * (Sig_retarded_new -Sig_retarded)
@@ -1245,24 +1255,13 @@ module gf_dense
         deallocate(Sig_retarded_new,Sig_lesser_new,Sig_greater_new)
         !
         if (.not. flatband) then
-        ! get leads sigma
-        do iqz=1,nphiy*nphiz
-            siglead(:,:,:,1,iqz) = Sig_retarded(2*NB*NS+1:3*NB*NS,2*NB*NS+1:3*NB*NS,:,iqz)
-            siglead(:,:,:,2,iqz) = Sig_retarded(nm_dev-3*NB*NS+1:nm_dev-2*NB*NS,nm_dev-3*NB*NS+1:nm_dev-2*NB*NS,:,iqz)    
-        enddo
-        if (length>3) then
-            ! make sure self-energy is continuous near leads (by copying edge block)
-            do ie=1,nen
-                do iqz=1,nphiy*nphiz
-                    call expand_size_bycopy(Sig_retarded(:,:,ie,iqz),nm_dev,NB,2)
-                    call expand_size_bycopy(Sig_lesser(:,:,ie,iqz),nm_dev,NB,2)
-                    call expand_size_bycopy(Sig_greater(:,:,ie,iqz),nm_dev,NB,2)
-                enddo
-            enddo
+            ! get leads sigma
+            do iqz=1,nphiy*nphiz
+                siglead(:,:,:,1,iqz) = Sig_retarded(2*NB*NS+1:3*NB*NS,2*NB*NS+1:3*NB*NS,:,iqz)
+                siglead(:,:,:,2,iqz) = Sig_retarded(nm_dev-3*NB*NS+1:nm_dev-2*NB*NS,nm_dev-3*NB*NS+1:nm_dev-2*NB*NS,:,iqz)    
+            enddo            
         endif
-        endif
-        if (flatband) then
-            print *,'flatband'
+        if (flatband) then            
             ! call write_spectrum_per_kz('gw_SigR',iter,Sig_retarded,nen,En,nphiy,nphiz,length,NB,Lx,(/1.0d0,1.0d0/),at_ky=kt_cbm/(twopi/Ly),at_kz=ktz_cbm/(twopi/Lz))
         endif 
         ! call write_spectrum_summed_over_kz('gw_SigR',iter,Sig_retarded,nen,En,nphiy*nphiz,length,NB,Lx,(/1.0d0,1.0d0/))
@@ -1302,12 +1301,12 @@ module gf_dense
         print *,'flatband'
         ! call write_spectrum_per_kz('gw_ldos',iter,G_retarded(:,:,:,1,:),nen,En,nphiy,nphiz,length,NB,Lx,(/1.0d0,-2.0d0/),at_ky=kt_cbm/(twopi/Ly),at_kz=ktz_cbm/(twopi/Lz))
         ! call write_spectrum_per_kz('gw_gamma-centered_ldos',iter,G_retarded(:,:,:,1,:),nen,En,nphiy,nphiz,length,NB,Lx,(/1.0d0,-2.0d0/),at_ky=0.0_dp,at_kz=0.0_dp)
-        call write_spectrum_summed_over_kz('gw_ldos',iter,G_retarded(:,:,:,:,:),nen,nsub,En,nphiy*nphiz,length,NB,Lx,(/1.0d0,-2.0d0/))
+        call write_spectrum_summed_over_kz('gw_ldos',iter,G_retarded(:,:,:,:,:),nen,nsub,En,xen,nphiy*nphiz,length,NB,Lx,(/1.0d0,-2.0d0/))
 
     else
-        call write_spectrum_summed_over_kz('gw_ldos',iter,G_retarded(:,:,:,:,:),nen,nsub,En,nphiy*nphiz,length,NB,Lx,(/1.0d0,-2.0d0/))
-        call write_spectrum_summed_over_kz('gw_ndos',iter,G_lesser(:,:,:,:,:),nen,nsub,En,nphiy*nphiz,length,NB,Lx,(/1.0d0,1.0d0/))
-        call write_spectrum_summed_over_kz('gw_pdos',iter,G_greater(:,:,:,:,:),nen,nsub,En,nphiy*nphiz,length,NB,Lx,(/1.0d0,-1.0d0/))
+        call write_spectrum_summed_over_kz('gw_ldos',iter,G_retarded(:,:,:,:,:),nen,nsub,En,xen,nphiy*nphiz,length,NB,Lx,(/1.0d0,-2.0d0/))
+        call write_spectrum_summed_over_kz('gw_ndos',iter,G_lesser(:,:,:,:,:),nen,nsub,En,xen,nphiy*nphiz,length,NB,Lx,(/1.0d0,1.0d0/))
+        call write_spectrum_summed_over_kz('gw_pdos',iter,G_greater(:,:,:,:,:),nen,nsub,En,xen,nphiy*nphiz,length,NB,Lx,(/1.0d0,-1.0d0/))
     endif
     call write_current_spectrum('gw_Jdens',iter,sumcur,nen,en,length,NB,Lx)
     call write_current('gw_I',iter,sumtot_cur,length,NB,NS,Lx)
