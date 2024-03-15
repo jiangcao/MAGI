@@ -1649,10 +1649,11 @@ module bse_dense
     end subroutine four_polarization
 
     ! solve the full Bethe-Salpeter Equation
-    subroutine bse_fullsolve(alpha,spindeg,nm_dev,ndiag,nen,nsub,En,nop,nk,G_lesser,G_greater,G_retarded,W,V,P_retarded,system,epsilon_M,L0,M)
+    subroutine bse_fullsolve(alpha,spindeg,nm_dev,ndiag,nen,nsub,En,nop,nk,G_lesser,G_greater,G_retarded,W,V,P_retarded,system,epsilon_M,L0,M,nn)
         use gf_dense, only: invert_inplace
         integer,intent(in)::nm_dev,nen,nop,ndiag,nsub,nk
         real(dp),intent(in)::en(nen),spindeg,alpha
+        integer, intent(out)::nn ! size of the system
         complex(dp),intent(in),dimension(nm_dev,nm_dev,nen,nsub,nk):: G_lesser,G_greater,G_retarded ! electron GFs
         complex(dp),intent(in),dimension(nm_dev,nm_dev) :: W ! W_0 static screened Coulomb interaction
         complex(dp),intent(in),dimension(nm_dev,nm_dev) :: V ! bare Coulomb interaction
@@ -1704,6 +1705,7 @@ module bse_dense
         !     call abort
         ! endif
         N = it
+        nn = N
         ! start computation
         allocate(Mmat(N,N), source=czero)        
         allocate(Lmat(N,N), source=czero)     
