@@ -62,7 +62,7 @@ if __name__=='__main__':
    # sig_l = np.zeros((nb*length,nb*length,nen,nk), dtype='complex')
    # sig_g = np.zeros((nb*length,nb*length,nen,nk), dtype='complex')
    
-   ndiag=nb*2
+   ndiag=nb*4
 
    G_retarded,G_lesser,G_greater,W0 = gf_dense.solve_gw_3d(niter=niter,nm_dev=nb*length,lx=Lx,length=length,spindeg=2.0,
                                                        temps=temp[0],tempd=temp[1],mus=mu[0],mud=mu[1],alpha_mix=0.5,
@@ -71,7 +71,7 @@ if __name__=='__main__':
                                                        ndiag=ndiag,flatband=False)
 
    nop=100         
-   P_retarded1,system1,epsilon1,L1,M1 = bse_dense.bse_fullsolve(alpha=0.99,spindeg=2.0,ndiag=ndiag,nm_dev=nb*length,nen=nen,nsub=nsub,en=energies,nop=nop,nk=nk,g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,w=W0[:,:,0],v=v[:,:,0])                                                        
+   P_retarded1,system1,epsilon1,L1,M1,nn = bse_dense.bse_fullsolve(alpha=0.99,spindeg=2.0,ndiag=ndiag,nm_dev=nb*length,nen=nen,nsub=nsub,en=energies,nop=nop,nk=nk,g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,w=W0[:,:,0],v=v[:,:,0])                                                        
    plt.spy(system1)
    plt.savefig('pattern1.png')   
    # plt.show()
@@ -92,6 +92,20 @@ if __name__=='__main__':
    print('Max error=', np.max(np.abs(P_retarded1-P_retarded2)))
    print('Max element in 1=', np.max(np.abs(P_retarded1)))
    print('Max element in 2=', np.max(np.abs(P_retarded2)))
+
+   blocksize = nb*length
+   ndiag = nb
+
+   A = np.zeros((blocksize*ndiag*2,blocksize*ndiag*2),dtype='complex')
+   L = np.zeros((blocksize*ndiag*2,blocksize*ndiag*2),dtype='complex')
+   A[-nn:,-nn:] = system1[:nn,:nn]
+   for i in range(blocksize*ndiag*2-nn):
+      A[i,i]=1.0
+   L[-nn:,-nn:] = L1[:nn,:nn]
+
+   np.savez('system_L.npz', A=A, L=L, ndiag=ndiag,blocksize=blocksize)
+
+
 
 
    P_retarded3 = bse_dense.bse_solve(alpha=0.99,spindeg=2.0,ndiag=ndiag,nm_dev=nb*length,nen=nen,nsub=nsub,en=energies,nop=nop,nk=nk,g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,w=W0[:,:,0],v=v[:,:,0])                                                        
