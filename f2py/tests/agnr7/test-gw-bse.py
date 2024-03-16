@@ -5,6 +5,11 @@ from negf import gf_dense, fft_mod, bse_dense
 from wannier import wannierham
 import matplotlib.pyplot as plt
 
+from sdr.lu.lu_decompose import lu_dcmp_ndiags_arrowhead
+#from sdr.lu.lu_selected_inversion import lu_sinv_ndiags_arrowhead
+from sdr.utils.matrix_transform import cut_to_blockndiags_arrowhead
+
+
 if __name__=='__main__':   
 
    nb=14
@@ -30,6 +35,11 @@ if __name__=='__main__':
    r0=3.0
    emin=-10.0
    emax=4.0
+
+   nm_dev = nb*length
+   print("nm_dev is ", nm_dev)
+   N = nm_dev*nm_dev
+   print("N is ", N)
 
    v = np.zeros((nb*length,nb*length,nk), dtype='complex')  
    ham = np.zeros((nb*length,nb*length,nk), dtype='complex')  
@@ -113,5 +123,12 @@ if __name__=='__main__':
    print('Max element in 2=', np.max(np.abs(P_retarded2)))
 
 
-  #  P_retarded = bse_dense.bse_solve(spindeg=2.0,nm_dev=nb*length,nen=nen,nsub=nsub,en=energies,nop=nop,nk=nk,g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,w_retarded=W0[:,:,0],v=v[:,:,0])                                                        
-   
+  #cut system matrix to arrowhead form
+  #system1_arrow = cut_to_blockndiags_arrowhead(A=system1,ndiags=N,diag_blocksize=nm_dev,arrow_blocksize=nm_dev)
+  #plt.spy(system1_arrow)
+  #plt.savefig('system1_arrowcut.png')   
+
+   #LU decomposition of P
+   #L_sdr, U_sdr = lu_dcmp_ndiags_arrowhead(system1, nblocks, diag_blocksize, arrow_blocksize)
+   #P_sdr = lu_sinv_ndiags_arrowhead(L_sdr, U_sdr, ndiags, diag_blocksize, arrow_blocksize)
+
