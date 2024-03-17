@@ -1345,7 +1345,76 @@ module gf_dense
         deallocate(Sig_greater,Sig_lesser,Sig_retarded)
     end subroutine solve_gw_3D
   
-  
+    function map_kq(sgn,ik,iq,nk)
+        integer,intent(in)::ik,iq,nk,sgn 
+        integer::map_kq 
+        integer::ikd
+        ikd = ik + sgn * iq + nk/2            
+        if (ikd<1) ikd=ikd+nk
+        if (ikd>nk) ikd=ikd-nk
+        if (nk==1) ikd=1
+        map_kq=ikd 
+    end function map_kq
+
+    function map_kq_2d(sgn,ik,iq,nky,nkz)
+        integer,intent(in)::ik,iq,nky,nkz,sgn 
+        integer::map_kq_2d 
+        integer::ikd,ikyd,ikzd,iqy,iqz,iky,ikz 
+        !
+        iqz = mod(iq-1,nkz)+1
+        iqy = (iq-1) / nkz +1
+        ikz = mod(ik-1,nkz)+1
+        iky = (ik-1) / nkz +1
+        ikzd= map_kq(sgn,ikz,iqz,nkz)
+        ikyd= map_kq(sgn,iky,iqy,nky)        
+        ikd = ikzd + (ikyd-1) * nkz
+        map_kq_2d = ikd
+    end function map_kq_2d
+
+    ! calculate e-photon/phonon self-energies for single mode in thermal equilibrium 
+    subroutine selfenergy_eph_mono(nm,nen,En,nop,nphiy,nphiz,ik,iq,M,G_lesser,G_greater,&
+        Sig_lesser,Sig_greater,n_bose)
+    ! 
+        integer,intent(in)::nm,nen,nop,nphiy,nphiz,iq,ik
+        real(8),intent(in)::en(nen),n_bose
+        complex(8),intent(in),dimension(nm,nm)::M ! interaction matrix at q
+        complex(8),intent(in),dimension(nm,nm,nen,nphiy*nphiz)::G_lesser,G_greater
+        complex(8),intent(out),dimension(nm,nm,nen,nphiy*nphiz)::Sig_lesser,Sig_greater
+        !---------
+        integer::ie,ikd 
+        complex(8),allocatable::B(:,:),A(:,:) ! tmp matrix       
+        ! Sig^<>(E,k) = M_{-q} [ N G^<>(E -+ hw,k-+q) + (N+1) G^<>(E +- hw,k+-q)] M_q       
+        !$omp parallel default(shared) private(ie,A,B) 
+        allocate(B(nm,nm))
+        allocate(A(nm,nm))                                
+        !$omp do
+        do ie=1,nen
+            ! Sig^<(E,k)
+            A = czero
+            ikd = map_kq_2d(-1,ik,iq,nphiy,nphiz)
+            if (ie-nop>=1) A =A+ G_lesser(:,:,ie-nop,ikd) * n_bose
+            ikd = map_kq_2d(+1,ik,iq,nphiy,nphiz)
+            if (ie+nop<=nen) A =A+ G_lesser(:,:,ie+nop,ikd) * (n_bose+1.0_dp)
+            call zgemm('n','n',nm,nm,nm,cone,M,nm,A,nm,czero,B,nm) 
+            call zgemm('n','n',nm,nm,nm,cone,B,nm,M,nm,czero,A,nm)     
+            Sig_lesser(:,:,ie,ik) = Sig_lesser(:,:,ie,ik) + A             
+            !
+            ! Sig^>(E,k)
+            A = czero
+            ikd = map_kq_2d(-1,ik,iq,nphiy,nphiz)
+            if (ie-nop>=1) A =A+ G_greater(:,:,ie-nop,ikd) * (n_bose+1.0_dp)
+            ikd = map_kq_2d(+1,ik,iq,nphiy,nphiz)
+            if (ie+nop<=nen) A =A+ G_greater(:,:,ie+nop,ikd) * n_bose
+            call zgemm('n','n',nm,nm,nm,cone,M,nm,A,nm,czero,B,nm) 
+            call zgemm('n','n',nm,nm,nm,cone,B,nm,M,nm,czero,A,nm)     
+            Sig_greater(:,:,ie,ik) = Sig_greater(:,:,ie,ik) + A                
+        enddo  
+        !$omp end do        
+        deallocate(A,B)
+        !$omp end parallel
+    end subroutine selfenergy_eph_mono
+    
+
 
     Function ferm(a)
         Real(8),intent(in):: a
@@ -2596,20 +2665,16 @@ module rgf
 
     ! calculate e-photon/phonon self-energies in the monochromatic assumption
     subroutine selfenergy_eph_mono(nm,nx,nen,En,nop,Mii,M1i,Mi1,G_lesser,G_greater,&
-        Sig_retarded,Sig_lesser,Sig_greater,n_bose)
+        Sig_lesser,Sig_greater,n_bose)
         integer,intent(in)::nm,nx,nen,nop
         real(8),intent(in)::en(nen),n_bose
         complex(8),intent(in),dimension(nm,nm,nx)::Mii ! interaction matrix diag blocks
         complex(8),intent(in),dimension(nm,nm,nx+1)::M1i,Mi1 ! interaction matrix 1st offdiag blocks
         complex(8),intent(in),dimension(nm,nm,nx,nen)::G_lesser,G_greater
-        complex(8),intent(out),dimension(nm,nm,nx,nen)::Sig_retarded,Sig_lesser,Sig_greater
+        complex(8),intent(out),dimension(nm,nm,nx,nen)::Sig_lesser,Sig_greater
         !---------
         integer::ie,ix
-        complex(8),allocatable::B(:,:),A(:,:) ! tmp matrix
-        Sig_lesser=czero
-        Sig_greater=czero
-        Sig_retarded=czero
-        print *, 'calc Sigma'
+        complex(8),allocatable::B(:,:),A(:,:) ! tmp matrix        
         ! Sig^<>(E) = M [ N G^<>(E -+ hw) + (N+1) G^<>(E +- hw)] M        
         !$omp parallel default(shared) private(ie,A,B,ix) 
         allocate(B(nm,nm))
@@ -2624,7 +2689,7 @@ module rgf
                 if (ie+nop<=nen) A =A+ G_lesser(:,:,ix,ie+nop) * (n_bose+1.0_dp)
                 call zgemm('n','n',nm,nm,nm,cone,Mii(:,:,ix),nm,A,nm,czero,B,nm) 
                 call zgemm('n','n',nm,nm,nm,cone,B,nm,Mii(:,:,ix),nm,czero,A,nm)     
-                Sig_lesser(:,:,ix,ie) = A 
+                Sig_lesser(:,:,ix,ie) = Sig_lesser(:,:,ix,ie) + A 
                 ! i,i = i,i-1 @ i-1,i-1 @ i-1,i
                 A = czero
                 if (ie-nop>=1) A =A+ G_lesser(:,:,max(1,ix-1),ie-nop) * n_bose
@@ -2647,7 +2712,7 @@ module rgf
                 if (ie+nop<=nen) A =A+ G_greater(:,:,ix,ie+nop) * n_bose
                 call zgemm('n','n',nm,nm,nm,cone,Mii(:,:,ix),nm,A,nm,czero,B,nm) 
                 call zgemm('n','n',nm,nm,nm,cone,B,nm,Mii(:,:,ix),nm,czero,A,nm)     
-                Sig_greater(:,:,ix,ie) = A
+                Sig_greater(:,:,ix,ie) = Sig_greater(:,:,ix,ie) + A
                 ! i,i = i,i-1 @ i-1,i-1 @ i-1,i
                 A = czero
                 if (ie-nop>=1) A =A+ G_greater(:,:,max(1,ix-1),ie-nop) * (n_bose+1.0_dp)
@@ -2667,9 +2732,6 @@ module rgf
         !$omp end do
         deallocate(A,B)
         !$omp end parallel
-        Sig_greater=Sig_greater
-        Sig_lesser=Sig_lesser
-        Sig_retarded = dcmplx(0.0d0*dble(Sig_retarded),aimag(Sig_greater-Sig_lesser)/2.0d0)
     end subroutine selfenergy_eph_mono
     
 
