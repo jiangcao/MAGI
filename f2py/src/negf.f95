@@ -1668,7 +1668,10 @@ module bse_dense
         complex(dp) :: epsM, L0ijkl
         real(dp) :: start, finish
         integer :: N,i,j,k,l,p,q,ie,row,col, table(2,nm_dev*nm_dev),it
-        !          
+        integer :: counter1, counter2, counter3, counterrow, countercol
+        !    
+        counterrow = 0
+        countercol = 0      
         N = nm_dev*nm_dev
         ! construct the table of reordered indices   
         it=0
@@ -1677,6 +1680,9 @@ module bse_dense
             it=it+1
             table(:,it) = (/i,i/)            
         enddo
+        counter1 = it !counter1 is the numerber of elements i=j, this is nm_dev
+        print *,'Number of i=j',counter1
+
         ! then put the others, but first within the ndiag
         do i=1,nm_dev
             do j=1,nm_dev                
@@ -1688,6 +1694,8 @@ module bse_dense
                 endif                    
             enddo
         enddo
+        counter2 = it-counter1 !counter2 is the numerber of elements i/=j and smaller than ndiag
+        print *,'Number of i/=j and abs(i-j)<ndiag',counter2-counter1
         ! then put the others, but outside ndiag
         do i=1,nm_dev
             do j=1,nm_dev
@@ -1699,10 +1707,13 @@ module bse_dense
                 endif                    
             enddo
         enddo
+        counter3 = it-counter2-counter1 !counter3 is the numerber of elements i/=j and bigger than ndiag 
+        print *,'Number of i/=j and abs(i-j)>ndiag',counter3-counter2-counter1
         if (it/=N) then 
             print *, 'ERROR!'
             call abort
         endif
+        counter3 = 0
         ! start computation
         allocate(Mmat(N,N), source=czero)        
         allocate(Lmat(N,N), source=czero)     
@@ -1710,7 +1721,7 @@ module bse_dense
         print *,'  start computation L0_ijkl = G_jl G_ki ...'        
         !$omp parallel default(shared) private(row,col,L0ijkl,i,j,k,l)
         !$omp do
-        do row=1,N 
+        do row=1,N
             do col=1,N
                 i=table(1,row)
                 j=table(2,row)
@@ -1719,14 +1730,16 @@ module bse_dense
                 if ((abs(i-k)<=ndiag).and.(abs(j-l)<=ndiag).and.(abs(j-k)<=ndiag).and.(abs(i-l)<=ndiag)) then 
                     call four_polarization(alpha,nm_dev,nen,nsub,en,nop,nk,ndiag,G_lesser,G_greater,G_retarded,L0ijkl,i,j,k,l)
                     Lmat(row,col) = L0ijkl
+                    counter3 = counter3 + 1
                 endif
             enddo
         enddo
         !$omp end do
         !$omp end parallel 
         !
+        print *,'Number of entries in L',counter3
         !$omp parallel default(shared) private(row,col,i,j,k,l)
-        !$omp do        
+        !$omp do      
         do row=1,N                        
             do col=1,N
                 i=table(1,row)
@@ -1734,16 +1747,16 @@ module bse_dense
                 k=table(1,col)
                 l=table(2,col)           
                 if ((i==j).and.(k==l)) then                        
-                    Mmat(row,col) = Mmat(row,col) - c1i *  V(i,k) * spindeg                        
+                    Mmat(row,col) = Mmat(row,col) - c1i *  V(i,k) * spindeg                  
                 endif 
                 if ((i==k).and.(j==l)) then                        
                     Mmat(row,col) = Mmat(row,col) + c1i *  W(i,j)
                 endif 
             enddo
-        enddo    
+        enddo   
         !$omp end do
         !$omp end parallel 
-        !            
+        !             
         print *,'  start computation -L0 K'
         !  
         call zgemm('n','n',N,N,N,-cone,Lmat,N,Mmat,N,czero,Amat,N)         
@@ -1768,7 +1781,23 @@ module bse_dense
         enddo
         !$omp end do
         !$omp end parallel
-        !        
+        ! 
+
+        !$omp parallel default(shared) private(i,j)
+        !$omp do
+        do i=1,N
+            do j=1,N
+                if(i==1 .and. L0(i,j)/=0) then
+                    counterrow = counterrow + 1
+                endif
+                if(j==1 .and. L0(i,j)/=0) then
+                     countercol = countercol+ 1
+                 endif
+            enddo
+        enddo
+        !$omp end do
+        !$omp end parallel
+        ! 
         print *,'  start invert (I - L0 K)'
         !
         call invert_inplace(Amat,N)
@@ -1789,6 +1818,10 @@ module bse_dense
         !$omp end do
         !$omp end parallel      
         !        
+        print *,'Parameters for arrowhead matrix cutting:'
+        print *,'arrow_blocksize:', counter1+counter2
+        print *,'L row:', counterrow
+        print *,'L col:', countercol
         ! ! calculate RPA epsilon and output to file
         call zgemm('n','n',nm_dev,nm_dev,nm_dev,c1i,V,nm_dev,Lmat(1:nm_dev,1:nm_dev),nm_dev,czero,epsilon_M,nm_dev) 
         do j=1,nm_dev 

@@ -5,7 +5,7 @@ from negf import gf_dense, fft_mod, bse_dense
 from wannier import wannierham
 import matplotlib.pyplot as plt
 
-from sdr.lu.lu_decompose import lu_dcmp_ndiags_arrowhead
+#from sdr.lu.lu_decompose import lu_dcmp_ndiags_arrowhead
 #from sdr.lu.lu_selected_inversion import lu_sinv_ndiags_arrowhead
 from sdr.utils.matrix_transform import cut_to_blockndiags_arrowhead
 
@@ -105,26 +105,28 @@ if __name__=='__main__':
         # plt.savefig('pattern.png')
          # plt.show()
    nop=100         
-   P_retarded1,system1,epsilon1,L1,M1 = bse_dense.bse_fullsolve(alpha=0.99,spindeg=2.0,ndiag=nb,nm_dev=nb*length,nen=nen,nsub=nsub,en=energies,nop=nop,nk=nk,g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,w=W0[:,:,0],v=v[:,:,0])                                                        
+   P_retarded1,system1,epsilon1,L1,M1 = bse_dense.bse_fullsolve(alpha=0.99,spindeg=2.0,ndiag=nb,nm_dev=nb*length,nen=nen,nsub=nsub,en=energies,nop=nop,nk=nk,g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,w=W0[:,:,0],v=v[:,:,0])                                                         
+   
    plt.spy(system1)
-   plt.savefig('pattern1.png')   
+   plt.savefig('pattern1.png') 
    plt.spy(L1)
    plt.savefig('L-pattern1.png')  
    plt.spy(M1)
    plt.savefig('M-pattern1.png')  
 
-   P_retarded2,system2,epsilon2 = bse_dense.bse_fullsolve_orig(alpha=0.99,spindeg=2.0,ndiag=nb,nm_dev=nb*length,nen=nen,nsub=nsub,en=energies,nop=nop,nk=nk,g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,w=W0[:,:,0],v=v[:,:,0])                                                        
-   plt.spy(system2)
-   plt.savefig('pattern2.png')   
+  #P_retarded2,system2,epsilon2 = bse_dense.bse_fullsolve_orig(alpha=0.99,spindeg=2.0,ndiag=nb,nm_dev=nb*length,nen=nen,nsub=nsub,en=energies,nop=nop,nk=nk,g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,w=W0[:,:,0],v=v[:,:,0])                                                        
+  #plt.spy(system2)
+  #plt.savefig('pattern2.png')   
    
 
-   print('Max error=', np.max(np.abs(P_retarded1-P_retarded2)))
+   #print('Max error=', np.max(np.abs(P_retarded1-P_retarded2)))
    print('Max element in 1=', np.max(np.abs(P_retarded1)))
-   print('Max element in 2=', np.max(np.abs(P_retarded2)))
+   #print('Max element in 2=', np.max(np.abs(P_retarded2)))
 
 
   #cut system matrix to arrowhead form
-  #system1_arrow = cut_to_blockndiags_arrowhead(A=system1,ndiags=N,diag_blocksize=nm_dev,arrow_blocksize=nm_dev)
+
+   system1_arrow = cut_to_blockndiags_arrowhead(A=system1,ndiags=14,diag_blocksize=84,arrow_blocksize=2142)
   #plt.spy(system1_arrow)
   #plt.savefig('system1_arrowcut.png')   
 
