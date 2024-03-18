@@ -510,7 +510,7 @@ module observ
             enddo  
             !$omp end do
             !$omp end parallel  
-            B=B*(En(2)-En(1))*e_charge/twopi/hbar*e_charge*dble(spindeg)
+            B=B*e_charge/twopi/hbar*e_charge*dble(spindeg)
             if (present(cur)) cur(:,:,ie) = dble(B)
             tot_ecur=tot_ecur+ en(ie)*dble(B)
             tot_cur=tot_cur+ dble(B)          
@@ -1050,6 +1050,7 @@ module gf_dense
             sumtot_ecur=sumtot_ecur/dble(nphiy)/dble(nphiz)
             sumTr=sumTr/dble(nphiz)/dble(nphiy)
             sumTe=sumTe/dble(nphiz)/dble(nphiy)
+            sumTr = sumTr *e_charge/twopi/hbar*e_charge*dble(spindeg)
             if (output_files) then
                 if (flatband) then
                     print *,'flatband'
@@ -1065,12 +1066,11 @@ module gf_dense
                 call write_current_spectrum('gw_Jdens',iter,sumcur,nen,en,length,NB,Lx)
                 call write_current('gw_I',iter,sumtot_cur,length,NB,NS,Lx)
                 call write_current('gw_EI',iter,sumtot_ecur,length,NB,NS,Lx)
-                call write_transmission_spectrum('gw_trL',iter,sumTr(:,1)*spindeg,nen,En)
-                call write_transmission_spectrum('gw_trR',iter,sumTr(:,2)*spindeg,nen,En)
+                call write_transmission_spectrum('gw_trL',iter,sumTr(:,1),nen,En)
+                call write_transmission_spectrum('gw_trR',iter,sumTr(:,2),nen,En)
                 ! call write_transmission_spectrum('gw_TE_LR',iter,sumTe(:,1,2)*spindeg,nen,En)
                 ! call write_transmission_spectrum('gw_TE_RL',iter,sumTe(:,2,1)*spindeg,nen,En)            
-            endif
-            sumTr = sumTr *e_charge/twopi/hbar*e_charge*dble(spindeg)
+            endif            
             open(unit=101,file='gw_Id_iteration.dat',status='unknown',position='append')
             write(101,'(I4,2E16.6)') iter, -sum(sumTr(:,1)), sum(sumTr(:,2))
             close(101)
