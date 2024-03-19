@@ -4,6 +4,8 @@ import numpy as np
 from negf import gf_dense, fft_mod
 from wannier import wannierham
 import matplotlib.pyplot as plt
+import os
+os.environ["OMP_NUM_THREADS"] = "128"
 
 if __name__=='__main__':   
 
@@ -92,7 +94,7 @@ if __name__=='__main__':
                nen = toten
                energies = np.linspace(emin,emax,nen)
                print(nen,nsub)
-               G_retarded,G_lesser,G_greater,W0,tr = gf_dense.solve_gw_3d(scba_tol=1e-4,niter=niter,nm_dev=nb*length,lx=Lx,length=length,spindeg=2.0,
+               G_retarded,G_lesser,G_greater,W0,tr = gf_dense.solve_gw_3d(scba_tol=1e-6,niter=niter,nm_dev=nb*length,lx=Lx,length=length,spindeg=2.0,
                                                             temps=temp[0],tempd=temp[1],mus=mu[0],mud=mu[1],alpha_mix=0.5,
                                                             nen=nen,nsub=nsub,en=energies,nb=nb,ns=ns,nphiy=nky,nphiz=nkz,
                                                             ham=ham,h00lead=lead_h00,h10lead=lead_h10,t=lead_coupling,v=v,
