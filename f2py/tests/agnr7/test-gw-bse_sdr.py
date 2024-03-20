@@ -37,11 +37,11 @@ if __name__=='__main__':
 
 
    plt.spy(L)
-   plt.show()
+#    plt.show()
 
    import scipy.linalg as la
 
-   diag_blocksize = npzfile['blocksize']
+   diag_blocksize = npzfile['blocksize']*4
    arrow_blocksize = npzfile['blocksize']
    ndiag = npzfile['ndiag']
 

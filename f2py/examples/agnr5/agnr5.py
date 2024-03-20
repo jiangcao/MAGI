@@ -42,7 +42,7 @@ if __name__=='__main__':
    mu = np.array( [-2.0, -2.2] )
 
 
-   ndiag_list = np.array([0,nb,nb*2,nb*3,nb*4],dtype='i')
+   ndiag_list = np.array([nb,nb*2,nb*3,nb*4],dtype='i')
    for ndiag in ndiag_list:   
       print('ndiag=',ndiag)
       if (ndiag==0):
@@ -75,8 +75,8 @@ if __name__=='__main__':
       lead_coupling[0:nb*ns,0:nb*ns,0,0] = lead_h10[:,:,0,0]
       lead_coupling[0:nb*ns,nb*(length-ns):nb*length,1,0] = lead_h10[:,:,1,0]
 
-      nen_list = np.array([5000,8000,10000,12000],dtype='i')
-      nsub_list = np.array([1,2,3],dtype='i')
+      nen_list = np.array([5000,8000,10000],dtype='i')
+      nsub_list = np.array([1,2],dtype='i')
 
       ID_list = np.zeros((2,nsub_list.shape[0],nen_list.shape[0]))
 
@@ -84,7 +84,7 @@ if __name__=='__main__':
       for i, toten in enumerate(nen_list):
          print(toten)
          for j, nsub in enumerate(nsub_list):
-            nen = toten//nsub
+            nen = toten
             energies = np.linspace(emin,emax,nen)
             print(nen,nsub)
             G_retarded,G_lesser,G_greater,W0,tr = gf_dense.solve_gw_3d(scba_tol=1e-3,niter=niter,nm_dev=nb*length,lx=Lx,length=length,spindeg=2.0,
