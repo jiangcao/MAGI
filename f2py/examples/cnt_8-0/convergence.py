@@ -34,15 +34,15 @@ if __name__=='__main__':
    nkz=1
    nk=nky*nkz
    niter=50
-   eps_screen=1.5
+   eps_screen=4.0
    r0=3.0
    emin=-15.0
    emax= 4.0
    temp =  np.ones(2)* 300.0
-   mu = np.array( [-3.0, -3.2] )
+   mu = np.array( [-2.8, -3.0] )
 
 
-   ndiag=0
+   ndiag=nb*2
 
    if (ndiag==0):
        ldiag=True
@@ -74,8 +74,8 @@ if __name__=='__main__':
    lead_coupling[0:nb*ns,0:nb*ns,0,0] = lead_h10[:,:,0,0]
    lead_coupling[0:nb*ns,nb*(length-ns):nb*length,1,0] = lead_h10[:,:,1,0]
 
-   nen_list = np.array([400,1000,2000,3000,5000,8000],dtype='i')
-   nsub_list = np.array([1,2,4],dtype='i')
+   nen_list = np.array([3000,5000,8000,10000],dtype='i')
+   nsub_list = np.array([1,2,3],dtype='i')
 
    ID_list = np.zeros((2,nsub_list.shape[0],nen_list.shape[0]))
 
@@ -83,7 +83,7 @@ if __name__=='__main__':
    for i, toten in enumerate(nen_list):
       print(toten)
       for j, nsub in enumerate(nsub_list):
-         nen = toten//nsub
+         nen = toten
          energies = np.linspace(emin,emax,nen)
          print(nen,nsub)
          G_retarded,G_lesser,G_greater,W0,tr = gf_dense.solve_gw_3d(scba_tol=1e-3,niter=niter,nm_dev=nb*length,lx=Lx,length=length,spindeg=2.0,
@@ -91,10 +91,10 @@ if __name__=='__main__':
                                                          nen=nen,nsub=nsub,en=energies,nb=nb,ns=ns,nphiy=nky,nphiz=nkz,
                                                          ham=ham,h00lead=lead_h00,h10lead=lead_h10,t=lead_coupling,v=v,
                                                          ndiag=ndiag,num_lead=2,flatband=False,output_files=False)
-         print('done')                                                       
+         print('NEGF done')                                                       
          print('current=', -np.sum(tr[:,0]) , np.sum(tr[:,1]))                                                       
          ID_list[:,j,i]= [-np.sum(tr[:,0]) , np.sum(tr[:,1]) ]    
 
-   np.savez('run_ndiag0.npz', ID_list=ID_list,
+   np.savez('run.npz', ID_list=ID_list,
                         nen_list=nen_list,
                         nsub_list=nsub_list)

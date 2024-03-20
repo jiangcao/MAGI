@@ -26,8 +26,8 @@ if __name__=='__main__':
    Ly=L[1]
    Lx=L[0]
 
-   ns = 3
-   length = 24 
+   ns = 2
+   length = 18 
    nen = 2000
    nsub = 3
    nky=1
@@ -74,7 +74,7 @@ if __name__=='__main__':
    lead_coupling[0:nb*ns,0:nb*ns,0,0] = lead_h10[:,:,0,0]
    lead_coupling[0:nb*ns,nb*(length-ns):nb*length,1,0] = lead_h10[:,:,1,0]
 
-   nen_list = np.array([2000,3000,5000,8000,10000],dtype='i')
+   nen_list = np.array([5000,8000,10000,12000,14000],dtype='i')
    nsub_list = np.array([1,2,4],dtype='i')
 
    ID_list = np.zeros((2,nsub_list.shape[0],nen_list.shape[0]))

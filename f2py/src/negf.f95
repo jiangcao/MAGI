@@ -1803,8 +1803,8 @@ module bse_dense
         complex(dp),intent(in),dimension(nm_dev,nm_dev) :: W ! W_0 static screened Coulomb interaction
         complex(dp),intent(in),dimension(nm_dev,nm_dev) :: V ! bare Coulomb interaction
         complex(dp),intent(out),dimension(nm_dev,nm_dev):: P_retarded ! 2-point polarization function with interacting electron-hole at frequency [[nop]]        
-        complex(dp),intent(out),dimension(nm_dev*nm_dev ,nm_dev*nm_dev):: system ! system matrix
-        complex(dp),intent(out),dimension(nm_dev*nm_dev ,nm_dev*nm_dev),optional:: L0,M ! L0 matrix
+        complex(dp),intent(out),dimension(nm_dev*(ndiag*2+1) ,nm_dev*(ndiag*2+1)):: system ! system matrix
+        complex(dp),intent(out),dimension(nm_dev*(ndiag*2+1) ,nm_dev*(ndiag*2+1)),optional:: L0,M ! L0 matrix
         complex(dp),intent(out),dimension(nm_dev,nm_dev) :: epsilon_M ! macroscopic dielectric function
         !complex(dp),intent(out),dimension(nm_dev,nm_dev,nm_dev,nm_dev),optional:: P4_retarded ! 4-point polarization function with interacting electron-hole 
         !---------
@@ -1825,12 +1825,10 @@ module bse_dense
         enddo
         ! then put the others, but first within the ndiag
         do i=1,nm_dev
-            do j=1,nm_dev                
-                if (i/=j) then 
-                    if (abs(i-j)<=ndiag) then
-                        it=it+1
-                        table(:,it) = (/i,j/)
-                    endif
+            do j=i-ndiag,i+ndiag                
+                if (i/=j) then                     
+                    it=it+1
+                    table(:,it) = (/i,j/)                    
                 endif                    
             enddo
         enddo
@@ -1865,7 +1863,8 @@ module bse_dense
                 k=table(1,col)
                 l=table(2,col)
                 if ((abs(i-k)<=ndiag).and.(abs(j-l)<=ndiag).and.(abs(j-k)<=ndiag).and.&
-                    (abs(i-l)<=ndiag).and.(abs(i-j)<=ndiag).and.(abs(k-l)<=ndiag)) then 
+                    (abs(i-l)<=ndiag).and.(abs(i-j)<=ndiag).and.(abs(k-l)<=ndiag).and.&
+                    (j>0).and.(j<=nm_dev).and.(l>0).and.(l<=nm_dev)) then 
                     call four_polarization(alpha,nm_dev,nen,nsub,en,nop,nk,ndiag,G_lesser,G_greater,G_retarded,L0ijkl,i,j,k,l)
                     Lmat(row,col) = L0ijkl
                 endif
@@ -1885,7 +1884,7 @@ module bse_dense
                 if ((i==j).and.(k==l)) then                        
                     Mmat(row,col) = Mmat(row,col) - c1i *  V(i,k) * spindeg                        
                 endif 
-                if ((i==k).and.(j==l)) then                        
+                if ((i==k).and.(j==l).and.(j>0).and.(j<=nm_dev).and.(l>0).and.(l<=nm_dev)) then                        
                     Mmat(row,col) = Mmat(row,col) + c1i *  W(i,j)
                 endif 
             enddo
