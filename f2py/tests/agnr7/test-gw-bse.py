@@ -62,7 +62,7 @@ if __name__=='__main__':
    # sig_l = np.zeros((nb*length,nb*length,nen,nk), dtype='complex')
    # sig_g = np.zeros((nb*length,nb*length,nen,nk), dtype='complex')
    
-   ndiag=nb
+   ndiag=nb*6
 
    G_retarded,G_lesser,G_greater,W0,tr = gf_dense.solve_gw_3d(scba_tol=1e-3,niter=niter,nm_dev=nb*length,lx=Lx,length=length,spindeg=2.0,
                                                        temps=temp[0],tempd=temp[1],mus=mu[0],mud=mu[1],alpha_mix=0.5,
@@ -70,55 +70,56 @@ if __name__=='__main__':
                                                        ham=ham,h00lead=lead_h00,h10lead=lead_h10,t=lead_coupling,v=v,
                                                        ndiag=ndiag,num_lead=2,flatband=False,output_files=True)
 
-   nop=200         
-   P_retarded1,system1,epsilon1,L1,M1,nn = bse_dense.bse_fullsolve(alpha=0.99,spindeg=2.0,ndiag=ndiag,nm_dev=nb*length,nen=nen,nsub=nsub,en=energies,nop=nop,nk=nk,g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,w=W0[:,:,0],v=v[:,:,0])                                                        
-   plt.spy(system1)
-   plt.savefig('pattern1.png')   
-   # plt.show()
-   plt.spy(L1)
-   plt.savefig('L-pattern1.png')  
-   plt.spy(M1)
-   plt.savefig('M-pattern1.png')     
-   # plt.matshow(np.real(M1))
-   # plt.show()
-   # plt.matshow(np.imag(M1))
-   # plt.show()
-
-   P_retarded2,system2,epsilon2 = bse_dense.bse_fullsolve_orig(alpha=0.99,spindeg=2.0,ndiag=ndiag,nm_dev=nb*length,nen=nen,nsub=nsub,en=energies,nop=nop,nk=nk,g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,w=W0[:,:,0],v=v[:,:,0])                                                        
-   plt.spy(system2)
-   plt.savefig('pattern2.png')   
-   
-
-   print('Max error=', np.max(np.abs(P_retarded1-P_retarded2)))
-   print('Max element in 1=', np.max(np.abs(P_retarded1)))
-   print('Max element in 2=', np.max(np.abs(P_retarded2)))
-
-   blocksize = nb*length
-   ndiag = nb
-
-   # A = np.zeros((blocksize*ndiag*2,blocksize*ndiag*2),dtype='complex')
-   # L = np.zeros((blocksize*ndiag*2,blocksize*ndiag*2),dtype='complex')
-   # A[-nn:,-nn:] = system1[:nn,:nn]
-   # for i in range(blocksize*ndiag*2-nn):
-   #    A[i,i]=1.0
-   # L[-nn:,-nn:] = L1[:nn,:nn]
-
-   np.savez('system_L.npz', A=system1, L=L1, ndiag=ndiag,blocksize=blocksize)
-
-
+#   nop=200         
+#   P_retarded1,system1,epsilon1,L1,M1,nn = bse_dense.bse_fullsolve(alpha=0.99,spindeg=2.0,ndiag=ndiag,nm_dev=nb*length,nen=nen,nsub=nsub,en=energies,nop=nop,nk=nk,g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,w=W0[:,:,0],v=v[:,:,0])                                                        
+#   plt.spy(system1)
+#   plt.savefig('pattern1.png')   
+#   # plt.show()
+#   plt.spy(L1)
+#   plt.savefig('L-pattern1.png')  
+#   plt.spy(M1)
+#   plt.savefig('M-pattern1.png')     
+#   # plt.matshow(np.real(M1))
+#   # plt.show()
+#   # plt.matshow(np.imag(M1))
+#   # plt.show()
+#
+#   P_retarded2,system2,epsilon2 = bse_dense.bse_fullsolve_orig(alpha=0.99,spindeg=2.0,ndiag=ndiag,nm_dev=nb*length,nen=nen,nsub=nsub,en=energies,nop=nop,nk=nk,g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,w=W0[:,:,0],v=v[:,:,0])                                                        
+#   plt.spy(system2)
+#   plt.savefig('pattern2.png')   
+#   
+#
+#   print('Max error=', np.max(np.abs(P_retarded1-P_retarded2)))
+#   print('Max element in 1=', np.max(np.abs(P_retarded1)))
+#   print('Max element in 2=', np.max(np.abs(P_retarded2)))
+#
+#   blocksize = nb*length
+#   ndiag = nb
+#
+#   # A = np.zeros((blocksize*ndiag*2,blocksize*ndiag*2),dtype='complex')
+#   # L = np.zeros((blocksize*ndiag*2,blocksize*ndiag*2),dtype='complex')
+#   # A[-nn:,-nn:] = system1[:nn,:nn]
+#   # for i in range(blocksize*ndiag*2-nn):
+#   #    A[i,i]=1.0
+#   # L[-nn:,-nn:] = L1[:nn,:nn]
+#
+#   np.savez('system_L.npz', A=system1, L=L1, ndiag=ndiag,blocksize=blocksize)
+#
+#
 
 
    # P_retarded3 = bse_dense.bse_solve(alpha=0.99,spindeg=2.0,ndiag=ndiag,nm_dev=nb*length,nen=nen,nsub=nsub,en=energies,nop=nop,nk=nk,g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,w=W0[:,:,0],v=v[:,:,0])                                                        
    # print('Max error=', np.max(np.abs(P_retarded3-P_retarded2)))
    # print('Max element in 3=', np.max(np.abs(P_retarded3)))
 
-#    dE = energies[1] - energies[0]
-#    for nop in range(10,int(4.0/dE)):
-#        print( nop, dE*nop )
-#        P_retarded3 = bse_dense.bse_fullsolve(alpha=0.99,spindeg=2.0,ndiag=ndiag,nm_dev=nb*length,
-#                                          nen=nen,nsub=nsub,en=energies,nop=nop,nk=nk,
-#                                          g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,
-#                                          w=W0[:,:,0],v=v[:,:,0])                                                        
+   dE = energies[1] - energies[0]
+   for nop in range(10,int(4.0/dE)):
+       print( ndiag, ndiag )
+       print( nop, dE*nop )
+       P_retarded3 = bse_dense.bse_fullsolve(alpha=0.99,spindeg=2.0,ndiag=ndiag,nm_dev=nb*length,
+                                         nen=nen,nsub=nsub,en=energies,nop=nop,nk=nk,
+                                         g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,
+                                         w=W0[:,:,0],v=v[:,:,0])                                                        
    
   
   
