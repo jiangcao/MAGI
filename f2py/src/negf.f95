@@ -1371,12 +1371,46 @@ module gf_dense
         map_kq_2d = ikd
     end function map_kq_2d
 
+
+    subroutine solve_eph(niter,scba_tol,nm_dev,Lx,length,spindeg,temps,tempd,mus,mud,&
+        alpha_mix,nen,nsub,En,nb,ns,nphiy,nphiz,Ham,H00lead,H10lead,T,&
+        ndiag,num_lead,flatband,output_files,G_retarded,G_lesser,G_greater,tr)
+    ! 
+        integer, intent(in) :: nen, nsub, nb, ns,niter,nm_dev,length, nphiz, nphiy, num_lead
+        real(8), intent(in) :: En(nen), temps,tempd, mus, mud, alpha_mix,Lx,spindeg,scba_tol
+        complex(8),intent(in) :: Ham(nm_dev,nm_dev,nphiy*nphiz),H00lead(NB*NS,NB*NS,num_lead,nphiy*nphiz),H10lead(NB*NS,NB*NS,num_lead,nphiy*nphiz),T(NB*NS,nm_dev,num_lead,nphiy*nphiz)        
+        integer,intent(in)::ndiag
+        logical,intent(in)::flatband
+        logical,intent(in) :: output_files
+        complex(8),intent(out),dimension(nm_dev,nm_dev,nen,nsub,nphiy*nphiz) ::  G_retarded,G_lesser,G_greater        
+        real(8),intent(out) ::Tr(nen,num_lead) ! current spectrum on leads    
+        !------        
+        complex(8),dimension(:,:,:,:),allocatable ::  Sig_retarded,Sig_lesser,Sig_greater
+        complex(8),dimension(:,:,:,:),allocatable ::  Sig_retarded_new,Sig_lesser_new,Sig_greater_new
+        complex(8),allocatable::siglead(:,:,:,:,:) ! lead scattering sigma_retarded
+        complex(8),allocatable,dimension(:,:):: B ! tmp matrix
+        real(8),allocatable::cur(:,:,:),tot_cur(:,:),tot_ecur(:,:),wen(:),sumcur(:,:,:),sumtot_cur(:,:),sumtot_ecur(:,:)
+        complex(8),allocatable::Ispec(:,:,:),Itot(:,:)    
+        real(8),allocatable::Te(:,:,:) ! transmission matrix spectrum
+        real(8),allocatable::sumTr(:,:) ! current spectrum on leads summed over k
+        real(8),allocatable::sumTe(:,:,:) ! transmission matrix spectrum summed over k
+        integer :: iter,ie,nopmax
+        integer :: i,j,nm,nop,l,h,iop,ikz,iqz,ikzd,iky,iqy,ikyd,ik,iq,ikd,isub        
+        complex(8) :: dE
+        real(8)::mu(2),temp(2)
+        real(8)::weights(nsub),xen(nsub)
+        real(8)::scba_error
+
+
+    end subroutine solve_eph
+
     ! calculate e-photon/phonon self-energies for single mode in thermal equilibrium 
     subroutine selfenergy_eph_mono(nm,nen,En,nop,nphiy,nphiz,ik,iq,M,G_lesser,G_greater,&
-        Sig_lesser,Sig_greater,n_bose)
+        Sig_lesser,Sig_greater,n_bose,gamma_q)
     ! 
         integer,intent(in)::nm,nen,nop,nphiy,nphiz,iq,ik
         real(8),intent(in)::en(nen),n_bose
+        logical,intent(in)::gamma_q
         complex(8),intent(in),dimension(nm,nm)::M ! interaction matrix at q
         complex(8),intent(in),dimension(nm,nm,nen,nphiy*nphiz)::G_lesser,G_greater
         complex(8),intent(out),dimension(nm,nm,nen,nphiy*nphiz)::Sig_lesser,Sig_greater
@@ -1390,10 +1424,18 @@ module gf_dense
         !$omp do
         do ie=1,nen
             ! Sig^<(E,k)
-            A = czero
-            ikd = map_kq_2d(-1,ik,iq,nphiy,nphiz)
+            A = czero            
+            if (gamma_q) then 
+                ikd = ik
+            else
+                ikd = map_kq_2d(-1,ik,iq,nphiy,nphiz)
+            endif
             if (ie-nop>=1) A =A+ G_lesser(:,:,ie-nop,ikd) * n_bose
-            ikd = map_kq_2d(+1,ik,iq,nphiy,nphiz)
+            if (gamma_q) then 
+                ikd = ik
+            else
+                ikd = map_kq_2d(+1,ik,iq,nphiy,nphiz)
+            endif
             if (ie+nop<=nen) A =A+ G_lesser(:,:,ie+nop,ikd) * (n_bose+1.0_dp)
             call zgemm('n','n',nm,nm,nm,cone,M,nm,A,nm,czero,B,nm) 
             call zgemm('n','n',nm,nm,nm,cone,B,nm,M,nm,czero,A,nm)     
@@ -1401,9 +1443,17 @@ module gf_dense
             !
             ! Sig^>(E,k)
             A = czero
-            ikd = map_kq_2d(-1,ik,iq,nphiy,nphiz)
+            if (gamma_q) then 
+                ikd = ik
+            else
+                ikd = map_kq_2d(-1,ik,iq,nphiy,nphiz)
+            endif
             if (ie-nop>=1) A =A+ G_greater(:,:,ie-nop,ikd) * (n_bose+1.0_dp)
-            ikd = map_kq_2d(+1,ik,iq,nphiy,nphiz)
+            if (gamma_q) then 
+                ikd = ik 
+            else                
+                ikd = map_kq_2d(+1,ik,iq,nphiy,nphiz)
+            endif
             if (ie+nop<=nen) A =A+ G_greater(:,:,ie+nop,ikd) * n_bose
             call zgemm('n','n',nm,nm,nm,cone,M,nm,A,nm,czero,B,nm) 
             call zgemm('n','n',nm,nm,nm,cone,B,nm,M,nm,czero,A,nm)     
@@ -1794,10 +1844,11 @@ module bse_dense
     end subroutine four_polarization
 
     ! solve the full Bethe-Salpeter Equation
-    subroutine bse_fullsolve(alpha,spindeg,nm_dev,ndiag,nen,nsub,En,nop,nk,G_lesser,G_greater,G_retarded,W,V,P_retarded,system,epsilon_M,L0,M,nn)
+    subroutine bse_fullsolve(alpha,spindeg,nm_dev,ndiag,nen,nsub,En,nop,nk,G_lesser,G_greater,G_retarded,W,V,solve,P_retarded,system,epsilon_M,L0,M,nn)
         use gf_dense, only: invert_inplace
         integer,intent(in)::nm_dev,nen,nop,ndiag,nsub,nk
         real(dp),intent(in)::en(nen),spindeg,alpha
+        logical,intent(in),optional::solve
         integer, intent(out)::nn ! size of the system
         complex(dp),intent(in),dimension(nm_dev,nm_dev,nen,nsub,nk):: G_lesser,G_greater,G_retarded ! electron GFs
         complex(dp),intent(in),dimension(nm_dev,nm_dev) :: W ! W_0 static screened Coulomb interaction
@@ -1812,9 +1863,14 @@ module bse_dense
         complex(dp),dimension(:,:),allocatable :: Mmat ! 4-point Kernel
         complex(dp),dimension(:,:),allocatable :: Amat ! system matrix        
         complex(dp) :: epsM, L0ijkl
+        logical::lsolve
         real(dp) :: start, finish
         integer :: N,i,j,k,l,p,q,ie,row,col, table(2,nm_dev*nm_dev),it
         !          
+        lsolve=.true.
+        if(present(solve)) then 
+            lsolve = solve
+        endif
         ! N = nm_dev*nm_dev
         ! construct the table of reordered indices   
         it=0
@@ -1917,46 +1973,48 @@ module bse_dense
         !$omp end do
         !$omp end parallel
         !        
-        print *,'  start invert (I - L0 K)'
-        !
-        call invert_inplace(Amat,N)
-        !
-        print *,'  start computation L = (I - L0 K) \ L0  '
-        !
-        call zgemm('n','n',N,N,N,cone,Amat,N,Lmat,N,czero,Mmat,N)                 
-        !
-        !$omp parallel default(shared) private(row,col,i,k)
-        !$omp do
-        do row=1,nm_dev
-            do col=1,nm_dev
-                i=table(1,row)
-                k=table(1,col)
-                P_retarded(i,k) =  - c1i * Mmat(row,col)                
-            enddo
-        enddo                          
-        !$omp end do
-        !$omp end parallel      
-        !        
-        ! ! calculate RPA epsilon and output to file
-        call zgemm('n','n',nm_dev,nm_dev,nm_dev,c1i,V,nm_dev,Lmat(1:nm_dev,1:nm_dev),nm_dev,czero,epsilon_M,nm_dev) 
-        do j=1,nm_dev 
-            epsilon_M(j,j) = epsilon_M(j,j) + cone
-        enddo      
-        call invert_inplace(epsilon_M,nm_dev)        
-        open(unit=99,file='rpa_epsilonM.dat',status='unknown', position="append", action="write")    
-        epsM = sum( epsilon_M(nm_dev/2,1:nm_dev) )
-        write(99,*) dble(nop)*(En(2)-En(1)) , - aimag(epsM), dble(epsM) ! - Im \epsilon^{-1}
-        close(99)
-        !
-        ! ! calculate BSE epsilon_M and output to file        
-        call zgemm('n','n',nm_dev,nm_dev,nm_dev,-cone,V,nm_dev,P_retarded,nm_dev,czero,epsilon_M,nm_dev) 
-        do j=1,nm_dev 
-            epsilon_M(j,j) = epsilon_M(j,j) + cone
-        enddo      
-        open(unit=99,file='bse_epsilonM.dat',status='unknown', position="append", action="write")    
-        epsM = sum( epsilon_M(nm_dev/2,1:nm_dev) )
-        write(99,*) dble(nop)*(En(2)-En(1)) , aimag(epsM), dble(epsM) ! Im \epsilon_M -> absorption
-        close(99)
+        if (lsolve) then 
+            print *,'  start invert (I - L0 K)'
+            !
+            call invert_inplace(Amat,N)
+            !
+            print *,'  start computation L = (I - L0 K) \ L0  '
+            !
+            call zgemm('n','n',N,N,N,cone,Amat,N,Lmat,N,czero,Mmat,N)                 
+            !
+            !$omp parallel default(shared) private(row,col,i,k)
+            !$omp do
+            do row=1,nm_dev
+                do col=1,nm_dev
+                    i=table(1,row)
+                    k=table(1,col)
+                    P_retarded(i,k) =  - c1i * Mmat(row,col)                
+                enddo
+            enddo                          
+            !$omp end do
+            !$omp end parallel      
+            !        
+            ! ! calculate RPA epsilon and output to file
+            call zgemm('n','n',nm_dev,nm_dev,nm_dev,c1i,V,nm_dev,Lmat(1:nm_dev,1:nm_dev),nm_dev,czero,epsilon_M,nm_dev) 
+            do j=1,nm_dev 
+                epsilon_M(j,j) = epsilon_M(j,j) + cone
+            enddo      
+            call invert_inplace(epsilon_M,nm_dev)        
+            open(unit=99,file='rpa_epsilonM.dat',status='unknown', position="append", action="write")    
+            epsM = sum( epsilon_M(nm_dev/2,1:nm_dev) )
+            write(99,*) dble(nop)*(En(2)-En(1)) , - aimag(epsM), dble(epsM) ! - Im \epsilon^{-1}
+            close(99)
+            !
+            ! ! calculate BSE epsilon_M and output to file        
+            call zgemm('n','n',nm_dev,nm_dev,nm_dev,-cone,V,nm_dev,P_retarded,nm_dev,czero,epsilon_M,nm_dev) 
+            do j=1,nm_dev 
+                epsilon_M(j,j) = epsilon_M(j,j) + cone
+            enddo      
+            open(unit=99,file='bse_epsilonM.dat',status='unknown', position="append", action="write")    
+            epsM = sum( epsilon_M(nm_dev/2,1:nm_dev) )
+            write(99,*) dble(nop)*(En(2)-En(1)) , aimag(epsM), dble(epsM) ! Im \epsilon_M -> absorption
+            close(99)
+        endif
         !                
         deallocate(Mmat,Lmat,Amat)
     end subroutine bse_fullsolve
