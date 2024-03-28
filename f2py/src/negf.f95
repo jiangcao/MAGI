@@ -1865,7 +1865,7 @@ module bse_dense
         complex(dp) :: epsM, L0ijkl
         logical::lsolve
         real(dp) :: start, finish
-        integer :: N,i,j,k,l,p,q,ie,row,col, table(2,nm_dev*nm_dev),it
+        integer :: N,i,j,k,l,p,q,ie,row,col, table(2,nm_dev*(ndiag*2+1)),it
         !          
         lsolve=.true.
         if(present(solve)) then 
@@ -1881,10 +1881,12 @@ module bse_dense
         enddo
         ! then put the others, but first within the ndiag
         do i=1,nm_dev
-            do j=i-ndiag,i+ndiag                
+            do j=1,nm_dev               
                 if (i/=j) then                     
-                    it=it+1
-                    table(:,it) = (/i,j/)                    
+                    if (abs(i-j)<=ndiag) then
+                        it=it+1
+                        table(:,it) = (/i,j/)                    
+                    endif
                 endif                    
             enddo
         enddo
