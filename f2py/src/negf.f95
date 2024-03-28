@@ -1854,8 +1854,10 @@ module bse_dense
         complex(dp),intent(in),dimension(nm_dev,nm_dev) :: W ! W_0 static screened Coulomb interaction
         complex(dp),intent(in),dimension(nm_dev,nm_dev) :: V ! bare Coulomb interaction
         complex(dp),intent(out),dimension(nm_dev,nm_dev):: P_retarded ! 2-point polarization function with interacting electron-hole at frequency [[nop]]        
-        complex(dp),intent(out),dimension(nm_dev*(ndiag*2+1) ,nm_dev*(ndiag*2+1)):: system ! system matrix
-        complex(dp),intent(out),dimension(nm_dev*(ndiag*2+1) ,nm_dev*(ndiag*2+1)),optional:: L0,M ! L0 matrix
+        complex(dp),intent(out),dimension(nm_dev*nm_dev ,nm_dev*nm_dev):: system ! system matrix
+        complex(dp),intent(out),dimension(nm_dev*nm_dev ,nm_dev*nm_dev),optional:: L0,M ! L0 matrix
+        !complex(dp),intent(out),dimension(nm_dev*(ndiag*2+1) ,nm_dev*(ndiag*2+1)):: system ! system matrix
+        !complex(dp),intent(out),dimension(nm_dev*(ndiag*2+1) ,nm_dev*(ndiag*2+1)),optional:: L0,M ! L0 matrix
         complex(dp),intent(out),dimension(nm_dev,nm_dev) :: epsilon_M ! macroscopic dielectric function
         !complex(dp),intent(out),dimension(nm_dev,nm_dev,nm_dev,nm_dev),optional:: P4_retarded ! 4-point polarization function with interacting electron-hole 
         !---------
@@ -1865,13 +1867,15 @@ module bse_dense
         complex(dp) :: epsM, L0ijkl
         logical::lsolve
         real(dp) :: start, finish
-        integer :: N,i,j,k,l,p,q,ie,row,col, table(2,nm_dev*(ndiag*2+1)),it
+        integer :: N,i,j,k,l,p,q,ie,row,col, it
+        integer,allocatable::table(:,:)
         !          
         lsolve=.true.
         if(present(solve)) then 
             lsolve = solve
         endif
-        ! N = nm_dev*nm_dev
+        N = nm_dev*nm_dev
+        allocate(table(2,N))
         ! construct the table of reordered indices   
         it=0
         ! first put the i=j        
@@ -1891,20 +1895,20 @@ module bse_dense
             enddo
         enddo
         ! then put the others, but outside ndiag
-        ! do i=1,nm_dev
-        !     do j=1,nm_dev
-        !         if (i/=j) then 
-        !             if (abs(i-j)>ndiag) then
-        !                 it=it+1
-        !                 table(:,it) = (/i,j/)
-        !             endif
-        !         endif                    
-        !     enddo
-        ! enddo
-        ! if (it/=N) then 
-        !     print *, 'ERROR!'
-        !     call abort
-        ! endif
+        do i=1,nm_dev
+            do j=1,nm_dev
+                if (i/=j) then 
+                    if (abs(i-j)>ndiag) then
+                        it=it+1
+                        table(:,it) = (/i,j/)
+                    endif
+                endif                    
+            enddo
+        enddo
+        if (it/=N) then 
+            print *, 'ERROR!'
+            call abort
+        endif
         N = it
         nn = N
         ! start computation
