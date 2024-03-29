@@ -1867,7 +1867,7 @@ module bse_dense
         complex(dp) :: epsM, L0ijkl
         logical::lsolve
         real(dp) :: start, finish
-        integer :: N,i,j,k,l,p,q,ie,row,col, it
+        integer :: N,i,j,k,l,p,q,ie,row,col, it, ii,jj
         integer,allocatable::table(:,:)
         !          
         lsolve=.true.
@@ -1894,6 +1894,7 @@ module bse_dense
                 endif                    
             enddo
         enddo
+        nn=it
         ! then put the others, but outside ndiag
         do i=1,nm_dev
             do j=1,nm_dev
@@ -1910,7 +1911,6 @@ module bse_dense
             call abort
         endif
         N = it
-        nn = N
         ! start computation
         allocate(Mmat(N,N), source=czero)        
         allocate(Lmat(N,N), source=czero)     
@@ -1980,13 +1980,14 @@ module bse_dense
         !$omp end parallel
         !        
         if (lsolve) then 
+            N=nn
             print *,'  start invert (I - L0 K)'
             !
-            call invert_inplace(Amat,N)
+            call invert_inplace(Amat(1:N,1:N),N)
             !
             print *,'  start computation L = (I - L0 K) \ L0  '
             !
-            call zgemm('n','n',N,N,N,cone,Amat,N,Lmat,N,czero,Mmat,N)                 
+            call zgemm('n','n',N,N,N,cone,Amat(1:N,1:N),N,Lmat(1:N,1:N),N,czero,Mmat(1:N,1:N),N)                 
             !
             !$omp parallel default(shared) private(row,col,i,k)
             !$omp do
