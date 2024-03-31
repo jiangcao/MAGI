@@ -30,7 +30,7 @@ if __name__=='__main__':
    Lx=L[0]
 
    ns = 2
-   length = 12 
+   length = 8 
    nen = 2000
    nsub = 3
    nky=1
@@ -45,13 +45,13 @@ if __name__=='__main__':
 
    pot_drop = 0.4
    pot = np.zeros(length) 
-   pot[:ns]  = 0.0
-   pot[-ns:] = -pot_drop
-   pot[ns:-ns] = np.linspace(0,-pot_drop,length-ns*2) 
+   pot[:ns*2]  = 0.0
+   pot[-ns*2:] = -pot_drop
+   pot[ns*2:-ns*2] = np.linspace(0,-pot_drop,length-ns*4) 
 
    mu = np.array( [-3.0, -3.0-pot_drop] )
 
-   ndiag_list = np.array([nb,nb*2,nb*3,nb*4,nb*5,nb*6,nb*7,nb*8],dtype='i')
+   ndiag_list = np.array([nb*2,nb*3,nb*4,nb*5,nb*6,nb*7,nb*8,nb],dtype='i')
    for ndiag in ndiag_list:   
       print('ndiag=',ndiag)
       if (ndiag==0):
@@ -59,7 +59,7 @@ if __name__=='__main__':
       else:
          ldiag=False
 
-
+      ns = max( ndiag // nb , 2 )
       v = np.zeros((nb*length,nb*length,nk), dtype=np.complex128)  
       ham = np.zeros((nb*length,nb*length,nk), dtype=np.complex128)  
 
@@ -78,15 +78,15 @@ if __name__=='__main__':
       lead_h10[:,:,1,0] = h10
 
       lead_h00 = np.zeros((nb*ns,nb*ns,2,nk), dtype=np.complex128)
-      lead_h00[:,:,0,0] = h00 + pot[0]
-      lead_h00[:,:,1,0] = h00 + pot[-1]
+      lead_h00[:,:,0,0] = h00 + np.diag(np.ones(nb*ns)* pot[0])
+      lead_h00[:,:,1,0] = h00 + np.diag(np.ones(nb*ns)* pot[-1])
 
       lead_coupling = np.zeros((nb*ns,nb*length,2,nk), dtype=np.complex128)
       lead_coupling[0:nb*ns,0:nb*ns,0,0] = lead_h10[:,:,0,0]
       lead_coupling[0:nb*ns,nb*(length-ns):nb*length,1,0] = lead_h10[:,:,1,0]
 
-      nen_list = np.array([3000,5000,8000,10000,12000,15000],dtype='i')
-      nsub_list = np.array([1,2,3],dtype='i')
+      nen_list = np.array([3000,5000,10000,15000],dtype='i')
+      nsub_list = np.array([2,3],dtype='i')
       
 
       ID_list = np.zeros((2,nsub_list.shape[0],nen_list.shape[0]))
