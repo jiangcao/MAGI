@@ -51,7 +51,7 @@ if __name__=='__main__':
 
    mu = np.array( [-3.0, -3.0-pot_drop] )
 
-   ndiag_list = np.array([nb*2,nb*3,nb*4,nb*5,nb*6,nb*7,nb*8,nb],dtype='i')
+   ndiag_list = np.array([nb*3,nb*4,nb*5,nb*6,nb*7,nb*8,nb,nb*2],dtype='i')
    for ndiag in ndiag_list:   
       print('ndiag=',ndiag)
       if (ndiag==0):
@@ -59,7 +59,6 @@ if __name__=='__main__':
       else:
          ldiag=False
 
-      ns = max( ndiag // nb , 2 )
       v = np.zeros((nb*length,nb*length,nk), dtype=np.complex128)  
       ham = np.zeros((nb*length,nb*length,nk), dtype=np.complex128)  
 

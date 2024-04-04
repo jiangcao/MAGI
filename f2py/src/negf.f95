@@ -241,7 +241,7 @@ module output
                         tr = tr+G((j-1)*nb+ib,(j-1)*nb+ib,ie,ikz+nkz*(iky-1))            
                     enddo
                 end do
-                write(11,'(4E18.6)') dble(iky)/dble(nky), en(ie), dble(tr)*coeff(1), aimag(tr)*coeff(2)        
+                write(11,'(4E20.6)') dble(iky)/dble(nky), en(ie), dble(tr)*coeff(1), aimag(tr)*coeff(2)        
             enddo
             write(11,*)    
         enddo
@@ -257,7 +257,7 @@ module output
                         tr = tr+G((j-1)*nb+ib,(j-1)*nb+ib,ie,ikz+nkz*(iky-1))            
                     enddo
                 end do
-                write(11,'(4E18.6)') dble(ikz)/dble(nkz), en(ie), dble(tr)*coeff(1), aimag(tr)*coeff(2)        
+                write(11,'(4E20.6)') dble(ikz)/dble(nkz), en(ie), dble(tr)*coeff(1), aimag(tr)*coeff(2)        
             enddo
             write(11,*)    
         enddo
@@ -288,7 +288,7 @@ module output
                     enddo
                     enddo
                     tr=tr/dble(nkz)
-                    write(11,'(4E18.6)') dble(j-1)*Lx, en(ie)+ensub(isub), dble(tr)*coeff(1), aimag(tr)*coeff(2)        
+                    write(11,'(4E20.6)') dble(j-1)*Lx, en(ie)+ensub(isub), dble(tr)*coeff(1), aimag(tr)*coeff(2)        
                 end do
                 write(11,*)   
             enddo 
@@ -317,7 +317,7 @@ module output
                     do ib=1,nb                    
                         tr = tr+ G((j-1)*nb+ib,(j-1)*nb+ib,ie,isub)                                
                     enddo                    
-                    write(11,'(4E18.6)') dble(j-1)*Lx, en(ie)+ensub(isub), dble(tr)*coeff(1), aimag(tr)*coeff(2)        
+                    write(11,'(4E20.6)') dble(j-1)*Lx, en(ie)+ensub(isub), dble(tr)*coeff(1), aimag(tr)*coeff(2)        
                 end do
                 write(11,*)   
             enddo 
@@ -348,7 +348,7 @@ module output
                 enddo
             enddo                        
             end do
-            write(11,'(2E18.6)') dble(ii)*Lx, tr
+            write(11,'(2E20.6)') dble(ii)*Lx, tr
         end do
     end subroutine write_current
     
@@ -373,7 +373,7 @@ module output
                     tr = tr+ cur((j-1)*nb+ib,j*nb+jb,ie)
                 enddo                        
                 end do
-                write(11,'(3E18.6)') dble(j)*Lx, en(ie), tr
+                write(11,'(3E20.6)') dble(j)*Lx, en(ie), tr
             end do
             write(11,*)    
         end do
@@ -393,7 +393,7 @@ module output
         write (i_str, fmt) i 
         open(unit=11,file=trim(dataset)//i_str//'.dat',status='unknown')
         do ie = 1,nen    
-        write(11,'(2E18.6)') en(ie), dble(tr(ie))      
+        write(11,'(2E20.6)') en(ie), dble(tr(ie))      
         end do
         close(11)
     end subroutine write_transmission_spectrum
@@ -484,6 +484,41 @@ module observ
         enddo
     end subroutine calc_charge
 
+    ! calculate scattering collision integral from the self-energy
+    ! I = sum_E Sig> G^< - Sig< G^>
+    subroutine calc_collision(Sig_lesser,Sig_greater,G_lesser,G_greater,nen,en,nk,spindeg,nm_dev,I,Ispec)
+        complex(8),intent(in),dimension(nm_dev,nm_dev,nen,nk)::G_greater,G_lesser,Sig_lesser,Sig_greater
+        real(8),intent(in)::en(nen),spindeg
+        integer,intent(in)::nen,nm_dev,nk
+        complex(8),intent(out)::I(nm_dev,nm_dev) ! collision integral
+        complex(8),intent(out),optional::Ispec(nm_dev,nm_dev,nen) ! collision integral spectrum
+        !----
+        complex(8),allocatable::B(:,:)
+        real(dp)::dE
+        integer::ie,ik        
+        I=dcmplx(0.0d0,0.0d0)
+        if (present(Ispec)) then 
+            Ispec=dcmplx(0.0d0,0.0d0)
+        endif
+        dE=en(2)-en(1)
+        do ik=1,nk
+            !$omp parallel default(shared) private(B,ie) 
+            allocate(B(nm_dev,nm_dev))
+            !$omp do 
+            do ie=1,nen
+                call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,Sig_greater(:,:,ie,ik),nm_dev,G_lesser(:,:,ie,ik),nm_dev,czero,B,nm_dev)
+                call zgemm('n','n',nm_dev,nm_dev,nm_dev,-cone,Sig_lesser(:,:,ie,ik),nm_dev,G_greater(:,:,ie,ik),nm_dev,cone,B,nm_dev) 
+                I(:,:)=I(:,:)+B(:,:)
+                if (present(Ispec)) then 
+                    Ispec(:,:,ie)=B(:,:)*spindeg+Ispec(:,:,ie)
+                endif
+            enddo            
+            !$omp end do
+            deallocate(B)
+            !$omp end parallel
+        enddo
+        I(:,:)=I(:,:)*dE/twopi*spindeg/dble(nk)        
+    end subroutine calc_collision
 
 
     ! calculate bond current using I_ij = H_ij G<_ji - H_ji G^<_ij
