@@ -82,7 +82,7 @@ if __name__=='__main__':
                lead_coupling[0:nb*ns,nb*(length-ns):nb*length,1,ik] = lead_h10[:,:,1,ik]
 
 
-         nen_list = np.array([8000,10000,12000,14000],dtype='i')
+         nen_list = np.array([10000,12000,14000],dtype='i')
          nsub_list = np.array([1],dtype='i')
 
          ID_list = np.zeros((2,nsub_list.shape[0],nen_list.shape[0]))
@@ -94,7 +94,7 @@ if __name__=='__main__':
                nen = toten
                energies = np.linspace(emin,emax,nen)
                print(nen,nsub)
-               G_retarded,G_lesser,G_greater,W0,tr = gf_dense.solve_gw_3d(scba_tol=1e-6,niter=niter,nm_dev=nb*length,lx=Lx,length=length,spindeg=2.0,
+               G_retarded,G_lesser,G_greater,W0,tr = gf_dense.solve_gw_3d(scba_tol=1e-3,niter=niter,nm_dev=nb*length,lx=Lx,length=length,spindeg=2.0,
                                                             temps=temp[0],tempd=temp[1],mus=mu[0],mud=mu[1],alpha_mix=0.5,
                                                             nen=nen,nsub=nsub,en=energies,nb=nb,ns=ns,nphiy=nky,nphiz=nkz,
                                                             ham=ham,h00lead=lead_h00,h10lead=lead_h10,t=lead_coupling,v=v,
