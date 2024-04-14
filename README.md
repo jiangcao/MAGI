@@ -1,2 +1,2 @@
-Many-body Atomistic Green's function sImulator
+Many-body Atomistic Green's function sImulation NEGF package
 
