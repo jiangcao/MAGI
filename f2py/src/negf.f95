@@ -1907,6 +1907,7 @@ module gf_dense
 
     end subroutine solve_eph
 
+
     ! calculate e-photon/phonon self-energies for single mode in thermal equilibrium 
     subroutine selfenergy_eph_mono(nm,nen,En,nop,nphiy,nphiz,ik,iq,M,G_lesser,G_greater,&
         Sig_lesser,Sig_greater,n_bose,gamma_q)
