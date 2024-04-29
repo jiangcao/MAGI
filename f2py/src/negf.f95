@@ -1908,60 +1908,69 @@ module gf_dense
     end subroutine solve_eph
 
     ! calculate e-photon/phonon self-energies for single mode in thermal equilibrium 
-    subroutine selfenergy_eph_mono(nm,nen,En,nop,nphiy,nphiz,ik,iq,M,G_lesser,G_greater,&
+    subroutine selfenergy_eph_mono(nm,nen,En,nop,nky,nkz,nqy,nqz,ik_start,ik_end,iq_in,M,G_lesser,G_greater,&
         Sig_lesser,Sig_greater,n_bose,gamma_q)
     ! 
-        integer,intent(in)::nm,nen,nop,nphiy,nphiz,iq,ik
+        integer,intent(in)::nm,nen,nop,nky,nkz,nqy,nqz,iq_in,ik_start,ik_end
         real(8),intent(in)::en(nen),n_bose
         logical,intent(in)::gamma_q
-        complex(8),intent(in),dimension(nm,nm)::M ! interaction matrix at q
-        complex(8),intent(in),dimension(nm,nm,nen,nphiy*nphiz)::G_lesser,G_greater
-        complex(8),intent(out),dimension(nm,nm,nen,nphiy*nphiz)::Sig_lesser,Sig_greater
+        complex(8),intent(in),dimension(nm,nm,nky*nkz,nqy*nqz)::M ! interaction matrix at k q
+        complex(8),intent(in),dimension(nm,nm,nen,nky*nkz)::G_lesser,G_greater
+        complex(8),intent(out),dimension(nm,nm,nen,nky*nkz)::Sig_lesser,Sig_greater
         !---------
-        integer::ie,ikd 
-        complex(8),allocatable::B(:,:),A(:,:) ! tmp matrix       
-        ! Sig^<>(E,k) = M_{-q} [ N G^<>(E -+ hw,k-+q) + (N+1) G^<>(E +- hw,k+-q)] M_q       
-        !$omp parallel default(shared) private(ie,A,B) 
+        integer::ie,ikd,ik ,iq,iqd
+        complex(8),allocatable::B(:,:),A(:,:) ! tmp matrix               
+        if (gamma_q) then 
+			iq=1
+			iqd=1
+		else
+			iq=iq_in
+			iqd=nqy*nqz+1-iq
+		endif
+        ! Sig^<>(E,k) = M_{k,-+q} [ N G^<>(E -+ hw,k-+q) + (N+1) G^<>(E +- hw,k+-q)] M_{k-+q,+-q}       
+        !$omp parallel default(shared) private(ie,A,B,ik,ikd) 
         allocate(B(nm,nm))
         allocate(A(nm,nm))                                
         !$omp do
         do ie=1,nen
-            ! Sig^<(E,k)
-            A = czero            
-            if (gamma_q) then 
-                ikd = ik
-            else
-                ikd = map_kq_2d(-1,ik,iq,nphiy,nphiz)
-            endif
-            if (ie-nop>=1) A =A+ G_lesser(:,:,ie-nop,ikd) * n_bose
-            if (gamma_q) then 
-                ikd = ik
-            else
-                ikd = map_kq_2d(+1,ik,iq,nphiy,nphiz)
-            endif
-            if (ie+nop<=nen) A =A+ G_lesser(:,:,ie+nop,ikd) * (n_bose+1.0_dp)
-            call zgemm('n','n',nm,nm,nm,cone,M,nm,A,nm,czero,B,nm) 
-            call zgemm('n','n',nm,nm,nm,cone,B,nm,M,nm,czero,A,nm)     
-            Sig_lesser(:,:,ie,ik) = Sig_lesser(:,:,ie,ik) + A             
-            !
-            ! Sig^>(E,k)
-            A = czero
-            if (gamma_q) then 
-                ikd = ik
-            else
-                ikd = map_kq_2d(-1,ik,iq,nphiy,nphiz)
-            endif
-            if (ie-nop>=1) A =A+ G_greater(:,:,ie-nop,ikd) * (n_bose+1.0_dp)
-            if (gamma_q) then 
-                ikd = ik 
-            else                
-                ikd = map_kq_2d(+1,ik,iq,nphiy,nphiz)
-            endif
-            if (ie+nop<=nen) A =A+ G_greater(:,:,ie+nop,ikd) * n_bose
-            call zgemm('n','n',nm,nm,nm,cone,M,nm,A,nm,czero,B,nm) 
-            call zgemm('n','n',nm,nm,nm,cone,B,nm,M,nm,czero,A,nm)     
-            Sig_greater(:,:,ie,ik) = Sig_greater(:,:,ie,ik) + A                
-        enddo  
+			do ik=ik_start,ik_end
+				! Sig^<(E,k)
+				A = czero            
+				if (gamma_q) then 
+					ikd = ik					
+				else
+					ikd = map_kq_2d(-1,ik,iq,nky,nkz)					
+				endif
+				if (ie-nop>=1) A =A+ G_lesser(:,:,ie-nop,ikd) * n_bose
+				if (gamma_q) then 
+					ikd = ik
+				else
+					ikd = map_kq_2d(+1,ik,iq,nky,nkz)
+				endif
+				if (ie+nop<=nen) A =A+ G_lesser(:,:,ie+nop,ikd) * (n_bose+1.0_dp)
+				call zgemm('n','n',nm,nm,nm,cone,M(:,:,ik,iq),nm,A,nm,czero,B,nm) 
+				call zgemm('n','n',nm,nm,nm,cone,B,nm,M(:,:,ikd,iqd),nm,czero,A,nm)     
+				Sig_lesser(:,:,ie,ik) = Sig_lesser(:,:,ie,ik) + A             
+				!
+				! Sig^>(E,k)
+				A = czero
+				if (gamma_q) then 
+					ikd = ik
+				else
+					ikd = map_kq_2d(-1,ik,iq,nky,nkz)
+				endif
+				if (ie-nop>=1) A =A+ G_greater(:,:,ie-nop,ikd) * (n_bose+1.0_dp)
+				if (gamma_q) then 
+					ikd = ik 
+				else                
+					ikd = map_kq_2d(+1,ik,iq,nky,nkz)
+				endif
+				if (ie+nop<=nen) A =A+ G_greater(:,:,ie+nop,ikd) * n_bose
+				call zgemm('n','n',nm,nm,nm,cone,M(:,:,ik,iq),nm,A,nm,czero,B,nm) 
+				call zgemm('n','n',nm,nm,nm,cone,B,nm,M(:,:,ikd,iqd),nm,czero,A,nm)     
+				Sig_greater(:,:,ie,ik) = Sig_greater(:,:,ie,ik) + A                
+			enddo  
+        enddo
         !$omp end do        
         deallocate(A,B)
         !$omp end parallel
