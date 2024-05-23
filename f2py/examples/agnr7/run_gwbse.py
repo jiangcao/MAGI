@@ -74,6 +74,7 @@ if __name__=='__main__':
 
    egap=1.67
    encut=[7.0,7.0]
+   eps_M=np.zeros(nen//4,dtype='complex')
 
    energies = np.linspace(emin,emax,nen)
    print(nen,nsub)
@@ -95,14 +96,13 @@ if __name__=='__main__':
 
             
    dE=energies[1]-energies[0]
-   eps_M=np.zeros(nen//4)
    for iop in range(nen//4):
 
        print(iop*4, "Ephot=", iop*dE)
 
-       P_r,nn = bse_dense(alpha=0.99,spindeg=2.0,nm_dev=nb*length,ndiag=ndiag,nen=nen,nsub=nsub,en=energies,nop=100,nk=1,
-           g_lesser=gl,g_greater=gg,g_retarded=gr,
-           w=w0_r,v=v)
+       P_r,nn = bse_dense.bse_fullsolve(alpha=0.99,spindeg=2.0,nm_dev=nb*length,ndiag=ndiag,nen=nen,en=energies,nop=iop*4,
+           g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,
+           w=W0_r,v=v)
 
        epsilon_M = v[:,:,0] @ P_r
        eps_M[iop] = np.sum( epsilon_M[ nb*length//2, nb*ns:(nb*length-nb*ns) ] )
