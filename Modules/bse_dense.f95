@@ -1,0 +1,499 @@
+
+module bse_dense    
+    use parameters_mod,only:dp,twopi,pi,e_charge,epsilon0,m0_charge,hbar,c1i,czero,cone
+    use legendre
+    use omp_lib
+    implicit none
+    contains
+
+    subroutine four_polarization(alpha,nm_dev,nen,nsub,en,nop,nk,ndiag,G_lesser,G_greater,G_retarded,L0,i,j,k,l)
+        integer,intent(in) :: nm_dev,nen,nsub,nop,ndiag ,nk, i,j,k,l
+        real(dp),intent(in) :: en(nen), alpha 
+        complex(dp),intent(in),dimension(nm_dev,nm_dev,nen,nsub,nk) :: G_lesser,G_greater,G_retarded
+        complex(dp),intent(out) :: L0
+        ! ---
+        real(dp) :: dE, weights(nsub), xen(nsub)
+        integer :: ie, isub, ik, ikd
+        ! the P4 IPA tensor is computed from $P4(q,E') = \sum_{k} \int dE G(E,k) G(E-E',k-q)                
+        dE = ( En(2) - En(1) )  
+        call gaulegf(0.0d0, dble(dE), xen, weights, nsub) ! obtain the Legendre ordinates and weights    
+        weights=weights/twopi
+        !                 
+        L0=czero                   
+        ! calculate P4_IPA from GG
+        if (nk == 1) then 
+            ik=1
+            ikd=1
+        endif
+        do isub=1,nsub
+            do ie=nop+1,nen                            
+                L0 = L0 + &
+                    (1.0_dp - alpha) * ( G_lesser(j,l,ie,isub,ik) * conjg(G_retarded(i,k,ie-nop,isub,ikd)) + &
+                                        G_retarded(j,l,ie,isub,ik) * G_lesser(k,i,ie-nop,isub,ikd) )  * weights(isub) + &
+                        alpha * 0.5_dp * ( G_greater(j,l,ie,isub,ik) * G_lesser(k,i,ie-nop,isub,ikd) - & 
+                                        G_lesser(j,l,ie,isub,ik)  * G_greater(k,i,ie-nop,isub,ikd) )  * weights(isub) 
+            enddo 
+        enddo                                                                            
+    end subroutine four_polarization
+
+    ! solve the full Bethe-Salpeter Equation
+    subroutine bse_fullsolve(alpha,spindeg,nm_dev,ndiag,nen,nsub,En,nop,nk,G_lesser,G_greater,G_retarded,W,V,P_retarded,nn)
+        use gw_dense, only: invert_inplace
+        integer,intent(in)::nm_dev,nen,nop,ndiag,nsub,nk
+        real(dp),intent(in)::en(nen),spindeg,alpha        
+        integer, intent(out)::nn ! size of the reduced 2-body system
+        complex(dp),intent(in),dimension(nm_dev,nm_dev,nen,nsub,nk):: G_lesser,G_greater,G_retarded ! electron GFs
+        complex(dp),intent(in),dimension(nm_dev,nm_dev) :: W ! W_0 static screened Coulomb interaction
+        complex(dp),intent(in),dimension(nm_dev,nm_dev) :: V ! bare Coulomb interaction
+        complex(dp),intent(out),dimension(nm_dev,nm_dev):: P_retarded ! 2-point polarization function with interacting electron-hole at frequency [[nop]]                
+        !complex(dp),intent(out),dimension(nm_dev,nm_dev,nm_dev,nm_dev),optional:: P4_retarded ! 4-point polarization function with interacting electron-hole 
+        !---------
+        complex(dp),dimension(:,:),allocatable :: Lmat ! two-particle Green's function 
+        complex(dp),dimension(:,:),allocatable :: Mmat ! 4-point Kernel
+        complex(dp),dimension(:,:),allocatable :: Amat ! system matrix        
+        complex(dp) :: epsM, L0ijkl        
+        real(dp) :: start, finish
+        integer :: N,i,j,k,l,p,q,ie,row,col, it, ii,jj
+        integer,allocatable::table(:,:)        
+        N = nm_dev*nm_dev
+        allocate(table(2,N))
+        ! construct the table of reordered indices   
+        it=0
+        ! first put the i=j        
+        do i=1,nm_dev
+            it=it+1
+            table(:,it) = (/i,i/)            
+        enddo
+        ! then put the others, but first within the ndiag
+        do i=1,nm_dev
+            do j=1,nm_dev               
+                if (i/=j) then                     
+                    if (abs(i-j)<=ndiag) then
+                        it=it+1
+                        table(:,it) = (/i,j/)                    
+                    endif
+                endif                    
+            enddo
+        enddo
+        nn=it
+        ! then put the others, but outside ndiag
+        do i=1,nm_dev
+            do j=1,nm_dev
+                if (i/=j) then 
+                    if (abs(i-j)>ndiag) then
+                        it=it+1
+                        table(:,it) = (/i,j/)
+                    endif
+                endif                    
+            enddo
+        enddo
+        if (it/=N) then 
+            print *, 'ERROR!'
+            call abort
+        endif
+        N = nn ! resize the problem
+        print *, 'nm_dev=',nm_dev
+        print *, 'resized system size=',N 
+        ! start computation
+        allocate(Mmat(N,N), source=czero)        
+        allocate(Lmat(N,N), source=czero)     
+        allocate(Amat(N,N), source=czero)  
+        !
+        start = omp_get_wtime()              
+        print *,'  start computation L0_ijkl = G_jl G_ki ...'        
+        !$omp parallel default(shared) private(row,col,L0ijkl,i,j,k,l)
+        !$omp do
+        do row=1,N 
+            do col=1,N
+                i=table(1,row)
+                j=table(2,row)
+                k=table(1,col)
+                l=table(2,col)
+                if ((abs(i-k)<=ndiag).and.(abs(j-l)<=ndiag).and.(abs(j-k)<=ndiag).and.&
+                    (abs(i-l)<=ndiag).and.(abs(i-j)<=ndiag).and.(abs(k-l)<=ndiag).and.&
+                    (j>0).and.(j<=nm_dev).and.(l>0).and.(l<=nm_dev)) then 
+                    call four_polarization(alpha,nm_dev,nen,nsub,en,nop,nk,ndiag,&
+                        G_lesser,G_greater,G_retarded,L0ijkl,i,j,k,l)
+                    Lmat(row,col) = L0ijkl
+                endif
+            enddo
+        enddo
+        !$omp end do
+        !$omp end parallel 
+        !
+        !$omp parallel default(shared) private(row,col,i,j,k,l)
+        !$omp do        
+        do row=1,N                        
+            do col=1,N
+                i=table(1,row)
+                j=table(2,row)
+                k=table(1,col)
+                l=table(2,col)           
+                if ((i==j).and.(k==l)) then                        
+                    Mmat(row,col) = Mmat(row,col) - c1i *  V(i,k) * spindeg                        
+                endif 
+                if ((i==k).and.(j==l).and.(j>0).and.(j<=nm_dev).and.(l>0).and.(l<=nm_dev)) then                        
+                    Mmat(row,col) = Mmat(row,col) + c1i *  W(i,j)
+                endif 
+            enddo
+        enddo    
+        !$omp end do
+        !$omp end parallel 
+        !            
+        finish = omp_get_wtime()
+        print '("  computation time = ", F0.3 ," seconds.")', finish-start
+        start = finish
+        print *,'  start computation -L0 K'
+        !  
+        call zgemm('n','n',N,N,N,-cone,Lmat,N,Mmat,N,czero,Amat,N)         
+        !
+        ! (I - L0 K) -> A
+        !$omp parallel default(shared) private(i)
+        !$omp do  
+        do i=1,N 
+            Amat(i,i) = Amat(i,i) + dcmplx(1.0_dp, 0.0_dp)
+        enddo  
+        !$omp end do
+        !$omp end parallel         
+        finish = omp_get_wtime()
+        print '("  computation time = ", F0.3 ," seconds.")', finish-start
+        start = finish
+        print *,'  start invert (I - L0 K)'
+        !
+        call invert_inplace(Amat(1:N,1:N),N)
+        !
+        finish = omp_get_wtime()
+        print '("  computation time = ", F0.3 ," seconds.")', finish-start
+        start = finish
+        print *,'  start computation L = (I - L0 K) \ L0  '
+        !
+        call zgemm('n','n',N,N,N,cone,Amat(1:N,1:N),N,Lmat(1:N,1:N),N,czero,Mmat(1:N,1:N),N)                 
+        !
+        !$omp parallel default(shared) private(row,col,i,k)
+        !$omp do
+        do row=1,nm_dev
+            do col=1,nm_dev
+                i=table(1,row)
+                k=table(1,col)
+                P_retarded(i,k) =  - c1i * Mmat(row,col)                
+            enddo
+        enddo                          
+        !$omp end do
+        !$omp end parallel              
+        finish = omp_get_wtime()
+        print '("  computation time = ", F0.3 ," seconds.")', finish-start
+        start = finish
+        !                
+        deallocate(Mmat,Lmat,Amat)
+    end subroutine bse_fullsolve
+  
+
+
+    ! solve the full Bethe-Salpeter Equation
+    subroutine bse_fullsolve_orig(alpha,spindeg,nm_dev,ndiag,nen,nsub,En,nop,nk,G_lesser,G_greater,G_retarded,W,V,P_retarded,system,epsilon_M)
+        use gw_dense, only: invert_inplace
+        integer,intent(in)::nm_dev,nen,nop,ndiag,nsub,nk
+        real(dp),intent(in)::en(nen),spindeg,alpha
+        complex(dp),intent(in),dimension(nm_dev,nm_dev,nen,nsub,nk):: G_lesser,G_greater,G_retarded ! electron GFs
+        complex(dp),intent(in),dimension(nm_dev,nm_dev) :: W ! W_0 static screened Coulomb interaction
+        complex(dp),intent(in),dimension(nm_dev,nm_dev) :: V ! bare Coulomb interaction
+        complex(dp),intent(out),dimension(nm_dev,nm_dev):: P_retarded ! 2-point polarization function with interacting electron-hole at frequency [[nop]]    
+        complex(dp),intent(out),dimension(nm_dev*nm_dev ,nm_dev*nm_dev ):: system ! system matrix
+        complex(dp),intent(out),dimension(nm_dev,nm_dev) :: epsilon_M ! macroscopic dielectric function
+        !---------
+        complex(dp),dimension(:,:),allocatable :: Lmat ! two-particle Green's function 
+        complex(dp),dimension(:,:),allocatable :: Mmat ! 4-point Kernel
+        complex(dp),dimension(:,:),allocatable :: Amat ! 
+        complex(dp) :: epsM, L0ijkl
+        real(dp) :: start, finish
+        integer :: N,i,j,k,l,p,q,ie,row,col, ne_margin
+        logical :: lexchange
+        !                  
+        N = nm_dev*nm_dev        
+        !
+        allocate(Lmat(N,N), source=czero)
+        allocate(Mmat(N,N), source=czero)
+        allocate(Amat(N,N), source=czero)
+        print *,'  start computation L0_ijkl = G_jl G_ki ...'
+        !$omp parallel default(shared) private(i,j,k,l,row,col,L0ijkl)
+        !$omp do
+        do i=1,nm_dev
+            do j=max(1,i-ndiag),min(nm_dev,i+ndiag)
+                do k=max(1,i-ndiag),min(nm_dev,i+ndiag)
+                    do l=max(1,i-ndiag),min(nm_dev,i+ndiag)           
+                        if ((abs(j-k)<=ndiag).and.(abs(k-l)<=ndiag).and.(abs(j-l)<=ndiag)) then 
+                            row= (j-1)*nm_dev + i               
+                            col= (l-1)*nm_dev + k
+                            call four_polarization(alpha,nm_dev,nen,nsub,en,nop,nk,ndiag,G_lesser,G_greater,G_retarded,L0ijkl,i,j,k,l)
+                            Lmat(row,col) = L0ijkl                
+                        endif
+                    enddo
+                enddo
+            enddo
+        enddo
+        !$omp end do
+        !$omp end parallel
+        !
+        !        
+        print *,'  start computation -L0 K'
+        !
+        !$omp parallel default(shared) private(i,j,row,col)
+        !$omp do
+        do i=1,nm_dev
+            do j=1,nm_dev
+                ! exchange part
+                row= (i-1)*nm_dev + i                
+                col= (j-1)*nm_dev + j
+                Mmat(row,col) = Mmat(row,col) - c1i *  V(i,j) * spindeg
+                ! direct part
+                row= (j-1)*nm_dev + i
+                col= row 
+                Mmat(row,col) = Mmat(row,col) + c1i *  W(i,j) 
+            enddo
+        enddo    
+        !$omp end do
+        !$omp end parallel  
+        !call save_matrix('bse_M.dat',N, Mmat)
+        !call save_matrix('bse_L0.dat',N, Lmat)
+        !  
+        call zgemm('n','n',N,N,N,-cone,Lmat,N,Mmat,N,czero,Amat,N) 
+        !
+        ! (I - L0 K) -> A
+        do i=1,N 
+        Amat(i,i) = Amat(i,i) + dcmplx(1.0_dp, 0.0_dp)
+        enddo  
+        !
+        !$omp parallel default(shared) private(i,j)
+        !$omp do
+        do i=1,N
+            do j=1,N
+                system(i,j) = Amat(N-i+1,N-j+1) ! flip the matrix 
+            enddo
+        enddo
+        !$omp end do
+        !$omp end parallel
+        !
+        print *,'  start invert (I - L0 K)'
+        !
+        call invert_inplace(Amat,N)
+        !
+        !
+        print *,'  start computation L = (I - L0 K) \ L0  '
+        !
+        call zgemm('n','n',N,N,N,cone,Amat,N,Lmat,N,czero,Mmat,N) 
+        !
+        !call save_matrix('bse_L.dat',N, Mmat)
+        !
+        P_retarded = czero
+        !$omp parallel default(shared) private(i,j,row,col)
+        !$omp do
+        do i=1,nm_dev
+            do j=1,nm_dev      
+                row= (i-1)*nm_dev + i                
+                col= (j-1)*nm_dev + j
+                P_retarded(i,j) = - c1i * Mmat(row,col)            
+                Amat(i,j) = Lmat(row,col)   
+            enddo
+        enddo
+        !$omp end do
+        !$omp end parallel
+        !
+        ! ! calculate RPA epsilon and output to file
+        call zgemm('n','n',nm_dev,nm_dev,nm_dev,c1i,V,nm_dev,Amat(1:nm_dev,1:nm_dev),nm_dev,czero,epsilon_M,nm_dev) 
+        do j=1,nm_dev 
+            epsilon_M(j,j) = epsilon_M(j,j) + cone
+        enddo      
+        call invert_inplace(epsilon_M,nm_dev)        
+        open(unit=99,file='rpa_epsilonM.dat',status='unknown', position="append", action="write")    
+        epsM = sum( epsilon_M(nm_dev/2,1:nm_dev) )
+        write(99,*) dble(nop)*(En(2)-En(1)) , - aimag(epsM), dble(epsM) ! - Im \epsilon^{-1}
+        close(99)
+        !
+        ! ! calculate BSE epsilon_M and output to file        
+        call zgemm('n','n',nm_dev,nm_dev,nm_dev,-cone,V,nm_dev,P_retarded,nm_dev,czero,epsilon_M,nm_dev) 
+        do j=1,nm_dev 
+            epsilon_M(j,j) = epsilon_M(j,j) + cone
+        enddo      
+        open(unit=99,file='bse_epsilonM.dat',status='unknown', position="append", action="write")    
+        epsM = sum( epsilon_M(nm_dev/2,1:nm_dev) )
+        write(99,*) dble(nop)*(En(2)-En(1)) , aimag(epsM), dble(epsM) ! Im \epsilon_M -> absorption
+        close(99)
+        !
+        deallocate(Lmat,Mmat,Amat)
+    end subroutine bse_fullsolve_orig
+  
+
+    ! solve the Bethe-Salpeter Equation under approximation
+    subroutine bse_solve(alpha,spindeg,nm_dev,ndiag,nen,nsub,En,nop,nk,G_lesser,G_greater,G_retarded,W,V,P_retarded)
+        use gw_dense, only: invert_inplace
+        integer,intent(in)::nm_dev,nen,nop,nsub,nk,ndiag
+        real(dp),intent(in)::en(nen),spindeg,alpha
+        complex(dp),intent(in),dimension(nm_dev,nm_dev,nen,nsub,nk):: G_lesser,G_greater,G_retarded ! electron GF
+        complex(dp),intent(in),dimension(nm_dev,nm_dev) :: W ! W_0 static screened Coulomb interaction
+        complex(dp),intent(in),dimension(nm_dev,nm_dev) :: V ! bare Coulomb interaction
+        complex(dp),intent(out),dimension(nm_dev,nm_dev):: P_retarded ! 2-point polarization function with interacting electron-hole
+        !---------
+        integer :: ie,i,j,k,l,m,n,p
+        integer :: nn,nm,pp,pq
+        complex(dp),allocatable :: L0xx(:,:),A(:,:),B(:,:),Kxx(:,:), Mxx(:,:), Sxx(:,:)
+        complex(dp) :: Qijkl, L0Kdd, epsM
+        real(dp) :: dE  
+        real(dp) :: weights(nsub), xen(nsub)
+        integer :: isub, ik, ikd
+        ! the P4 IPA tensor is computed from $P4(q,E') = \sum_{k} \int dE G(E,k) G(E-E',k-q)                
+        dE = ( En(2) - En(1) )  
+        call gaulegf(0.0d0, dble(dE), xen, weights, nsub) ! obtain the Legendre ordinates and weights    
+        weights=weights/twopi
+        !
+        ik=1
+        ikd=1
+        !
+        allocate( L0xx(nm_dev,nm_dev) , source=czero)
+        allocate( Mxx(nm_dev,nm_dev) , source=czero)
+        allocate( Sxx(nm_dev,nm_dev) , source=czero)
+        allocate( Kxx(nm_dev,nm_dev) , source=czero)
+        allocate( A(nm_dev,nm_dev) , source=czero)        
+        print *,'  start computation L0_xx'
+        !$omp parallel default(shared) private(i,j,ie,isub)
+        !$omp do
+        do i=1,nm_dev
+            do j=1,nm_dev
+                if (abs(i-j)<=ndiag) then
+                    do isub=1,nsub
+                        do ie=nop+1,nen
+                            L0xx(i,j) = L0xx(i,j) + &
+                                        (1.0_dp - alpha) * ( G_lesser(j,i,ie,isub,ik) * conjg(G_retarded(i,j,ie-nop,isub,ikd)) + &
+                                                            G_retarded(j,i,ie,isub,ik) * G_lesser(j,i,ie-nop,isub,ikd) )* weights(isub) + &
+                                            alpha * 0.5_dp * ( G_greater(j,i,ie,isub,ik) * G_lesser(j,i,ie-nop,isub,ikd) - & 
+                                                            G_lesser(j,i,ie,isub,ik)  * G_greater(j,i,ie-nop,isub,ikd) )* weights(isub) 
+                        enddo
+                    enddo
+                endif
+            enddo
+        enddo
+        !$omp end do
+        !$omp end parallel         
+        L0xx = L0xx 
+        Kxx(:,:) = - c1i*V(:,:)*spindeg
+        do i=1,nm_dev
+            Kxx(i,i) = Kxx(i,i) + c1i*W(i,i)
+        enddo
+        !
+        print *,'  start computation L0_xx K_xx'
+        call zgemm('n','n',nm_dev,nm_dev,nm_dev,-cone,L0xx,nm_dev,Kxx,nm_dev,czero,A,nm_dev) 
+        do i=1,nm_dev
+            A(i,i) = A(i,i) + cone
+        enddo
+        !
+        print *,'  start computation S and M'
+        !$omp parallel default(shared) private(i,j,k,l,Qijkl,L0Kdd,p,ie,isub)
+        !$omp do
+        do i=1,nm_dev
+            do j=1,nm_dev
+                do k=1,nm_dev
+                    do l=1,nm_dev
+                        if (k/=l) then
+                            if ((abs(i-k)<=ndiag).and.(abs(j-l)<=ndiag).and.(abs(j-k)<=ndiag).and.&
+                                (abs(i-l)<=ndiag).and.(abs(i-j)<=ndiag).and.(abs(k-l)<=ndiag)) then 
+                                Qijkl=czero
+                                do isub=1,nsub
+                                    do ie=nop+1,nen
+                                        ! L0xd * L0dx
+                                        Qijkl = Qijkl + (1.0_dp - alpha) * ( G_lesser(i,l,ie,isub,ik) * conjg(G_retarded(i,k,ie-nop,isub,ikd))*G_lesser(l,j,ie,isub,ik) * conjg(G_retarded(k,j,ie-nop,isub,ikd)) + &
+                                                                            G_retarded(i,l,ie,isub,ik) * G_lesser(k,i,ie-nop,isub,ikd) * G_retarded(l,j,ie,isub,ik) * G_lesser(j,k,ie-nop,isub,ikd) )* weights(isub) + &
+                                                alpha * 0.5d0*( G_greater(i,l,ie,isub,ik) * G_lesser(k,i,ie-nop,isub,ikd) * G_greater(l,j,ie,isub,ik) * G_lesser(j,k,ie-nop,isub,ikd) &
+                                                                - G_lesser(i,l,ie,isub,ik) * G_greater(k,i,ie-nop,isub,ikd) * G_lesser(l,j,ie,isub,ik) * G_greater(j,k,ie-nop,isub,ikd) )* weights(isub)
+                                                                                            
+                                    enddo
+                                enddo                                
+                                !
+                                Qijkl = - c1i * Qijkl * W(k,l) 
+                                L0Kdd=czero
+                                do isub=1,nsub
+                                    do ie=nop+1,nen
+                                        L0Kdd = L0Kdd + &
+                                                (1.0_dp - alpha) * ( G_lesser(k,k,ie,isub,ik) * conjg(G_retarded(l,l,ie-nop,isub,ikd)) + &
+                                                                    G_retarded(k,k,ie,isub,ik) * G_lesser(l,l,ie-nop,isub,ikd) )* weights(isub) + &
+                                                    alpha *0.5d0*( G_greater(k,k,ie,isub,ik) * G_lesser(l,l,ie-nop,isub,ikd)   &
+                                                                - G_lesser(k,k,ie,isub,ik) * G_greater(l,l,ie-nop,isub,ikd)   )* weights(isub) 
+                                                                                                
+                                    enddo
+                                enddo                                
+                                !
+                                L0Kdd = cone - c1i * L0Kdd * W(k,l) 
+                                Qijkl = Qijkl / L0Kdd
+                                Sxx(i,j) = Sxx(i,j) + Qijkl
+                                do p=1,nm_dev                                    
+                                    Mxx(i,p) = Mxx(i,p) - c1i * Qijkl * ( W(j,j) - V(j,p)*spindeg )                                     
+                                enddo
+                            endif
+                        endif
+                    enddo
+                enddo
+            enddo
+        enddo
+        !$omp end do
+        !$omp end parallel
+        !
+        ! call save_matrix('Sxx.dat',nm_dev, Sxx)
+        ! call save_matrix('Mxx.dat',nm_dev, Mxx)
+        ! call save_matrix('A.dat',nm_dev, A)
+        ! call save_matrix('Kxx.dat',nm_dev, Kxx)
+        ! call save_matrix('L0xx.dat',nm_dev, L0xx)  
+        !
+        A(:,:) = A(:,:) - Mxx(:,:)
+        !
+        print *,'  start computation Axx^{-1}'
+        call invert_inplace(A,nm_dev)
+        Sxx(:,:) = L0xx(:,:) - Sxx(:,:)
+        call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,A,nm_dev,Sxx,nm_dev,czero,Mxx,nm_dev) 
+        P_retarded = - c1i * Mxx
+        !
+        ! call save_matrix('pr.dat',nm_dev, P_retarded)  
+        !
+        ! ! calculate RPA epsilon and output to file
+        call zgemm('n','n',nm_dev,nm_dev,nm_dev,c1i,V,nm_dev,L0xx(1:nm_dev,1:nm_dev),nm_dev,czero,A,nm_dev) 
+        do j=1,nm_dev 
+            A(j,j) = A(j,j) + cone
+        enddo      
+        call invert_inplace(A,nm_dev)        
+        open(unit=99,file='rpa_epsilonM.dat',status='unknown', position="append", action="write")    
+        epsM = sum( A(nm_dev/2,1:nm_dev) )
+        write(99,*) dble(nop)*(En(2)-En(1)) , - aimag(epsM), dble(epsM) ! - Im \epsilon^{-1}
+        close(99)
+        !
+        ! ! calculate BSE epsilon_M and output to file        
+        call zgemm('n','n',nm_dev,nm_dev,nm_dev,-cone,V,nm_dev,P_retarded,nm_dev,czero,A,nm_dev) 
+        do j=1,nm_dev 
+            A(j,j) = A(j,j) + cone
+        enddo      
+        open(unit=99,file='bse_epsilonM.dat',status='unknown', position="append", action="write")    
+        epsM = sum( A(nm_dev/2,1:nm_dev) )
+        write(99,*) dble(nop)*(En(2)-En(1)) , aimag(epsM), dble(epsM) ! Im \epsilon_M -> absorption
+        close(99)
+        deallocate(L0xx,Mxx,Sxx,Kxx,A)
+    end subroutine bse_solve
+
+    ! save a complex matrix to a file in row-column-value format for non-zero entries
+    subroutine save_matrix(filename, nm, Mat)
+        character(len=*),intent(in)::filename ! file name
+        integer,intent(in)::nm ! number of bands
+        complex(dp), intent(in) :: Mat(nm,nm) ! matrix        
+        ! ----
+        integer::i,j        
+        open(unit=11, file=filename, status='unknown')                
+        do i=1,nm
+            do j=1,nm
+                if ( abs(Mat(i,j)) .gt. 0.0d0 ) then
+                    write(11,'(2I10,2E18.6)') i,j,dble(Mat(i,j)),aimag(Mat(i,j))
+                endif
+            enddo
+            write(11,*)
+        enddo        
+        close(11)
+    end subroutine save_matrix
+    
+end module bse_dense
+
+
+

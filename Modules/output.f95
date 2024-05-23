@@ -92,6 +92,33 @@ module output
 
 
     ! write spectrum into file (pm3d map)
+    subroutine write_spectrum_nosub(dataset,i,G,nen,en,length,NB,Lx,coeff)
+        character(len=*), intent(in) :: dataset
+        complex(8), intent(in) :: G(:,:,:)
+        integer, intent(in)::i,nen,length,NB
+        real(8), intent(in)::Lx,en(nen),coeff(2)
+        integer:: ie,j,ib
+        complex(8)::tr
+        character(len=4) :: i_str
+        character(len=8) :: fmt
+        fmt = '(I4.4)'
+        write (i_str, fmt) i 
+        open(unit=11,file=trim(dataset)//i_str//'.dat',status='unknown')
+        do ie = 1,nen
+            do j = 1,length
+                tr=0.0d0          
+                do ib=1,nb                    
+                    tr = tr+ G((j-1)*nb+ib,(j-1)*nb+ib,ie)                                
+                enddo                    
+                write(11,'(4E20.6)') dble(j-1)*Lx, en(ie), dble(tr)*coeff(1), aimag(tr)*coeff(2)        
+            end do
+            write(11,*)   
+        enddo
+        close(11)
+    end subroutine write_spectrum_nosub
+
+
+    ! write spectrum into file (pm3d map)
     subroutine write_spectrum(dataset,i,G,nen,nsub,en,ensub,length,NB,Lx,coeff)
         character(len=*), intent(in) :: dataset
         complex(8), intent(in) :: G(:,:,:,:)
@@ -191,6 +218,67 @@ module output
         end do
         close(11)
     end subroutine write_transmission_spectrum
+
+
+    ! write trace of diagonal blocks
+    subroutine write_trace(dataset,i,G,length,NB,Lx,coeff,E)
+        character(len=*), intent(in) :: dataset
+        complex(8), intent(in) :: G(:,:)
+        integer, intent(in)::i,length,NB
+        real(8), intent(in)::Lx,coeff(2)
+        real(8), intent(in),optional::E
+        integer:: ie,j,ib
+        complex(8)::tr
+        character(len=4) :: i_str
+        character(len=8) :: fmt
+        fmt = '(I4.4)'
+        write (i_str, fmt) i 
+        open(unit=11,file=trim(dataset)//i_str//'.dat',status='unknown', position="append", action="write")
+        do j = 1,length
+            tr=0.0d0          
+            do ib=1,nb
+                tr = tr+ G((j-1)*nb+ib,(j-1)*nb+ib)            
+            end do
+            if (.not.(present(E))) then
+            write(11,'(3E18.4)') (j-1)*Lx, dble(tr)*coeff(1), aimag(tr)*coeff(2)        
+            else
+            write(11,'(4E18.4)') (j-1)*Lx, E, dble(tr)*coeff(1), aimag(tr)*coeff(2)         
+            endif
+        end do
+        write(11,*)
+        close(11)
+    end subroutine write_trace
+
+
+    ! write a matrix for one energy index into a file
+    subroutine write_matrix(dataset,i,G,en,length,NB,coeff)
+        character(len=*), intent(in) :: dataset
+        complex(8), intent(in) :: G(:,:)
+        integer, intent(in)::i,length,NB
+        real(8), intent(in)::en,coeff(2)
+        integer:: ie,j,ib,l
+        complex(8)::tr
+        logical :: lexist
+        character(len=4) :: i_str
+        character(len=8) :: fmt
+        fmt = '(I4.4)'
+        write (i_str, fmt) i 
+        inquire(file=trim(dataset)//i_str//'.dat', exist=lexist)
+        if (lexist) then
+            open(11, file=trim(dataset)//i_str//'.dat', status="old", position="append", action="write")
+        else
+            open(11, file=trim(dataset)//i_str//'.dat', status="new", action="write")
+        end if
+        fmt = '(E18.6,2I8,2E18.6)'
+        do l=1,length*NB
+            do j = 1,length*NB
+                tr = G(l,j)            
+                write(11,fmt) en,l,j, dble(tr)*coeff(1), aimag(tr)*coeff(2)        
+            end do
+        end do
+        write(11,*)    
+        close(11)
+    end subroutine write_matrix
 
 end module output
 
