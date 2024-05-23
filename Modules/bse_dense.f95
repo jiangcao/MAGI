@@ -6,43 +6,37 @@ module bse_dense
     implicit none
     contains
 
-    subroutine four_polarization(alpha,nm_dev,nen,nsub,en,nop,nk,ndiag,G_lesser,G_greater,G_retarded,L0,i,j,k,l)
-        integer,intent(in) :: nm_dev,nen,nsub,nop,ndiag ,nk, i,j,k,l
-        real(dp),intent(in) :: en(nen), alpha 
-        complex(dp),intent(in),dimension(nm_dev,nm_dev,nen,nsub,nk) :: G_lesser,G_greater,G_retarded
-        complex(dp),intent(out) :: L0
-        ! ---
-        real(dp) :: dE, weights(nsub), xen(nsub)
-        integer :: ie, isub, ik, ikd
-        ! the P4 IPA tensor is computed from $P4(q,E') = \sum_{k} \int dE G(E,k) G(E-E',k-q)                
-        dE = ( En(2) - En(1) )  
-        call gaulegf(0.0d0, dble(dE), xen, weights, nsub) ! obtain the Legendre ordinates and weights    
-        weights=weights/twopi
-        !                 
-        L0=czero                   
-        ! calculate P4_IPA from GG
-        if (nk == 1) then 
-            ik=1
-            ikd=1
-        endif
-        do isub=1,nsub
-            do ie=nop+1,nen                            
-                L0 = L0 + &
-                    (1.0_dp - alpha) * ( G_lesser(j,l,ie,isub,ik) * conjg(G_retarded(i,k,ie-nop,isub,ikd)) + &
-                                        G_retarded(j,l,ie,isub,ik) * G_lesser(k,i,ie-nop,isub,ikd) )  * weights(isub) + &
-                        alpha * 0.5_dp * ( G_greater(j,l,ie,isub,ik) * G_lesser(k,i,ie-nop,isub,ikd) - & 
-                                        G_lesser(j,l,ie,isub,ik)  * G_greater(k,i,ie-nop,isub,ikd) )  * weights(isub) 
-            enddo 
-        enddo                                                                            
+    subroutine four_polarization(alpha,nm_dev,nen,en,nop,ndiag,G_lesser,G_greater,G_retarded,i,j,k,l,L0)
+       integer,intent(in) :: nm_dev,nen,nop,ndiag, i,j,k,l
+       real(dp),intent(in) :: en(nen), alpha 
+       complex(dp),intent(in),dimension(nm_dev,nm_dev,nen) :: G_lesser,G_greater,G_retarded
+       complex(dp),intent(out) :: L0
+       ! ---
+       real(dp) :: dE, weights, xen
+       integer :: ie, isub, ik, ikd
+       ! the P4 IPA tensor is computed from $P4(q,E') = \sum_{k} \int dE G(E,k) G(E-E',k-q)                
+       dE = ( En(2) - En(1) )          
+       weights = dE/twopi
+       !                 
+       L0=czero                   
+       ! calculate P4_IPA from GG       
+       do ie=nop+1,nen                            
+           L0 = L0 + &
+                   (1.0_dp - alpha) * ( G_lesser(j,l,ie) * conjg(G_retarded(i,k,ie-nop)) + &
+                                       G_retarded(j,l,ie) * G_lesser(k,i,ie-nop) )   + &
+                       alpha * 0.5_dp * ( G_greater(j,l,ie) * G_lesser(k,i,ie-nop) - & 
+                                       G_lesser(j,l,ie)  * G_greater(k,i,ie-nop) )  
+       enddo 
+       L0 = L0 * weights 
     end subroutine four_polarization
 
     ! solve the full Bethe-Salpeter Equation
-    subroutine bse_fullsolve(alpha,spindeg,nm_dev,ndiag,nen,nsub,En,nop,nk,G_lesser,G_greater,G_retarded,W,V,P_retarded,nn)
+    subroutine bse_fullsolve(alpha,spindeg,nm_dev,ndiag,nen,En,nop,G_lesser,G_greater,G_retarded,W,V,P_retarded,nn)
         use gw_dense, only: invert_inplace
-        integer,intent(in)::nm_dev,nen,nop,ndiag,nsub,nk
+        integer,intent(in)::nm_dev,nen,nop,ndiag
         real(dp),intent(in)::en(nen),spindeg,alpha        
         integer, intent(out)::nn ! size of the reduced 2-body system
-        complex(dp),intent(in),dimension(nm_dev,nm_dev,nen,nsub,nk):: G_lesser,G_greater,G_retarded ! electron GFs
+        complex(dp),intent(in),dimension(nm_dev,nm_dev,nen):: G_lesser,G_greater,G_retarded ! electron GFs
         complex(dp),intent(in),dimension(nm_dev,nm_dev) :: W ! W_0 static screened Coulomb interaction
         complex(dp),intent(in),dimension(nm_dev,nm_dev) :: V ! bare Coulomb interaction
         complex(dp),intent(out),dimension(nm_dev,nm_dev):: P_retarded ! 2-point polarization function with interacting electron-hole at frequency [[nop]]                
@@ -112,9 +106,9 @@ module bse_dense
                 if ((abs(i-k)<=ndiag).and.(abs(j-l)<=ndiag).and.(abs(j-k)<=ndiag).and.&
                     (abs(i-l)<=ndiag).and.(abs(i-j)<=ndiag).and.(abs(k-l)<=ndiag).and.&
                     (j>0).and.(j<=nm_dev).and.(l>0).and.(l<=nm_dev)) then 
-                    call four_polarization(alpha,nm_dev,nen,nsub,en,nop,nk,ndiag,&
-                        G_lesser,G_greater,G_retarded,L0ijkl,i,j,k,l)
-                    Lmat(row,col) = L0ijkl
+                    call four_polarization(alpha,nm_dev,nen,en,nop,ndiag,&
+                        G_lesser,G_greater,G_retarded,i,j,k,l,L0ijkl)
+                    Lmat(row,col) = L0ijkl * spindeg
                 endif
             enddo
         enddo
@@ -224,8 +218,9 @@ module bse_dense
                         if ((abs(j-k)<=ndiag).and.(abs(k-l)<=ndiag).and.(abs(j-l)<=ndiag)) then 
                             row= (j-1)*nm_dev + i               
                             col= (l-1)*nm_dev + k
-                            call four_polarization(alpha,nm_dev,nen,nsub,en,nop,nk,ndiag,G_lesser,G_greater,G_retarded,L0ijkl,i,j,k,l)
-                            Lmat(row,col) = L0ijkl                
+                            call four_polarization(alpha,nm_dev,nen,en,nop,ndiag,&
+                                G_lesser,G_greater,G_retarded,i,j,k,l,L0ijkl)
+                            Lmat(row,col) = L0ijkl * spindeg               
                         endif
                     enddo
                 enddo

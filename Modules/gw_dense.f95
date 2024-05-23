@@ -15,343 +15,318 @@ module gw_dense
     !   the full matrix P and W are needed for only one energy in this implementation,
     !   they are computed per energy point, and the contribution to selfenergy is 
     !   immediately added to sigma_x_new matrices.
-    subroutine solve_gw_1D_memsaving(niter,nm_dev,Lx,length,spindeg,temps,tempd,mus,mud,&
-    alpha_mix,nen,En,nb,ns,Ham,H00lead,H10lead,T,V,&
-    G_retarded,G_lesser,G_greater,Sig_retarded,Sig_lesser,Sig_greater,&
-    Sig_retarded_new,Sig_lesser_new,Sig_greater_new,&
-    ndiag,encut,Egap,lvertex,lbse,lflatband)  
-    integer, intent(in) :: nen, nb, ns,niter,nm_dev,length
-    integer, intent(in) :: ndiag
-    real(dp), intent(in) :: En(nen), temps,tempd, mus, mud, alpha_mix,Lx,spindeg, Egap
-    complex(dp),intent(in) :: Ham(nm_dev,nm_dev),H00lead(NB*NS,NB*NS,2),H10lead(NB*NS,NB*NS,2),T(NB*NS,nm_dev,2)
-    complex(dp), intent(in):: V(nm_dev,nm_dev)    
-    real(dp),intent(in)::encut(2) ! intraband and interband cutoff for P
-    complex(dp),intent(out),dimension(nm_dev,nm_dev,nen) ::  G_retarded,G_lesser,G_greater
-    complex(dp),intent(out),dimension(nm_dev,nm_dev,nen) ::  Sig_retarded,Sig_lesser,Sig_greater,Sig_retarded_new,Sig_lesser_new,Sig_greater_new
-    logical, intent(in), optional :: lvertex
-    logical,intent(in),  optional :: lbse, lflatband
-    !----
-    complex(dp),allocatable::siglead(:,:,:,:) ! lead scattering sigma_retarded
-    complex(dp),allocatable,dimension(:,:):: B ! tmp matrix
-    real(dp),allocatable::cur(:,:,:),tot_cur(:,:),tot_ecur(:,:)
-    real(dp),allocatable::wen(:) ! energy vector for P and W
-    integer,allocatable::nops(:) ! discretized energy for P and W
-    real(dp),allocatable::Tr(:,:) ! current spectrum on leads
-    real(dp),allocatable::Te(:,:,:) ! transmission matrix spectrum 
-    integer :: iter,ie,iop,nnop,nnop1,nnop2,nstep
-    integer :: i,j,nm,l,h,nop
-    logical :: lwriteGF,flatband
-    complex(dp),allocatable::Ispec(:,:,:),Itot(:,:)
-    complex(dp),allocatable,dimension(:,:) ::  P_retarded,P_lesser,P_greater,W_retarded,W_lesser,W_greater
-    complex(dp),allocatable,dimension(:,:) ::  W0_retarded,W0_lesser,W0_greater
-    real(dp) :: start,finish, time_P, time_W, time_sigma
-    complex(dp) :: dE, epsilon
-    real(dp)::nelec(2),mu(2),pelec(2),temp(2)    
-    if (present(lflatband)) then
-        flatband=lflatband
-    else
-        flatband=.false.
-    endif
-    print *,'================= green_solve_gw_1D_memsaving ================='
-    mu=[ mus, mud ]
-    temp=[ temps , tempd ]
-    print '(a8,f15.4,a8,f15.4)', 'mus=',mu(1),'mud=',mu(2)
-    print '(a8,f15.4,a8,f15.4)', 'T_s=',temps,'T_d=',tempd
-    ! build the energy vector for P and W
-    dE= En(2)-En(1) 
-    nnop1=floor(min(encut(1),Egap)/dble(dE)) ! intraband exclude encut(1), include 0 
-    nnop2=floor((min(encut(2),(maxval(En)-minval(En))) - Egap)/dble(dE))  ! interband , include Egap
-    nnop=nnop1*2-1+nnop2*2 ! + and - freq.
-    allocate(nops(nnop))
-    allocate(wen(nnop))
-    do iop=1,nnop1*2-1
-        nops(iop+nnop2) = iop - nnop1    
-    enddo
-    do iop=1,nnop2
-        nops(nnop2+1-iop) = -iop+1 - floor(Egap/dble(dE))
-        nops(nnop2+nnop1*2-1+iop) = -nops(nnop2+1-iop)
-    enddo
-    wen(:) = dble(nops(:))*dble(dE)
-    print *,'---------------------------------------------------------------'
-    print *, ' Energy cutoff: intra-band    inter-band    Eg (eV)' 
-    print '(A12,3F14.4)',' ',encut,egap
-    ! print *, ' Nop='
-    ! print '(10I5)',nops
-    ! print *, ' Eop= (eV)'
-    ! print '(6F8.3)',wen
-    print *,'---------------------------------------------------------------'
-    !
-    allocate(siglead(NB*NS,NB*NS,nen,2))
-    ! get leads sigma
-    siglead(:,:,:,1) = Sig_retarded(1:NB*NS,1:NB*NS,:)
-    siglead(:,:,:,2) = Sig_retarded(nm_dev-NB*NS+1:nm_dev,nm_dev-NB*NS+1:nm_dev,:)  
-    allocate(B(nm_dev,nm_dev))
-    allocate(tot_cur(nm_dev,nm_dev))
-    allocate(tot_ecur(nm_dev,nm_dev))
-    allocate(cur(nm_dev,nm_dev,nen))
-    allocate(Ispec(nm_dev,nm_dev,nen))
-    allocate(Itot(nm_dev,nm_dev))
-    allocate(tr(nen,2))
-    allocate(te(nen,2,2))
-    !
-    allocate(P_lesser(nm_dev,nm_dev))
-    allocate(P_greater(nm_dev,nm_dev))
-    allocate(P_retarded(nm_dev,nm_dev)) 
-    allocate(W_lesser(nm_dev,nm_dev))
-    allocate(W_greater(nm_dev,nm_dev))
-    allocate(W_retarded(nm_dev,nm_dev)) 
-    !
-    allocate(W0_lesser(nm_dev,nm_dev))
-    allocate(W0_greater(nm_dev,nm_dev))
-    allocate(W0_retarded(nm_dev,nm_dev)) 
-    !
-    do iter=0,niter
-        print *,'+ iter=',iter  
-        print *, 'calc G'  
-        start = omp_get_wtime()
-        flatband=.false.
-        call calc_gf(nen,En,2,nm_dev,[nb*ns,nb*ns],nb*ns,&
-                        Ham(:,:),H00lead(:,:,:),H10lead(:,:,:),Siglead(:,:,:,:),&
-                        T(:,:,:),Sig_retarded(:,:,:),Sig_lesser(:,:,:),Sig_greater(:,:,:),&
-                        G_retarded(:,:,:),G_lesser(:,:,:),&
-                        G_greater(:,:,:),Tr,Te,mu,temp,flatband)                        
-        finish = omp_get_wtime()
-        print '("  G computation time = ", F0.3 ," seconds.")', finish-start
-        start = finish                      
-        call write_current_spectrum('gw_Jdens',iter,cur,nen,en,length,NB,Lx)
-        call write_current('gw_I',iter,tot_cur,length,NB,NS,Lx)
-        call write_current('gw_EI',iter,tot_ecur,length,NB,NS,Lx)
-        call write_spectrum_nosub('gw_ldos',iter,G_retarded,nen,En,length,NB,Lx,(/1.0d0,-2.0d0/))
-        call write_spectrum_nosub('gw_ndos',iter,G_lesser,nen,En,length,NB,Lx,(/1.0d0,1.0d0/))
-        call write_spectrum_nosub('gw_pdos',iter,G_greater,nen,En,length,NB,Lx,(/1.0d0,-1.0d0/))
-        call write_transmission_spectrum('gw_trL',iter,Tr(:,1)*spindeg,nen,En)
-        call write_transmission_spectrum('gw_trR',iter,Tr(:,2)*spindeg,nen,En)
-        call write_transmission_spectrum('gw_TE_LR',iter,Te(:,1,2)*spindeg,nen,En)
-        call write_transmission_spectrum('gw_TE_RL',iter,Te(:,2,1)*spindeg,nen,En)    
-        !call write_matrix_summed_overE('Gr',iter,G_retarded,nen,en,length,NB,(/1.0,1.0/))        
-        !        
-        ! empty sigma_x_new matrices for accumulation
-        sig_retarded_new=czero
-        sig_lesser_new=czero
-        sig_greater_new=czero
-        print *, 'calc P, solve W, add to Sigma_new'     
-        print *,'ndiag=',min(ndiag,nm_dev)
+    subroutine solve_gw_1D_memsaving(niter,nm_dev,Lx,length,spindeg,temp,mu,&
+        alpha_mix,nen,En,nb,ns,Ham,H00lead,H10lead,T,V,&
+        ndiag,encut,Egap,vertex,bse,flatband,output_files,&
+        G_retarded,G_lesser,G_greater,Sig_retarded_new,Sig_lesser_new,Sig_greater_new,&
+        current,transmission,W0_retarded,W0_lesser,W0_greater)  
+        integer, intent(in) :: nen, nb, ns,niter,nm_dev,length
+        integer, intent(in) :: ndiag
+        real(dp), intent(in) :: En(nen), temp(2), mu(2), alpha_mix, Lx, spindeg, Egap
+        complex(dp),intent(in) :: Ham(nm_dev,nm_dev),H00lead(NB*NS,NB*NS,2),H10lead(NB*NS,NB*NS,2),T(NB*NS,nm_dev,2)
+        complex(dp), intent(in):: V(nm_dev,nm_dev)    
+        real(dp),intent(in)::encut(2) ! intraband and interband cutoff for P
+        real(dp),intent(out)::current(nen,2) ! current spectrum on leads
+        real(dp),intent(out)::transmission(nen,2) ! transmission matrix
+        logical, intent(in) :: vertex, bse, flatband, output_files
+        complex(dp),intent(out),dimension(nm_dev,nm_dev,nen) ::  G_retarded,G_lesser,G_greater
+        complex(dp),intent(out),dimension(nm_dev,nm_dev,nen) ::  Sig_retarded_new,Sig_lesser_new,Sig_greater_new
+        complex(dp),intent(out),dimension(nm_dev,nm_dev) ::  W0_retarded,W0_lesser,W0_greater        
+        !----
+        complex(dp),dimension(nm_dev,nm_dev,nen) ::  Sig_retarded,Sig_lesser,Sig_greater
+        complex(dp),allocatable::siglead(:,:,:,:) ! lead scattering sigma_retarded
+        complex(dp),allocatable,dimension(:,:):: B ! tmp matrix
+        real(dp),allocatable::cur(:,:,:),tot_cur(:,:),tot_ecur(:,:)
+        real(dp),allocatable::wen(:) ! energy vector for P and W
+        integer,allocatable::nops(:) ! discretized energy for P and W        
+        real(dp),allocatable::Te(:,:,:),tr(:,:) ! transmission matrix spectrum 
+        integer :: iter,ie,iop,nnop,nnop1,nnop2
+        integer :: i,j,nm,l,h,nop
+        complex(dp),allocatable::Ispec(:,:,:),Itot(:,:)
+        complex(dp),allocatable,dimension(:,:) ::  P_retarded,P_lesser,P_greater,W_retarded,W_lesser,W_greater        
+        real(dp) :: start,finish, time_P, time_W, time_sigma
+        complex(dp) :: dE, epsilon
+        real(dp)::nelec(2),pelec(2)
         !
-        !print *,'   i / n :  Nop   Eop (eV)'
-        time_P = 0.0_dp
-        time_W = 0.0_dp
-        time_sigma = 0.0_dp
-        !
-        do iop=1,nnop              
-        !print '(I5,A,I5,A,I5,F8.3)',iop,'/',nnop,':',nops(iop),wen(iop)    
-        nop=nops(iop)
-        P_lesser = czero
-        P_greater = czero
-        P_retarded = czero
-        start = omp_get_wtime()
-        if ((present(lvertex).and.lvertex).and.(iter>0)) then
-            if (iop==1) print *, '  vertex on '
-            call calc_P_vertex_correction(lvertex,nm_dev,nen,nop,ndiag,(en(2)-en(1)),&
-                    G_retarded,G_lesser,G_greater,W0_retarded,W0_lesser,W0_greater,&
-                    P_retarded,P_lesser,P_greater)
-        else
-            call calc_P_vertex_correction(.false.,nm_dev,nen,nop,ndiag,(en(2)-en(1)),&
-                    G_retarded,G_lesser,G_greater,W0_retarded,W0_lesser,W0_greater,&
-                    P_retarded,P_lesser,P_greater)
-        endif
-        finish = omp_get_wtime()
-        time_P = time_P + finish-start
-        !             
-        dE = dcmplx(0.0d0 , -1.0d0*( En(2) - En(1) ) / 2.0d0 / pi )* spindeg    
-        P_lesser=P_lesser*dE
-        P_greater=P_greater*dE  
-        ! P_retarded=P_retarded*dE      
-        P_retarded=dcmplx(0.0_dp*dble(P_retarded), 0.5_dp*aimag(P_greater-P_lesser))
-        !
-        if (lwriteGF) then
-            call write_matrix('P_r',0,P_retarded(:,:),wen(iop),length,NB,(/1.0d0,1.0d0/))
-        endif
-        !                    
-        write(199,*) dble(nop)*(En(2)-En(1)) , -aimag(trace(P_retarded(:,:),nm_dev))  
-        !         
-        ! calculate W
-        start = omp_get_wtime()
-        call calc_w(1,NB,NS,nm_dev,P_retarded,P_lesser,P_greater,V,W_retarded,W_lesser,W_greater)
-        finish = omp_get_wtime()
-        time_W = time_W + finish-start               
-        !        
-        !
-        if (iop == (nnop1+nnop2)) then
-            ! store static W for the vertex correction in the next iteration
-            W0_retarded = W_retarded
-            W0_lesser = W_lesser
-            W0_greater = W_greater
-            if (lwriteGF) then
-                call write_matrix('W0_r',0,W0_retarded(:,:),wen(iop),length,NB,(/1.0d0,1.0d0/))
-            endif
-        endif          
-        !
-        start = omp_get_wtime()
-        ! Accumulate the GW to Sigma
-        ! hw from -inf to +inf: Sig^<>_ij(E) = (i/2pi) \int_dhw G^<>_ij(E-hw) W^<>_ij(hw)  
-        !$omp parallel default(shared) private(l,h,i,ie) 
-        !$omp do
-        do i=1,nm_dev
-            l=max(i-ndiag,1)
-            h=min(nm_dev,i+ndiag)           
-            do ie=1,nen
-            if ((ie .gt. max(nop,1)).and.(ie .lt. (nen+nop))) then 
-                Sig_lesser_new(i,l:h,ie)=Sig_lesser_new(i,l:h,ie)+G_lesser(i,l:h,ie-nop)*W_lesser(i,l:h)
-                Sig_greater_new(i,l:h,ie)=Sig_greater_new(i,l:h,ie)+G_greater(i,l:h,ie-nop)*W_greater(i,l:h)
-                Sig_retarded_new(i,l:h,ie)=Sig_retarded_new(i,l:h,ie)+G_lesser(i,l:h,ie-nop)*W_retarded(i,l:h) + &                                      
-                                        G_retarded(i,l:h,ie-nop)*W_lesser(i,l:h) + &
-                                        G_retarded(i,l:h,ie-nop)*W_retarded(i,l:h)                                               
-            endif     
-            enddo   
+        print *,'================= green_solve_gw_1D_memsaving ================='        
+        print '(a8,f15.4,a8,f15.4)', 'mus=',mu(1),'mud=',mu(2)
+        print '(a8,f15.4,a8,f15.4)', 'T_s=',temp(1),'T_d=',temp(2)
+        ! build the energy vector for P and W
+        dE= En(2)-En(1) 
+        nnop1=floor(min(encut(1),Egap)/dble(dE)) ! intraband exclude encut(1), include 0 
+        nnop2=floor((min(encut(2),(maxval(En)-minval(En))) - Egap)/dble(dE))  ! interband , include Egap
+        nnop=nnop1*2-1+nnop2*2 ! + and - freq.
+        allocate(nops(nnop))
+        allocate(wen(nnop))
+        do iop=1,nnop1*2-1
+            nops(iop+nnop2) = iop - nnop1    
         enddo
-        !$omp end do
-        !$omp end parallel    
-        finish = omp_get_wtime()
-        time_sigma = time_sigma + finish - start      
-        enddo  
-        close(199)    
-        print '("  P computation time = ", F0.3 ," seconds.")', time_P
-        print '("  W computation time = ", F0.3 ," seconds.")', time_W
-        print '("  Sigma computation time = ", F0.3 ," seconds.")', time_sigma
-        !
-        dE = dcmplx(0.0d0, (En(2)-En(1))/2.0d0/pi)                
-        Sig_lesser_new = Sig_lesser_new  * dE
-        Sig_greater_new= Sig_greater_new * dE
-        Sig_retarded_new=Sig_retarded_new* dE
-        !
-        Sig_retarded_new = dcmplx( dble(Sig_retarded_new), aimag(Sig_greater_new-Sig_lesser_new)/2.0d0 )
-        ! symmetrize the selfenergies
-        do ie=1,nen
-        B(:,:)=transpose(Sig_retarded_new(:,:,ie))
-        Sig_retarded_new(:,:,ie) = (Sig_retarded_new(:,:,ie) + B(:,:))/2.0d0    
-        B(:,:)=transpose(Sig_lesser_new(:,:,ie))
-        Sig_lesser_new(:,:,ie) = (Sig_lesser_new(:,:,ie) + B(:,:))/2.0d0
-        B(:,:)=transpose(Sig_greater_new(:,:,ie))
-        Sig_greater_new(:,:,ie) = (Sig_greater_new(:,:,ie) + B(:,:))/2.0d0
+        do iop=1,nnop2
+            nops(nnop2+1-iop) = -iop+1 - floor(Egap/dble(dE))
+            nops(nnop2+nnop1*2-1+iop) = -nops(nnop2+1-iop)
         enddo
-        !!!Sig_lesser_new = dcmplx( 0.0d0*dble(Sig_lesser_new), aimag(Sig_lesser_new) )
-        !!!Sig_greater_new = dcmplx( 0.0d0*dble(Sig_greater_new), aimag(Sig_greater_new) )
-        !        
-        ! mixing with the previous one
-        Sig_retarded = Sig_retarded+ alpha_mix * (Sig_retarded_new -Sig_retarded)
-        Sig_lesser  = Sig_lesser+ alpha_mix * (Sig_lesser_new -Sig_lesser)
-        Sig_greater = Sig_greater+ alpha_mix * (Sig_greater_new -Sig_greater)    
-    !    ! make sure self-energy is continuous near leads (by copying edge block)
-    !    do ie=1,nen
-    !      call expand_size_bycopy(Sig_retarded(:,:,ie),nm_dev,NB,2)
-    !      call expand_size_bycopy(Sig_lesser(:,:,ie),nm_dev,NB,2)
-    !      call expand_size_bycopy(Sig_greater(:,:,ie),nm_dev,NB,2)
-    !    enddo
+        wen(:) = dble(nops(:))*dble(dE)
+        print *,'---------------------------------------------------------------'
+        print *, ' Energy cutoff: intra-band    inter-band    Eg (eV)' 
+        print '(A12,3F14.4)',' ',encut,egap
+        ! print *, ' Nop='
+        ! print '(10I5)',nops
+        ! print *, ' Eop= (eV)'
+        ! print '(6F8.3)',wen
+        print *,'---------------------------------------------------------------'
+        !
+        allocate(siglead(NB*NS,NB*NS,nen,2))
         ! get leads sigma
         siglead(:,:,:,1) = Sig_retarded(1:NB*NS,1:NB*NS,:)
-        siglead(:,:,:,2) = Sig_retarded(nm_dev-NB*NS+1:nm_dev,nm_dev-NB*NS+1:nm_dev,:)    
+        siglead(:,:,:,2) = Sig_retarded(nm_dev-NB*NS+1:nm_dev,nm_dev-NB*NS+1:nm_dev,:)  
+        allocate(B(nm_dev,nm_dev))
+        allocate(tot_cur(nm_dev,nm_dev))
+        allocate(tot_ecur(nm_dev,nm_dev))
+        allocate(cur(nm_dev,nm_dev,nen))
+        allocate(Ispec(nm_dev,nm_dev,nen))
+        allocate(Itot(nm_dev,nm_dev))
+        allocate(te(nen,2,2))
+        allocate(tr(nen,2))
         !
-        call write_spectrum_nosub('gw_SigR',iter,Sig_retarded,nen,En,length,NB,Lx,(/1.0d0,1.0d0/))
-        call write_spectrum_nosub('gw_SigL',iter,Sig_lesser,nen,En,length,NB,Lx,(/1.0d0,1.0d0/))
-        call write_spectrum_nosub('gw_SigG',iter,Sig_greater,nen,En,length,NB,Lx,(/1.0d0,1.0d0/))
-        !call write_matrix_summed_overE('Sigma_r',iter,Sig_retarded,nen,en,length,NB,(/1.0,1.0/))
-        !!!! calculate collision integral
-        ! call calc_collision(Sig_lesser_new,Sig_greater_new,G_lesser,G_greater,nen,en,spindeg,nm_dev,Itot,Ispec)
-        ! call write_spectrum_nosub('gw_Scat',iter,Ispec,nen,En,length,NB,Lx,(/1.0d0,1.0d0/))
-    enddo             
-    open(unit=11,file='WR0.dat',status='unknown')
-    do i=1, nm_dev
-        do j=1, nm_dev
-            write(11,'(2I6,2E15.4)') i,j, dble(W0_retarded(i,j)), aimag(W0_retarded(i,j))
-        end do
-        write(11,*)
-    end do
-    close(11)
-    !! last step  
-    print *, 'calc G last time ...'  
-    !
-    call calc_gf(nen,En,2,nm_dev,[nb*ns,nb*ns],nb*ns,&
-                        Ham(:,:),H00lead(:,:,:),H10lead(:,:,:),Siglead(:,:,:,:),&
-                        T(:,:,:),Sig_retarded(:,:,:),Sig_lesser(:,:,:),Sig_greater(:,:,:),&
-                        G_retarded(:,:,:),G_lesser(:,:,:),&
-                        G_greater(:,:,:),Tr,Te,mu,temp,flatband)                        
-    !
-    call calc_bond_current(Ham,G_lesser,nen,en,spindeg,nm_dev,tot_cur,tot_ecur,cur)
-    call write_current_spectrum('gw_Jdens',iter,cur,nen,en,length,NB,Lx)
-    call write_current('gw_I',iter,tot_cur,length,NB,NS,Lx)
-    call write_current('gw_EI',iter,tot_ecur,length,NB,NS,Lx)
-    call write_spectrum_nosub('gw_ldos',iter,G_retarded,nen,En,length,NB,Lx,(/1.0d0,-2.0d0/))
-    call write_spectrum_nosub('gw_ndos',iter,G_lesser,nen,En,length,NB,Lx,(/1.0d0,1.0d0/))
-    call write_spectrum_nosub('gw_pdos',iter,G_greater,nen,En,length,NB,Lx,(/1.0d0,-1.0d0/))                    
-    !  
-    nstep=4
-    !
-    deallocate(siglead)
-    deallocate(B,cur,tot_cur,tot_ecur)
-    deallocate(Ispec,Itot,Tr,Te)
-    deallocate(P_retarded,P_lesser,P_greater)
-    deallocate(W_retarded,W_lesser,W_greater)
-    deallocate(W0_retarded,W0_lesser,W0_greater)
-    deallocate(wen,nops)
+        allocate(P_lesser(nm_dev,nm_dev))
+        allocate(P_greater(nm_dev,nm_dev))
+        allocate(P_retarded(nm_dev,nm_dev)) 
+        allocate(W_lesser(nm_dev,nm_dev))
+        allocate(W_greater(nm_dev,nm_dev))
+        allocate(W_retarded(nm_dev,nm_dev)) 
+        !
+        do iter=0,niter
+            print *,'+ iter=',iter  
+            print *, 'calc G'  
+            start = omp_get_wtime()
+            call calc_gf(nen,En,2,nm_dev,[nb*ns,nb*ns],nb*ns,&
+                            Ham(:,:),H00lead(:,:,:),H10lead(:,:,:),Siglead(:,:,:,:),&
+                            T(:,:,:),Sig_retarded(:,:,:),Sig_lesser(:,:,:),Sig_greater(:,:,:),&
+                            G_retarded(:,:,:),G_lesser(:,:,:),&
+                            G_greater(:,:,:),Tr,Te,mu,temp,flatband)                        
+            finish = omp_get_wtime()
+            print '("  G computation time = ", F0.3 ," seconds.")', finish-start
+            start = finish                    
+            if (output_files) then
+                call write_current_spectrum('gw_Jdens',iter,cur,nen,en,length,NB,Lx)
+                call write_current('gw_I',iter,tot_cur,length,NB,NS,Lx)
+                call write_current('gw_EI',iter,tot_ecur,length,NB,NS,Lx)
+                call write_spectrum_nosub('gw_ldos',iter,G_retarded,nen,En,length,NB,Lx,(/1.0d0,-2.0d0/))
+                call write_spectrum_nosub('gw_ndos',iter,G_lesser,nen,En,length,NB,Lx,(/1.0d0,1.0d0/))
+                call write_spectrum_nosub('gw_pdos',iter,G_greater,nen,En,length,NB,Lx,(/1.0d0,-1.0d0/))
+                call write_transmission_spectrum('gw_trL',iter,Tr(:,1)*spindeg,nen,En)
+                call write_transmission_spectrum('gw_trR',iter,Tr(:,2)*spindeg,nen,En)
+                call write_transmission_spectrum('gw_TE_LR',iter,Te(:,1,2)*spindeg,nen,En)
+                call write_transmission_spectrum('gw_TE_RL',iter,Te(:,2,1)*spindeg,nen,En)    
+            endif
+            !        
+            ! empty sigma_x_new matrices for accumulation
+            sig_retarded_new=czero
+            sig_lesser_new=czero
+            sig_greater_new=czero
+            print *, 'calc P, solve W, add to Sigma_new'     
+            print *,'ndiag=',min(ndiag,nm_dev)
+            !
+            !print *,'   i / n :  Nop   Eop (eV)'
+            time_P = 0.0_dp
+            time_W = 0.0_dp
+            time_sigma = 0.0_dp
+            !
+            do iop=1,nnop              
+            !print '(I5,A,I5,A,I5,F8.3)',iop,'/',nnop,':',nops(iop),wen(iop)    
+            nop=nops(iop)
+            P_lesser = czero
+            P_greater = czero
+            P_retarded = czero
+            start = omp_get_wtime()
+            if ((vertex).and.(iter>0)) then
+                if (iop==1) print *, '  vertex on '
+                call calc_P_vertex_correction(vertex,nm_dev,nen,nop,ndiag,(en(2)-en(1)),&
+                        G_retarded,G_lesser,G_greater,W0_retarded,W0_lesser,W0_greater,&
+                        P_retarded,P_lesser,P_greater)
+            else
+                call calc_P_vertex_correction(.false.,nm_dev,nen,nop,ndiag,(en(2)-en(1)),&
+                        G_retarded,G_lesser,G_greater,W0_retarded,W0_lesser,W0_greater,&
+                        P_retarded,P_lesser,P_greater)
+            endif
+            finish = omp_get_wtime()
+            time_P = time_P + finish-start
+            !             
+            dE = dcmplx(0.0d0 , -1.0d0*( En(2) - En(1) ) / 2.0d0 / pi )* spindeg    
+            P_lesser=P_lesser*dE
+            P_greater=P_greater*dE  
+            ! P_retarded=P_retarded*dE      
+            P_retarded=dcmplx(0.0_dp*dble(P_retarded), 0.5_dp*aimag(P_greater-P_lesser))
+            !         
+            ! calculate W
+            start = omp_get_wtime()
+            !
+            call calc_w(1,NB,NS,nm_dev,P_retarded,P_lesser,P_greater,V,W_retarded,W_lesser,W_greater)
+            !
+            finish = omp_get_wtime()
+            time_W = time_W + finish-start               
+            !        
+            !
+            if (iop == (nnop1+nnop2)) then
+                ! store static W for the vertex correction in the next iteration
+                W0_retarded = W_retarded
+                W0_lesser = W_lesser
+                W0_greater = W_greater                
+            endif          
+            !
+            start = omp_get_wtime()
+            ! Accumulate the GW to Sigma
+            ! hw from -inf to +inf: Sig^<>_ij(E) = (i/2pi) \int_dhw G^<>_ij(E-hw) W^<>_ij(hw)  
+            !$omp parallel default(shared) private(l,h,i,ie) 
+            !$omp do
+            do i=1,nm_dev
+                l=max(i-ndiag,1)
+                h=min(nm_dev,i+ndiag)           
+                do ie=1,nen
+                if ((ie .gt. max(nop,1)).and.(ie .lt. (nen+nop))) then 
+                    Sig_lesser_new(i,l:h,ie)=Sig_lesser_new(i,l:h,ie)+G_lesser(i,l:h,ie-nop)*W_lesser(i,l:h)
+                    Sig_greater_new(i,l:h,ie)=Sig_greater_new(i,l:h,ie)+G_greater(i,l:h,ie-nop)*W_greater(i,l:h)
+                    Sig_retarded_new(i,l:h,ie)=Sig_retarded_new(i,l:h,ie)+G_lesser(i,l:h,ie-nop)*W_retarded(i,l:h) + &                                      
+                                            G_retarded(i,l:h,ie-nop)*W_lesser(i,l:h) + &
+                                            G_retarded(i,l:h,ie-nop)*W_retarded(i,l:h)                                               
+                endif     
+                enddo   
+            enddo
+            !$omp end do
+            !$omp end parallel    
+            finish = omp_get_wtime()
+            time_sigma = time_sigma + finish - start      
+            enddo  
+            close(199)    
+            print '("  P computation time = ", F0.3 ," seconds.")', time_P
+            print '("  W computation time = ", F0.3 ," seconds.")', time_W
+            print '("  Sigma computation time = ", F0.3 ," seconds.")', time_sigma
+            !
+            dE = dcmplx(0.0d0, (En(2)-En(1))/2.0d0/pi)                
+            Sig_lesser_new = Sig_lesser_new  * dE
+            Sig_greater_new= Sig_greater_new * dE
+            Sig_retarded_new=Sig_retarded_new* dE
+            !
+            Sig_retarded_new = dcmplx( dble(Sig_retarded_new), aimag(Sig_greater_new-Sig_lesser_new)/2.0d0 )
+            ! symmetrize the selfenergies
+            do ie=1,nen
+            B(:,:)=transpose(Sig_retarded_new(:,:,ie))
+            Sig_retarded_new(:,:,ie) = (Sig_retarded_new(:,:,ie) + B(:,:))/2.0d0    
+            B(:,:)=transpose(Sig_lesser_new(:,:,ie))
+            Sig_lesser_new(:,:,ie) = (Sig_lesser_new(:,:,ie) + B(:,:))/2.0d0
+            B(:,:)=transpose(Sig_greater_new(:,:,ie))
+            Sig_greater_new(:,:,ie) = (Sig_greater_new(:,:,ie) + B(:,:))/2.0d0
+            enddo
+            !        
+            ! mixing with the previous one
+            Sig_retarded = Sig_retarded+ alpha_mix * (Sig_retarded_new -Sig_retarded)
+            Sig_lesser  = Sig_lesser+ alpha_mix * (Sig_lesser_new -Sig_lesser)
+            Sig_greater = Sig_greater+ alpha_mix * (Sig_greater_new -Sig_greater)            
+            ! get leads sigma
+            siglead(:,:,:,1) = Sig_retarded(1:NB*NS,1:NB*NS,:)
+            siglead(:,:,:,2) = Sig_retarded(nm_dev-NB*NS+1:nm_dev,nm_dev-NB*NS+1:nm_dev,:)    
+            !
+            if (output_files) then
+                call write_spectrum_nosub('gw_SigR',iter,Sig_retarded,nen,En,length,NB,Lx,(/1.0d0,1.0d0/))
+                call write_spectrum_nosub('gw_SigL',iter,Sig_lesser,nen,En,length,NB,Lx,(/1.0d0,1.0d0/))
+                call write_spectrum_nosub('gw_SigG',iter,Sig_greater,nen,En,length,NB,Lx,(/1.0d0,1.0d0/))
+                !call write_matrix_summed_overE('Sigma_r',iter,Sig_retarded,nen,en,length,NB,(/1.0,1.0/))
+                !!!! calculate collision integral
+                ! call calc_collision(Sig_lesser_new,Sig_greater_new,G_lesser,G_greater,nen,en,spindeg,nm_dev,Itot,Ispec)
+                ! call write_spectrum_nosub('gw_Scat',iter,Ispec,nen,En,length,NB,Lx,(/1.0d0,1.0d0/))
+            endif
+        enddo             
+        if (output_files) then 
+            open(unit=11,file='WR0.dat',status='unknown')
+            do i=1, nm_dev
+                do j=1, nm_dev
+                    write(11,'(2I6,2E15.4)') i,j, dble(W0_retarded(i,j)), aimag(W0_retarded(i,j))
+                end do
+                write(11,*)
+            end do
+            close(11)
+        endif
+        !! last step  
+        print *, 'calc G last time ...'  
+        !
+        call calc_gf(nen,En,2,nm_dev,[nb*ns,nb*ns],nb*ns,&
+                            Ham(:,:),H00lead(:,:,:),H10lead(:,:,:),Siglead(:,:,:,:),&
+                            T(:,:,:),Sig_retarded(:,:,:),Sig_lesser(:,:,:),Sig_greater(:,:,:),&
+                            G_retarded(:,:,:),G_lesser(:,:,:),&
+                            G_greater(:,:,:),Tr,Te,mu,temp,flatband)                        
+        !   
+        current=tr
+        transmission(:,1)=te(:,1,2)
+        transmission(:,2)=te(:,2,1)     
+        if (output_files) then
+            call calc_bond_current(Ham,G_lesser,nen,en,spindeg,nm_dev,tot_cur,tot_ecur,cur)
+            call write_current_spectrum('gw_Jdens',iter,cur,nen,en,length,NB,Lx)
+            call write_current('gw_I',iter,tot_cur,length,NB,NS,Lx)
+            call write_current('gw_EI',iter,tot_ecur,length,NB,NS,Lx)
+            call write_spectrum_nosub('gw_ldos',iter,G_retarded,nen,En,length,NB,Lx,(/1.0d0,-2.0d0/))
+            call write_spectrum_nosub('gw_ndos',iter,G_lesser,nen,En,length,NB,Lx,(/1.0d0,1.0d0/))
+            call write_spectrum_nosub('gw_pdos',iter,G_greater,nen,En,length,NB,Lx,(/1.0d0,-1.0d0/))                    
+        endif
+        !
     end subroutine solve_gw_1D_memsaving
 
 
     ! calculate polarization with 1st order vertex correction 
     subroutine calc_P_vertex_correction(lvertex,nm_dev,nen,nop,ndiag,dE,G_retarded,G_lesser,G_greater,W_retarded,W_lesser,W_greater,P_retarded,P_lesser,P_greater)
-    integer, intent(in) :: nm_dev, nen, nop, ndiag
-    real(dp), intent(in) :: dE
-    logical, intent(in) :: lvertex
-    complex(dp),intent(in),dimension(nm_dev,nm_dev,nen) ::  G_retarded,G_lesser,G_greater ! electron GF
-    complex(dp),intent(in),dimension(nm_dev,nm_dev) ::  W_retarded,W_lesser,W_greater ! W_0 static screened Coulomb interaction
-    complex(dp),intent(out),dimension(nm_dev,nm_dev) ::  P_retarded,P_lesser,P_greater ! 1st order vertex-corrected polarization
-    ! ---------- local variables
-    integer :: i,j,k, ie, n, ie1,ie2
-    real(dp)::alpha
-    alpha = 0.0_dp
-    ie1=max(nop+1,1)
-    ie2=min(nen,nen+nop) 
-    ! P0_ijk = -i G_ik * G_kj
-    ! P1_mnk = P0_mnk + i \sum_ij P0_ijk W0_ij G_mi * G_jn
-    ! we only need after-all P1_nnk, therefore we plug P0 into P1 and get
-    ! P1_nnk = -i G_nk * G_kn + i \sum_ij (-i G_ik * G_kj) W0_ij G_ni * G_jn
-    ! the range of n,k,i,j should be smaller than ndiag
-    !$omp parallel default(shared) private(k,n,i,j,ie) 
-    !$omp do
-    do n = 1, nm_dev        
-    do k = 1, nm_dev         
-        if ((abs(n-k) <= ndiag)) then
-        ! RPA polarization P0      
-        do ie = max(nop+1,1),min(nen,nen+nop)                        
-            P_lesser(n,k) = P_lesser(n,k) + G_lesser(n,k,ie) * G_greater(k,n,ie-nop)
-            P_greater(n,k) = P_greater(n,k) + G_greater(n,k,ie) * G_lesser(k,n,ie-nop) 
-    !        P_retarded(n,k) = P_retarded(n,k) + G_lesser(n,k,ie) * conjg(G_retarded(n,k,ie-nop)) + &
-    !                          G_retarded(n,k,ie) * G_lesser(k,n,ie-nop)        
-        enddo
-        !
-        if (lvertex) then
-            ! 1st order vertex correction    
-            do i = max(1,k-ndiag), min(nm_dev,k+ndiag)        
-            do j = max(1,k-ndiag), min(nm_dev,k+ndiag)          
-                if ((abs(i-k) <= ndiag).and.(abs(j-k) <= ndiag)) then                                                   
-                    P_lesser(n,k) = P_lesser(n,k) + c1i* sum(G_lesser(i,k,ie1:ie2) * G_greater(k,j,ie1-nop:ie2-nop)) &
-                                                    * W_lesser(i,j) * sum(G_lesser(n,i,ie1:ie2) * G_greater(j,n,ie1-nop:ie2-nop)) 
-                    P_greater(n,k) = P_greater(n,k) + c1i* sum(G_greater(i,k,ie1:ie2) * G_lesser(k,j,ie1-nop:ie2-nop)) &
-                                                    * W_greater(i,j) * sum(G_greater(n,i,ie1:ie2) * G_lesser(j,n,ie1-nop:ie2-nop)) 
-                    ! P_retarded(n,k) = P_retarded(n,k) + &
-                    !   c1i* sum(G_lesser(i,k,ie1:ie2) * conjg(G_retarded(j,k,ie1-nop:ie2-nop))) &
-                    !   * W_retarded(i,j) * sum(G_lesser(n,i,ie1:ie2) * conjg(G_retarded(n,j,ie1-nop:ie2-nop))) +&
-                    !   c1i* sum(G_retarded(i,k,ie1:ie2) * G_lesser(k,j,ie1-nop:ie2-nop)) &
-                    !   * W_retarded(i,j) * sum(G_retarded(n,i,ie1:ie2) * G_lesser(n,j,ie1-nop:ie2-nop))                                  
+        integer, intent(in) :: nm_dev, nen, nop, ndiag
+        real(dp), intent(in) :: dE
+        logical, intent(in) :: lvertex
+        complex(dp),intent(in),dimension(nm_dev,nm_dev,nen) ::  G_retarded,G_lesser,G_greater ! electron GF
+        complex(dp),intent(in),dimension(nm_dev,nm_dev) ::  W_retarded,W_lesser,W_greater ! W_0 static screened Coulomb interaction
+        complex(dp),intent(out),dimension(nm_dev,nm_dev) ::  P_retarded,P_lesser,P_greater ! 1st order vertex-corrected polarization
+        ! ---------- local variables
+        integer :: i,j,k, ie, n, ie1,ie2
+        real(dp)::alpha
+        alpha = 0.0_dp
+        ie1=max(nop+1,1)
+        ie2=min(nen,nen+nop) 
+        ! P0_ijk = -i G_ik * G_kj
+        ! P1_mnk = P0_mnk + i \sum_ij P0_ijk W0_ij G_mi * G_jn
+        ! if we only need after-all P1_nnk, we just plug P0 into P1 and get
+        ! P1_nnk = -i G_nk * G_kn + i \sum_ij (-i G_ik * G_kj) W0_ij G_ni * G_jn
+        ! the range of n,k,i,j should be smaller than ndiag
+        !$omp parallel default(shared) private(k,n,i,j,ie) 
+        !$omp do
+        do n = 1, nm_dev        
+            do k = 1, nm_dev         
+                if ((abs(n-k) <= ndiag)) then
+                ! RPA polarization P0      
+                do ie = max(nop+1,1),min(nen,nen+nop)                        
+                    P_lesser(n,k) = P_lesser(n,k) + G_lesser(n,k,ie) * G_greater(k,n,ie-nop)
+                    P_greater(n,k) = P_greater(n,k) + G_greater(n,k,ie) * G_lesser(k,n,ie-nop) 
+            !        P_retarded(n,k) = P_retarded(n,k) + G_lesser(n,k,ie) * conjg(G_retarded(n,k,ie-nop)) + &
+            !                          G_retarded(n,k,ie) * G_lesser(k,n,ie-nop)        
+                enddo
+                !
+                if (lvertex) then
+                    ! 1st order vertex correction    
+                    do i = max(1,k-ndiag), min(nm_dev,k+ndiag)        
+                        do j = max(1,k-ndiag), min(nm_dev,k+ndiag)          
+                            if ((abs(i-k) <= ndiag).and.(abs(j-k) <= ndiag)) then                                                   
+                                P_lesser(n,k) = P_lesser(n,k) + c1i* sum(G_lesser(i,k,ie1:ie2) * G_greater(k,j,ie1-nop:ie2-nop)) &
+                                                                * W_lesser(i,j) * sum(G_lesser(n,i,ie1:ie2) * G_greater(j,n,ie1-nop:ie2-nop)) 
+                                P_greater(n,k) = P_greater(n,k) + c1i* sum(G_greater(i,k,ie1:ie2) * G_lesser(k,j,ie1-nop:ie2-nop)) &
+                                                                * W_greater(i,j) * sum(G_greater(n,i,ie1:ie2) * G_lesser(j,n,ie1-nop:ie2-nop)) 
+                                ! P_retarded(n,k) = P_retarded(n,k) + &
+                                !   c1i* sum(G_lesser(i,k,ie1:ie2) * conjg(G_retarded(j,k,ie1-nop:ie2-nop))) &
+                                !   * W_retarded(i,j) * sum(G_lesser(n,i,ie1:ie2) * conjg(G_retarded(n,j,ie1-nop:ie2-nop))) +&
+                                !   c1i* sum(G_retarded(i,k,ie1:ie2) * G_lesser(k,j,ie1-nop:ie2-nop)) &
+                                !   * W_retarded(i,j) * sum(G_retarded(n,i,ie1:ie2) * G_lesser(n,j,ie1-nop:ie2-nop))                                  
+                            endif
+                        enddo
+                    enddo
+                endif
                 endif
             enddo
-            enddo
-        endif
-        endif
-    enddo
-    enddo
-    !$omp end do
-    !$omp end parallel
-    ! P_retarded(:,:) = alpha * P_retarded(:,:) + (1.0_dp - alpha) * 0.5_dp * ( P_greater(:,:) - P_lesser(:,:) )
+        enddo
+        !$omp end do
+        !$omp end parallel
+        ! P_retarded(:,:) = alpha * P_retarded(:,:) + (1.0_dp - alpha) * 0.5_dp * ( P_greater(:,:) - P_lesser(:,:) )
     end subroutine calc_P_vertex_correction
 
 
@@ -1212,9 +1187,8 @@ module gw_dense
         real(dp)::mu(2),temp(2)
         real(dp)::weights(nsub),xen(nsub)
         real(dp)::scba_error
-
-
     end subroutine solve_eph
+
 
     ! calculate e-photon/phonon self-energies for single mode in thermal equilibrium 
     subroutine selfenergy_eph_mono(nm,nen,En,nop,nphiy,nphiz,ik,iq,M,G_lesser,G_greater,&
