@@ -91,8 +91,8 @@ if __name__=='__main__':
 
    Gr_diag = G_retarded.diagonal()
    Gn_diag = G_lesser.diagonal()
-   ldos = np.sum(Gr_diag, axis=-1)
-   ndos = np.sum(Gn_diag, axis=-1)
+   ldos = np.imag(Gr_diag)
+   ndos = np.imag(Gn_diag)
 
             
    dE=energies[1]-energies[0]
@@ -100,13 +100,14 @@ if __name__=='__main__':
 
        print(iop*4, "Ephot=", iop*dE)
 
-       P_r,nn = bse_dense.bse_fullsolve(alpha=0.99,spindeg=2.0,nm_dev=nb*length,ndiag=ndiag,nen=nen,en=energies,nop=iop*4,
-           g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,
-           w=W0_r,v=v)
+       P_r,nn = bse_dense.bse_fullsolve(
+               alpha=0.99,spindeg=2.0,nm_dev=nb*length,ndiag=ndiag,nen=nen,en=energies,nop=iop*4,
+               g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,
+               w=W0_r,v=v)
 
        epsilon_M = v[:,:,0] @ P_r
        eps_M[iop] = np.sum( epsilon_M[ nb*length//2, nb*ns:(nb*length-nb*ns) ] )
-       print('eps_M=',eps_M[iop])
+       print('epsilon_2=', np.imag(eps_M[iop]) )
 
 
    np.savez('run_ndiag'+str(ndiag)+'.npz', 
