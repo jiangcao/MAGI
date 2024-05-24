@@ -17,16 +17,12 @@ module bse_dense
        ! the P4 IPA tensor is computed from $P4(q,E') = \sum_{k} \int dE G(E,k) G(E-E',k-q)                
        dE = ( En(2) - En(1) )          
        weights = dE/twopi
-       !                 
-       L0=czero                   
-       ! calculate P4_IPA from GG       
-       do ie=nop+1,nen                            
-           L0 = L0 + &
-                   (1.0_dp - alpha) * ( G_lesser(j,l,ie) * conjg(G_retarded(i,k,ie-nop)) + &
-                                       G_retarded(j,l,ie) * G_lesser(k,i,ie-nop) )   + &
-                       alpha * 0.5_dp * ( G_greater(j,l,ie) * G_lesser(k,i,ie-nop) - & 
-                                       G_lesser(j,l,ie)  * G_greater(k,i,ie-nop) )  
-       enddo 
+       !                        
+       ! calculate P4_IPA from GG
+       L0 =    (1.0_dp - alpha) * ( sum( G_lesser(j,l,(nop+1):nen)   * conjg(G_retarded(i,k,1:(nen-nop))) ) &
+                                 +  sum( G_retarded(j,l,(nop+1):nen) * G_lesser(k,i,1:(nen-nop)) ) )  &
+               + alpha * 0.5_dp * ( sum( G_greater(j,l,(nop+1):nen) * G_lesser(k,i,1:(nen-nop)) )  & 
+                                 -  sum( G_lesser(j,l,(nop+1):nen)  * G_greater(k,i,1:(nen-nop)) ) )  
        L0 = L0 * weights 
     end subroutine four_polarization
 
