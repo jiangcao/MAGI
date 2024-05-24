@@ -114,7 +114,7 @@ if __name__=='__main__':
                g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,
                w=W0_r,v=v)
 
-       epsilon_M = v[:,:,0] @ P_r
+       epsilon_M = np.eye(nb*length) -  v[:,:,0] @ P_r
        eps_M[iop] = np.sum( epsilon_M[ nb*length//2, nb*ns:(nb*length-nb*ns) ] )
        print('epsilon_2=', np.imag(eps_M[iop]) )
 
