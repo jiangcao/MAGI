@@ -12,7 +12,7 @@ from negf import gw_dense,bse_dense
 from wannier import wannierham
 import matplotlib.pyplot as plt
 import os
-os.environ["OMP_NUM_THREADS"] = "28"
+os.environ["OMP_NUM_THREADS"] = "128"
 
 
 if __name__=='__main__':   
@@ -43,7 +43,7 @@ if __name__=='__main__':
    temp =  np.ones(2)* 300.0
    mu = np.array( [-2.25,-2.25 ] )
 
-   ndiag=nb*ns
+   ndiag=nb*1
 
    if (ndiag==0):
        ldiag=True
@@ -74,7 +74,6 @@ if __name__=='__main__':
 
    egap=1.67
    encut=[7.0,7.0]
-   eps_M=np.zeros(nen//4,dtype='complex')
 
    energies = np.linspace(emin,emax,nen)
    print(nen,nsub)
@@ -94,14 +93,24 @@ if __name__=='__main__':
    ldos = np.imag(Gr_diag)
    ndos = np.imag(Gn_diag)
 
+   np.savez('data_ndiag'+str(ndiag)+'.npz', 
+                        ID_list=ID_list,
+                        tr=tr,
+                        te=te,
+                        energies=energies,
+                        ldos=ldos,
+                        ndos=ndos)
             
    dE=energies[1]-energies[0]
-   for iop in range(nen//4):
+   nstep=4
+   eps_M=np.zeros(nen//nstep,dtype='complex')
 
-       print(iop*4, "Ephot=", iop*dE)
+   for iop in range(int(0.8/dE)//nstep, nen//nstep):
+
+       print(iop*4, "Ephot=", iop*nstep*dE)
 
        P_r,nn = bse_dense.bse_fullsolve(
-               alpha=0.99,spindeg=2.0,nm_dev=nb*length,ndiag=ndiag,nen=nen,en=energies,nop=iop*4,
+               alpha=0.99,spindeg=2.0,nm_dev=nb*length,ndiag=ndiag,nen=nen,en=energies,nop=iop*nstep,
                g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,
                w=W0_r,v=v)
 
@@ -110,7 +119,7 @@ if __name__=='__main__':
        print('epsilon_2=', np.imag(eps_M[iop]) )
 
 
-   np.savez('run_ndiag'+str(ndiag)+'.npz', 
+   np.savez('data_ndiag'+str(ndiag)+'.npz', 
                         ID_list=ID_list,
                         tr=tr,
                         te=te,
