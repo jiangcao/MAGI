@@ -100,8 +100,7 @@ module bse_dense
                 k=table(1,col)
                 l=table(2,col)
                 if ((abs(i-k)<=ndiag).and.(abs(j-l)<=ndiag).and.(abs(j-k)<=ndiag).and.&
-                    (abs(i-l)<=ndiag).and.(abs(i-j)<=ndiag).and.(abs(k-l)<=ndiag).and.&
-                    (j>0).and.(j<=nm_dev).and.(l>0).and.(l<=nm_dev)) then 
+                    (abs(i-l)<=ndiag).and.(abs(i-j)<=ndiag).and.(abs(k-l)<=ndiag)) then 
                     call four_polarization(alpha,nm_dev,nen,en,nop,ndiag,&
                         G_lesser,G_greater,G_retarded,i,j,k,l,L0ijkl)
                     Lmat(row,col) = L0ijkl * spindeg
@@ -122,7 +121,7 @@ module bse_dense
                 if ((i==j).and.(k==l)) then                        
                     Mmat(row,col) = Mmat(row,col) - c1i *  V(i,k) * spindeg                        
                 endif 
-                if ((i==k).and.(j==l).and.(j>0).and.(j<=nm_dev).and.(l>0).and.(l<=nm_dev)) then                        
+                if ((i==k).and.(j==l)) then                        
                     Mmat(row,col) = Mmat(row,col) + c1i *  W(i,j)
                 endif 
             enddo
@@ -475,7 +474,7 @@ module bse_dense
         open(unit=11, file=filename, status='unknown')                
         do i=1,nm
             do j=1,nm
-                if ( abs(Mat(i,j)) .gt. 0.0d0 ) then
+                if ( abs(Mat(i,j)) > 0.0d0 ) then
                     write(11,'(2I10,2E18.6)') i,j,dble(Mat(i,j)),aimag(Mat(i,j))
                 endif
             enddo
