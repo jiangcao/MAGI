@@ -207,8 +207,9 @@ module fft_mod
     subroutine do_mkl_dfti_conv(n,X_in,Y_in,Z_out)
     ! 1D complex to complex
     Use MKL_DFTI
-    integer :: n
-    Complex(dp) :: X_in(n),Y_in(n),Z_out(n)
+    integer,intent(in) :: n
+    Complex(dp),intent(in) :: X_in(n),Y_in(n)
+    Complex(dp),intent(out) :: Z_out(n)
     Complex(dp) :: X_out(n),Y_out(n),Z_in(n)
     type(DFTI_DESCRIPTOR), POINTER :: My_Desc1_Handle, My_Desc2_Handle
     Integer :: Status
