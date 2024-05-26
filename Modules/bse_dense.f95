@@ -53,7 +53,8 @@ module bse_dense
     subroutine bse_sparse_build(alpha,spindeg,nm_dev,ndiag,nen,En,nop,nnop,blocksize,num_blocks,&
         G_lesser,G_greater,G_retarded,W,V,&
         N,Ldiag,Lupper,Llower,Lupperarrow,Llowerarrow,Ltip,Ktip,Kdiag)        
-        integer,intent(in)::nm_dev,nen,nnop,nop(nnop),ndiag, blocksize, num_blocks
+        integer,intent(in)::nm_dev,nen,nnop,nop(nnop),ndiag 
+        integer,intent(in)::blocksize, num_blocks ! arrow block size and number of blocks (excluding tip block)
         real(dp),intent(in)::en(nen),spindeg,alpha        
         integer, intent(out)::N ! size of the reduced 2-body system
         complex(dp),intent(in),dimension(nm_dev,nm_dev,nen):: G_lesser,G_greater,G_retarded ! electron GFs    
@@ -61,9 +62,9 @@ module bse_dense
         complex(dp),intent(in),dimension(nm_dev,nm_dev) :: V ! bare Coulomb interaction    
         complex(dp),intent(out),dimension(blocksize,blocksize*num_blocks,nnop):: Ldiag,Lupper,Llower ! dense blocks of 2-point polarization function with interacting electron-hole at frequency [[nop]]                
         complex(dp),intent(out),dimension(nm_dev,blocksize*num_blocks,nnop):: Lupperarrow,Llowerarrow ! dense blocks of 2-point polarization function with interacting electron-hole at frequency [[nop]]                
-        complex(dp),intent(out),dimension(blocksize*num_blocks):: Kdiag ! diagonal of Kernel
-        complex(dp),intent(out),dimension(nm_dev,nm_dev):: Ktip ! dense tip block of Kernel
         complex(dp),intent(out),dimension(nm_dev,nm_dev,nnop):: Ltip ! dense tip block of 2-point polarization function with interacting electron-hole at frequency [[nop]]                        
+        complex(dp),intent(out),dimension(blocksize*num_blocks+nm_dev):: Kdiag ! diagonal of Kernel
+        complex(dp),intent(out),dimension(nm_dev,nm_dev):: Ktip ! dense tip block of Kernel
         !---------
         complex(dp) :: L0ijkl(nnop)        
         real(dp) :: start, finish
@@ -241,7 +242,7 @@ module bse_dense
                 if ((i==j).and.(k==l)) then                        
                     Ktip(row,col) = Ktip(row,col) - c1i *  V(i,k) * spindeg                        
                 endif 
-                if ((i==k).and.(j==l)) then                        
+                if ((i==k).and.(j==l).and.(row<=N)) then                        
                     Kdiag(row) = Kdiag(row) + c1i *  W(i,j)
                 endif 
             enddo
