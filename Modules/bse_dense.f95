@@ -20,30 +20,25 @@ module bse_dense
         real(dp) :: dE, weights, xen, a1,a2
         integer :: ie, isub, ik, ikd
         complex(dp),dimension(nen) :: tmp
-        if ((abs(i-k)<=ndiag).and.(abs(j-l)<=ndiag).and.(abs(j-k)<=ndiag).and.&
-                    (abs(i-l)<=ndiag).and.(abs(i-j)<=ndiag).and.(abs(k-l)<=ndiag)) then               
-            ! the P4 IPA tensor is computed from $P4(q,E') = \sum_{k} \int dE G(E,k) G(E-E',k-q)                
-            dE = ( En(2) - En(1) )                               
-            weights = dE/twopi
-            a1=(1.0_dp - alpha)*weights
-            a2=(alpha * 0.5_dp)*weights
-            !                        
-            Gl(1:nen) = G_lesser(j,l,1:nen)
-            Gg(1:nen) = G_greater(j,l,1:nen)
-            Gr(1:nen) = G_retarded(j,l,1:nen)
-            !
-            Gl_down(1:nen) = G_lesser(k,i,1:nen)                    
-            Gg_down(1:nen) = G_greater(k,i,1:nen)
-            Gr_down(1:nen) = G_retarded(k,i,1:nen)
-            ! calculate P4_IPA from GG
-            tmp = corr1d(nen,Gl,conjg(Gr_down),method='fft') * a1
-            tmp = tmp  + corr1d(nen,Gr,Gl_down,method='fft') * a1
-            tmp = tmp  + corr1d(nen,Gg,Gl_down,method='fft') * a2
-            tmp = tmp  - corr1d(nen,Gl,Gg_down,method='fft') * a2
-            L0(1:nnop) = tmp(nop(1:nnop)+nen/2)
-        else 
-            L0(1:nnop) = czero 
-        endif
+        ! the P4 IPA tensor is computed from $P4(q,E') = \sum_{k} \int dE G(E,k) G(E-E',k-q)                
+        dE = ( En(2) - En(1) )                               
+        weights = dE/twopi
+        a1=(1.0_dp - alpha)*weights
+        a2=(alpha * 0.5_dp)*weights
+        !                        
+        Gl(1:nen) = G_lesser(j,l,1:nen)
+        Gg(1:nen) = G_greater(j,l,1:nen)
+        Gr(1:nen) = G_retarded(j,l,1:nen)
+        !
+        Gl_down(1:nen) = G_lesser(k,i,1:nen)                    
+        Gg_down(1:nen) = G_greater(k,i,1:nen)
+        Gr_down(1:nen) = G_retarded(k,i,1:nen)
+        ! calculate P4_IPA from GG
+        tmp = corr1d(nen,Gl,conjg(Gr_down),method='fft') * a1
+        tmp = tmp  + corr1d(nen,Gr,Gl_down,method='fft') * a1
+        tmp = tmp  + corr1d(nen,Gg,Gl_down,method='fft') * a2
+        tmp = tmp  - corr1d(nen,Gl,Gg_down,method='fft') * a2
+        L0(1:nnop) = tmp(nop(1:nnop)+nen/2)        
         !
     end subroutine four_polarization_fft
 
@@ -60,18 +55,23 @@ module bse_dense
         complex(dp),intent(in),dimension(nm_dev,nm_dev,nen):: G_lesser,G_greater,G_retarded ! electron GFs    
         complex(dp),intent(in),dimension(nm_dev,nm_dev) :: W ! W_0 static screened Coulomb interaction
         complex(dp),intent(in),dimension(nm_dev,nm_dev) :: V ! bare Coulomb interaction    
-        complex(dp),intent(out),dimension(blocksize,blocksize*num_blocks,nnop):: Ldiag,Lupper,Llower ! dense blocks of 2-point polarization function with interacting electron-hole at frequency [[nop]]                
-        complex(dp),intent(out),dimension(nm_dev,blocksize*num_blocks,nnop):: Lupperarrow,Llowerarrow ! dense blocks of 2-point polarization function with interacting electron-hole at frequency [[nop]]                
+        complex(dp),intent(out),dimension(blocksize,blocksize*num_blocks,nnop):: Ldiag
+        complex(dp),intent(out),dimension(blocksize,blocksize*(num_blocks-1),nnop):: Lupper,Llower ! dense blocks of 2-point polarization function with interacting electron-hole at frequency [[nop]]                
+        complex(dp),intent(out),dimension(nm_dev,blocksize*num_blocks,nnop):: Llowerarrow
+        complex(dp),intent(out),dimension(blocksize*num_blocks,nm_dev,nnop):: Lupperarrow ! dense blocks of 2-point polarization function with interacting electron-hole at frequency [[nop]]                
         complex(dp),intent(out),dimension(nm_dev,nm_dev,nnop):: Ltip ! dense tip block of 2-point polarization function with interacting electron-hole at frequency [[nop]]                        
         complex(dp),intent(out),dimension(blocksize*num_blocks+nm_dev):: Kdiag ! diagonal of Kernel
         complex(dp),intent(out),dimension(nm_dev,nm_dev):: Ktip ! dense tip block of Kernel
         !---------
-        complex(dp) :: L0ijkl(nnop)        
+        complex(dp) :: L0ijkl(nnop)     
+        integer,allocatable:: coo(:,:)   
         real(dp) :: start, finish
-        integer :: i,j,k,l,p,q,ie,row,col,it,iop,ib
+        integer :: i,j,k,l,p,q,ie,row,col,it,iop,ib,nnz,NT
         integer,allocatable::table(:,:) ! lookup table from 2-body to 1-body        
         N = nm_dev**2 - (nm_dev-ndiag-1)*(nm_dev-ndiag) ! compressed system size
         allocate(table(2,N), source=0)
+        nnz= nm_dev**2 + nm_dev*blocksize*num_blocks*2 + blocksize**2*(num_blocks+2*(num_blocks-1))
+        allocate(coo(2,nnz), source=0)
         ! construct a lookup table of reordered indices 
         ! tip， first put the i=j        
         do i=1,nm_dev            
@@ -95,8 +95,8 @@ module bse_dense
             print *, 'ERROR!'
             call abort
         endif        
-        print *, 'nm_dev=',nm_dev
-        print *, 'resized system size=',N 
+        print *, 'nm_dev=', nm_dev
+        print *, 'resized system size=', N 
         ! start computation        
         !
         Ltip = czero
@@ -105,129 +105,84 @@ module bse_dense
         Llower = czero
         Lupperarrow = czero
         Llowerarrow = czero
-        start = omp_get_wtime()              
-        print *,'  start computation L0_ijkl = G_jl G_ki ...'    
-        print *,'  tip block ...'  
-        !$omp parallel default(shared) private(row,col,L0ijkl,i,j,k,l)
-        !$omp do
-        do row=1,nm_dev 
-            do col=1,nm_dev
+        start = omp_get_wtime()     
+        ! determine coordinates of nnz
+        nnz=0
+        do row = 1,N 
+            do col = 1,N         
                 i=table(1,row)
                 j=table(2,row)
                 k=table(1,col)
-                l=table(2,col)                  
-                call four_polarization_fft(alpha,nm_dev,nen,en,nop,nnop,ndiag,&
-                    G_lesser,G_greater,G_retarded,i,j,k,l,L0ijkl)
-                Ltip(row,col,1:nnop) = L0ijkl * spindeg
-            enddo
+                l=table(2,col)    
+                if ((abs(i-k)<=ndiag).and.(abs(j-l)<=ndiag).and.(abs(j-k)<=ndiag).and.&
+                    (abs(i-l)<=ndiag).and.(abs(i-j)<=ndiag).and.(abs(k-l)<=ndiag)) then              
+                    nnz=nnz+1 
+                    coo(:,nnz) = [row,col] 
+                endif
+            enddo 
         enddo
+        !
+        print *,'  start computation L0_ijkl = G_jl G_ki ...'           
+        NT = blocksize*num_blocks         
+        print '("  total arrow size=", I20)', NT
+        print '("  arrow block size=", I20)', blocksize
+        print '("  nonzero elements=", I20)', nnz
+        print '("  nonzero ratio = ", F0.3 ," %")', dble(nnz)/(NT+nm_dev)**2*100
+        !$omp parallel default(shared) private(it,row,col,i,j,k,l,L0ijkl)
+        !$omp do        
+        do it = 1,nnz        
+            if (mod(it,1000)==0) write(*, '(A)', advance="no") '.'     
+            row = coo(1,it)
+            col = coo(2,it)
+            i=table(1,row)
+            j=table(2,row)
+            k=table(1,col)
+            l=table(2,col)              
+            ! need to flip the row and col when putting into arrowhead structure               
+            if (row<=nm_dev) then 
+                if (col<=nm_dev) then 
+                    ! tip block
+                    call four_polarization_fft(alpha,nm_dev,nen,en,nop,nnop,ndiag,&
+                                    G_lesser,G_greater,G_retarded,i,j,k,l,L0ijkl)
+                    Ltip(nm_dev-row+1,nm_dev-col+1,1:nnop) = L0ijkl * spindeg
+                else
+                    ! upper arrow block 
+                    call four_polarization_fft(alpha,nm_dev,nen,en,nop,nnop,ndiag,&
+                                    G_lesser,G_greater,G_retarded,i,j,k,l,L0ijkl)
+                    Lupperarrow(NT-(col-nm_dev)+1,nm_dev-row+1,1:nnop) = L0ijkl * spindeg          
+                endif 
+            else 
+                if (col<=nm_dev) then 
+                    ! lower arrow block 
+                    call four_polarization_fft(alpha,nm_dev,nen,en,nop,nnop,ndiag,&
+                                    G_lesser,G_greater,G_retarded,i,j,k,l,L0ijkl)
+                    Llowerarrow(nm_dev-col+1,NT-(row-nm_dev)+1,1:nnop) = L0ijkl * spindeg   
+                else 
+                    if (abs(col-row)<=blocksize) then 
+                        ! diag block 
+                        call four_polarization_fft(alpha,nm_dev,nen,en,nop,nnop,ndiag,&
+                                    G_lesser,G_greater,G_retarded,i,j,k,l,L0ijkl)
+                        Ldiag(blocksize - mod(row-1,blocksize), NT-(col-nm_dev)+1, 1:nnop) = L0ijkl * spindeg   
+                    else
+                        if (abs(col-row)<=2*blocksize) then 
+                            if (col > row) then 
+                                ! upper diag block 
+                                call four_polarization_fft(alpha,nm_dev,nen,en,nop,nnop,ndiag,&
+                                    G_lesser,G_greater,G_retarded,i,j,k,l,L0ijkl)
+                                Lupper(blocksize - mod(row-1,blocksize),NT-(col-nm_dev)+1,1:nnop) = L0ijkl * spindeg   
+                            else 
+                                ! lower diag block
+                                call four_polarization_fft(alpha,nm_dev,nen,en,nop,nnop,ndiag,&
+                                    G_lesser,G_greater,G_retarded,i,j,k,l,L0ijkl)
+                                Llower(blocksize - mod(row-1,blocksize),NT-(col-nm_dev)+1-blocksize,1:nnop ) = L0ijkl * spindeg   
+                            endif 
+                        endif 
+                    endif 
+                endif 
+            endif
+        enddo         
         !$omp end do
         !$omp end parallel 
-        !        
-        do ib=1,num_blocks
-            print *,ib,'th  diag block ...'          
-            !$omp parallel default(shared) private(row,col,L0ijkl,i,j,k,l,p,q)
-            !$omp do
-            do p=1,blocksize
-                do q=1,blocksize
-                    row=nm_dev + (ib-1)*blocksize + p
-                    col=nm_dev + (ib-1)*blocksize + q
-                    if ((row <= N).and.(col <= N)) then
-                        i=table(1,row)
-                        j=table(2,row)
-                        k=table(1,col)
-                        l=table(2,col)                
-                        call four_polarization_fft(alpha,nm_dev,nen,en,nop,nnop,ndiag,&
-                                G_lesser,G_greater,G_retarded,i,j,k,l,L0ijkl)
-                        Ldiag(p,col-nm_dev,1:nnop) = L0ijkl * spindeg       
-                    endif         
-                enddo
-            enddo
-            !$omp end do
-            !$omp end parallel 
-            if (ib<num_blocks) then 
-                print *,ib,'th  upper block ...'  
-                !$omp parallel default(shared) private(row,col,L0ijkl,i,j,k,l,p,q)
-                !$omp do
-                do p=1,blocksize
-                    do q=1,blocksize
-                        row=nm_dev + (ib-1)*blocksize + p
-                        col=nm_dev + (ib)*blocksize + q
-                        if ((row <= N).and.(col <= N)) then
-                            i=table(1,row)
-                            j=table(2,row)
-                            k=table(1,col)
-                            l=table(2,col)                
-                            call four_polarization_fft(alpha,nm_dev,nen,en,nop,nnop,ndiag,&
-                                    G_lesser,G_greater,G_retarded,i,j,k,l,L0ijkl)
-                            Lupper(p,col-nm_dev,1:nnop) = L0ijkl * spindeg          
-                        endif  
-                    enddo
-                enddo
-                !$omp end do
-                !$omp end parallel 
-                print *,ib,'th  lower block ...'  
-                !$omp parallel default(shared) private(row,col,L0ijkl,i,j,k,l,p,q)
-                !$omp do
-                do p=1,blocksize
-                    do q=1,blocksize
-                        row=nm_dev + (ib)*blocksize + p
-                        col=nm_dev + (ib-1)*blocksize + q
-                        if ((row <= N).and.(col <= N)) then
-                            i=table(1,row)
-                            j=table(2,row)
-                            k=table(1,col)
-                            l=table(2,col)                
-                            call four_polarization_fft(alpha,nm_dev,nen,en,nop,nnop,ndiag,&
-                                    G_lesser,G_greater,G_retarded,i,j,k,l,L0ijkl)
-                            Llower(p,col-nm_dev,1:nnop) = L0ijkl * spindeg                
-                        endif
-                    enddo
-                enddo
-                !$omp end do
-                !$omp end parallel 
-            endif 
-            print *,ib,'th  arrow upper block ...'              
-            !$omp parallel default(shared) private(row,col,L0ijkl,i,j,k,l,p,q)
-            !$omp do
-            do q=1,blocksize
-                do p=1,nm_dev
-                    row= p
-                    col= nm_dev + (ib-1)*blocksize + q
-                    if ((row <= N).and.(col <= N)) then
-                        i=table(1,row)
-                        j=table(2,row)
-                        k=table(1,col)
-                        l=table(2,col)                
-                        call four_polarization_fft(alpha,nm_dev,nen,en,nop,nnop,ndiag,&
-                                G_lesser,G_greater,G_retarded,i,j,k,l,L0ijkl)
-                        Lupperarrow(p,col-nm_dev,1:nnop) = L0ijkl * spindeg   
-                    endif             
-                enddo
-            enddo
-            !$omp end do
-            !$omp end parallel
-            print *,ib,'th  arrow lower block ...'  
-            !$omp parallel default(shared) private(row,col,L0ijkl,i,j,k,l,p,q)
-            !$omp do
-            do q=1,blocksize
-                do p=1,nm_dev
-                    col= p
-                    row= nm_dev + (ib-1)*blocksize + q
-                    if ((row <= N).and.(col <= N)) then
-                        i=table(1,row)
-                        j=table(2,row)
-                        k=table(1,col)
-                        l=table(2,col)                
-                        call four_polarization_fft(alpha,nm_dev,nen,en,nop,nnop,ndiag,&
-                                G_lesser,G_greater,G_retarded,i,j,k,l,L0ijkl)
-                        Llowerarrow(p,row-nm_dev,1:nnop) = L0ijkl * spindeg       
-                    endif         
-                enddo
-            enddo
-            !$omp end do
-            !$omp end parallel
-        enddo        
         !        
         Ktip=czero
         Kdiag=czero
