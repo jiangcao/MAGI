@@ -95,7 +95,7 @@ module bse_dense
                 endif
             enddo 
         enddo
-        blocksize = bandwidth 
+        blocksize = bandwidth/2 
         num_blocks = ceiling( dble(N - nm_dev) / blocksize )  
         NT = blocksize * num_blocks         
         print '("  total arrow size=", I20)', NT
@@ -105,6 +105,61 @@ module bse_dense
         print '("  nonzero ratio = ", F0.3 ," %")', dble(nnz)/(dble(NT+nm_dev)**2)*100
     end subroutine bse_sparse_pre
 
+    ! build the Bethe-Salpeter Equation system matrix to invert from L0 and Kernel matrices
+    !   A = ( I - L0 @ K )
+    subroutine bse_sparse_build_system(blocksize,num_blocks,nm_dev,&
+        Ldiag, Lupper, Llower, Llowerarrow, Lupperarrow, Ltip, Kdiag, Ktip,&
+        Adiag, Aupper, Alower, Alowerarrow, Aupperarrow, Atip)
+        integer,intent(in)::blocksize,num_blocks,nm_dev
+        complex(dp),intent(in),dimension(blocksize,blocksize*num_blocks):: Ldiag
+        complex(dp),intent(in),dimension(blocksize,blocksize*(num_blocks-1)):: Lupper,Llower ! dense blocks of 2-point polarization function with interacting electron-hole at frequency [[nop]]                
+        complex(dp),intent(in),dimension(nm_dev,blocksize*num_blocks):: Llowerarrow
+        complex(dp),intent(in),dimension(blocksize*num_blocks,nm_dev):: Lupperarrow ! dense blocks of 2-point polarization function with interacting electron-hole at frequency [[nop]]                
+        complex(dp),intent(in),dimension(nm_dev,nm_dev):: Ltip ! dense tip block of 2-point polarization function with interacting electron-hole at frequency [[nop]]                        
+        complex(dp),intent(in),dimension(blocksize*num_blocks+nm_dev):: Kdiag ! diagonal of Kernel
+        complex(dp),intent(in),dimension(nm_dev,nm_dev):: Ktip ! dense tip block of Kernel
+        !
+        complex(dp),intent(out),dimension(blocksize,blocksize*num_blocks):: Adiag
+        complex(dp),intent(out),dimension(blocksize,blocksize*(num_blocks-1)):: Aupper,Alower 
+        complex(dp),intent(out),dimension(nm_dev,blocksize*num_blocks):: Alowerarrow
+        complex(dp),intent(out),dimension(blocksize*num_blocks,nm_dev):: Aupperarrow 
+        complex(dp),intent(out),dimension(nm_dev,nm_dev):: Atip 
+        ! --- 
+        integer:: ib,i,j,N 
+        N = blocksize*num_blocks
+        ! A_xx
+        call zgemm('n','n',nm_dev,nm_dev,nm_dev,-cone,Ltip,nm_dev,Ktip,nm_dev,czero,Atip,nm_dev)  
+        do concurrent (i=1:nm_dev)
+            Atip(i,i) = Atip(i,i) + cone 
+        enddo 
+        ! A_xd = - L_xd * K_dd
+        do concurrent (i = 1:nm_dev)
+            do concurrent (j = 1:N) 
+                Alowerarrow(i,j) = - Llowerarrow(i,j) * Kdiag(j)
+            enddo
+        enddo        
+        ! A_dx = - L_dx * K_xx
+        call zgemm('n','n',N,nm_dev,nm_dev,-cone,Lupperarrow,N,Ktip,nm_dev,czero,Aupperarrow,N)
+        ! A_dd
+        ! diagonal blocks         
+        do concurrent (i=1:blocksize)
+            do concurrent (j=1:blocksize*num_blocks)
+                Adiag(i,j) = - Ldiag(i,j) * Kdiag(j)
+            enddo               
+        enddo 
+        do concurrent (ib=1:num_blocks)
+            do concurrent (i=1:blocksize)
+                Adiag(i,i+(ib-1)*blocksize) = Adiag(i,i+(ib-1)*blocksize) + cone
+            enddo 
+        enddo
+        ! upper and lower diagonal blocks
+        do concurrent (i=1:blocksize)
+            do concurrent (j=1:blocksize*(num_blocks-1))
+                Aupper(i,j) = - Lupper(i,j) * Kdiag(j+blocksize)
+                Alower(i,j) = - Llower(i,j) * Kdiag(j)
+            enddo 
+        enddo 
+    end subroutine bse_sparse_build_system
 
     ! build the Bethe-Salpeter Equation L0 and Kernel matrices
     subroutine bse_sparse_build(alpha,spindeg,nm_dev,ndiag,nen,En,nop,nnop,blocksize,num_blocks,N,table,&
@@ -121,13 +176,14 @@ module bse_dense
         complex(dp),intent(out),dimension(nm_dev,blocksize*num_blocks,nnop):: Llowerarrow
         complex(dp),intent(out),dimension(blocksize*num_blocks,nm_dev,nnop):: Lupperarrow ! dense blocks of 2-point polarization function with interacting electron-hole at frequency [[nop]]                
         complex(dp),intent(out),dimension(nm_dev,nm_dev,nnop):: Ltip ! dense tip block of 2-point polarization function with interacting electron-hole at frequency [[nop]]                        
-        complex(dp),intent(out),dimension(blocksize*num_blocks+nm_dev):: Kdiag ! diagonal of Kernel
+        complex(dp),intent(out),dimension(blocksize*num_blocks):: Kdiag ! diagonal of Kernel
         complex(dp),intent(out),dimension(nm_dev,nm_dev):: Ktip ! dense tip block of Kernel
         !---------
         complex(dp) :: L0ijkl(nnop)              
         real(dp) :: start, finish
-        integer :: i,j,k,l,p,q,ie,row,col,it,iop,ib,NT,nepoch        
+        integer :: i,j,k,l,p,q,ie,row,col,it,iop,ib,NT,nepoch,fliped_row,fliped_col        
         !
+        print *,'  init memory ...'
         Ltip = czero
         Ldiag = czero
         Lupper = czero
@@ -154,13 +210,27 @@ module bse_dense
                     if (row<=nm_dev) then 
                         if (col<=nm_dev) then 
                             ! tip block
-                            call four_polarization_fft(alpha,nm_dev,nen,en,nop,nnop,ndiag,&
+                            if (nnop>10) then
+                                call four_polarization_fft(alpha,nm_dev,nen,en,nop,nnop,ndiag,&
                                             G_lesser,G_greater,G_retarded,i,j,k,l,L0ijkl)
+                            else    
+                                do concurrent (iop=1:nnop)
+                                    call four_polarization(alpha,nm_dev,nen,en,nop(iop),ndiag,&
+                                            G_lesser,G_greater,G_retarded,i,j,k,l,L0ijkl(iop))
+                                enddo
+                            endif         
                             Ltip(nm_dev-row+1,nm_dev-col+1,1:nnop) = L0ijkl * spindeg
                         else
                             ! upper arrow block 
-                            call four_polarization_fft(alpha,nm_dev,nen,en,nop,nnop,ndiag,&
+                            if (nnop>10) then
+                                call four_polarization_fft(alpha,nm_dev,nen,en,nop,nnop,ndiag,&
                                             G_lesser,G_greater,G_retarded,i,j,k,l,L0ijkl)
+                            else    
+                                do concurrent (iop=1:nnop)
+                                    call four_polarization(alpha,nm_dev,nen,en,nop(iop),ndiag,&
+                                            G_lesser,G_greater,G_retarded,i,j,k,l,L0ijkl(iop))
+                                enddo
+                            endif 
                             Lupperarrow(NT-(col-nm_dev)+1,nm_dev-row+1,1:nnop) = L0ijkl * spindeg          
                         endif 
                     else 
@@ -175,20 +245,41 @@ module bse_dense
                             q = p + blocksize
                             if ((col>p).and.(col<=q)) then 
                                 ! diag block 
-                                call four_polarization_fft(alpha,nm_dev,nen,en,nop,nnop,ndiag,&
-                                            G_lesser,G_greater,G_retarded,i,j,k,l,L0ijkl)
+                                if (nnop>10) then
+                                    call four_polarization_fft(alpha,nm_dev,nen,en,nop,nnop,ndiag,&
+                                                G_lesser,G_greater,G_retarded,i,j,k,l,L0ijkl)
+                                else    
+                                    do concurrent (iop=1:nnop)
+                                        call four_polarization(alpha,nm_dev,nen,en,nop(iop),ndiag,&
+                                                G_lesser,G_greater,G_retarded,i,j,k,l,L0ijkl(iop))
+                                    enddo
+                                endif 
                                 Ldiag(blocksize - mod(row-nm_dev-1,blocksize), NT-(col-nm_dev)+1, 1:nnop) = L0ijkl * spindeg   
                             else
                                 if ((col>q).and.(col<=(q+blocksize))) then                             
                                     ! upper diag block 
-                                    call four_polarization_fft(alpha,nm_dev,nen,en,nop,nnop,ndiag,&
-                                        G_lesser,G_greater,G_retarded,i,j,k,l,L0ijkl)
+                                    if (nnop>10) then
+                                        call four_polarization_fft(alpha,nm_dev,nen,en,nop,nnop,ndiag,&
+                                                    G_lesser,G_greater,G_retarded,i,j,k,l,L0ijkl)
+                                    else    
+                                        do concurrent (iop=1:nnop)
+                                            call four_polarization(alpha,nm_dev,nen,en,nop(iop),ndiag,&
+                                                    G_lesser,G_greater,G_retarded,i,j,k,l,L0ijkl(iop))
+                                        enddo
+                                    endif 
                                     Lupper(blocksize - (row-p-1), NT-(col-nm_dev)+1,1:nnop) = L0ijkl * spindeg                               
                                 endif
                                 if ((col>(p-blocksize)).and.(col<=p)) then                             
                                     ! lower diag block
-                                    call four_polarization_fft(alpha,nm_dev,nen,en,nop,nnop,ndiag,&
-                                        G_lesser,G_greater,G_retarded,i,j,k,l,L0ijkl)
+                                    if (nnop>10) then
+                                        call four_polarization_fft(alpha,nm_dev,nen,en,nop,nnop,ndiag,&
+                                                    G_lesser,G_greater,G_retarded,i,j,k,l,L0ijkl)
+                                    else    
+                                        do concurrent (iop=1:nnop)
+                                            call four_polarization(alpha,nm_dev,nen,en,nop(iop),ndiag,&
+                                                    G_lesser,G_greater,G_retarded,i,j,k,l,L0ijkl(iop))
+                                        enddo
+                                    endif 
                                     Llower(blocksize - (row-p-1), NT-(col-nm_dev)+1-blocksize,1:nnop ) = L0ijkl * spindeg                            
                                 endif 
                             endif 
@@ -210,11 +301,17 @@ module bse_dense
                 j=table(2,row)
                 k=table(1,col)
                 l=table(2,col)           
-                if ((i==j).and.(k==l)) then                        
-                    Ktip(row,col) = Ktip(row,col) - c1i *  V(i,k) * spindeg                        
+                if ((i==j).and.(k==l)) then     
+                    fliped_row = nm_dev-row+1
+                    fliped_col = nm_dev-col+1                   
+                    Ktip(fliped_row,fliped_col) = Ktip(fliped_row,fliped_col) - c1i *  V(i,k) * spindeg        
+                    if ((i==k).and.(j==l).and.(row<=nm_dev)) then                
+                        Ktip(fliped_row,fliped_row) = Ktip(fliped_row,fliped_row) + c1i *  W(i,j)
+                    endif
                 endif 
-                if ((i==k).and.(j==l).and.(row<=N)) then                        
-                    Kdiag(row) = Kdiag(row) + c1i *  W(i,j)
+                if ((i==k).and.(j==l).and.(row>nm_dev)) then                        
+                    fliped_row = N-row+1                    
+                    Kdiag(fliped_row) = Kdiag(fliped_row) + c1i *  W(i,j)
                 endif 
             enddo
         enddo    
@@ -226,7 +323,7 @@ module bse_dense
         start = finish
     end subroutine bse_sparse_build
   
-    subroutine four_polarization(alpha,nm_dev,nen,en,nop,ndiag,G_lesser,G_greater,G_retarded,i,j,k,l,L0)
+    pure subroutine four_polarization(alpha,nm_dev,nen,en,nop,ndiag,G_lesser,G_greater,G_retarded,i,j,k,l,L0)
        integer,intent(in) :: nm_dev,nen,nop,ndiag, i,j,k,l
        real(dp),intent(in) :: en(nen), alpha 
        complex(dp),intent(in),dimension(nm_dev,nm_dev,nen) :: G_lesser,G_greater,G_retarded
