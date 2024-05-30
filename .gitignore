@@ -2,3 +2,7 @@
 *.o
 *.so
 *.swp
+
+*.dat
+*.swp 
+*.npz
