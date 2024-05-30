@@ -153,6 +153,8 @@ module bse_sparse
         complex(dp) :: L0ijkl(nnop)              
         real(dp) :: start, finish
         integer :: i,j,k,l,p,q,ie,row,col,it,iop,ib,NT,nepoch,fliped_row,fliped_col        
+        complex(dp),dimension(:,:),allocatable :: Lmat ! two-particle Green's function 
+        complex(dp),dimension(:,:),allocatable :: Mmat ! 4-point Kernel
         !
         print *,'  init memory ...'
         Ltip = czero
@@ -292,6 +294,74 @@ module bse_sparse
         print *
         print '("  computation time = ", F0.3 ," seconds.")', finish-start
         start = finish
+        ! 
+        ! check the matrix 
+        allocate(Mmat(N,N), source=czero)        
+        allocate(Lmat(N,N), source=czero)     
+        ! allocate(Amat(N,N), source=czero)  
+        !
+        start = omp_get_wtime()              
+        print *,'  start computation L0_ijkl = G_jl G_ki ...'        
+        !$omp parallel default(shared) private(row,col,L0ijkl,i,j,k,l)
+        !$omp do
+        do row=1,N 
+            do col=1,N
+                i=table(1,row)
+                j=table(2,row)
+                k=table(1,col)
+                l=table(2,col)
+                if ((abs(i-k)<=ndiag).and.(abs(j-l)<=ndiag).and.(abs(j-k)<=ndiag).and.&
+                    (abs(i-l)<=ndiag).and.(abs(i-j)<=ndiag).and.(abs(k-l)<=ndiag)) then 
+                    call four_polarization(alpha,nm_dev,nen,en,nop(1),ndiag,&
+                        G_lesser,G_greater,G_retarded,i,j,k,l,L0ijkl(1))
+                    Lmat(row,col) = L0ijkl(1) * spindeg
+                endif
+            enddo
+        enddo
+        !$omp end do
+        !$omp end parallel 
+        !
+        !$omp parallel default(shared) private(row,col,i,j,k,l)
+        !$omp do        
+        do row=1,N                        
+            do col=1,N
+                i=table(1,row)
+                j=table(2,row)
+                k=table(1,col)
+                l=table(2,col)           
+                if ((i==j).and.(k==l)) then                        
+                    Mmat(row,col) = Mmat(row,col) - c1i *  V(i,k) * spindeg                        
+                endif 
+                if ((i==k).and.(j==l)) then                        
+                    Mmat(row,col) = Mmat(row,col) + c1i *  W(i,j)
+                endif 
+            enddo
+        enddo    
+        !$omp end do
+        !$omp end parallel 
+        do row=1,nm_dev
+            do col=1,nm_dev
+                if (abs(Lmat(nm_dev-row+1,nm_dev-col+1) - Ltip(row,col,1)) > 1e-10) then 
+                    print *, "ERROR" 
+                    call abort 
+                endif 
+            enddo
+        enddo
+        do ib=1,num_blocks 
+            do i=1,blocksize
+                do j=1,blocksize
+                    row = NT+nm_dev -( (ib-1)*blocksize + i ) + 1
+                    col = NT+nm_dev -( (ib-1)*blocksize + j ) + 1
+                    if ((row>0).and.(col>0).and.(row<=N).and.(col<=N)) then
+                        if (abs(Lmat(row,col) - Ldiag(i,j+(ib-1)*blocksize,1)) > 1e-10) then 
+                            print *, "ERROR" 
+                            call abort
+                        endif
+                    endif 
+                enddo 
+            enddo 
+        enddo 
+        print *, "PASS CHECK"
     end subroutine bse_sparse_build
 
 end module bse_sparse

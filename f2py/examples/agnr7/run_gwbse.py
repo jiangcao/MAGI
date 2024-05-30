@@ -8,7 +8,7 @@ Created on Fri Mar 15 13:38:35 2024
 
 
 import numpy as np
-from negf import gw_dense,bse_dense
+from negf import gw_dense,bse_dense,bse_sparse
 from wannier import wannierham
 import matplotlib.pyplot as plt
 import os
@@ -103,20 +103,43 @@ if __name__=='__main__':
             
    dE=energies[1]-energies[0]
    nstep=4
-   eps_M=np.zeros(nen//nstep,dtype='complex')
+   
 
-   for iop in range(int(0.8/dE)//nstep, nen//nstep):
+   nnop=2
+   nops=np.arange(nnop)*nstep
+   eps_M=np.zeros(nnop,dtype='complex')
 
-       print(iop*4, "Ephot=", iop*nstep*dE)
+   nm_dev=nb*length
 
-       P_r,nn = bse_dense.bse_fullsolve(
-               alpha=0.99,spindeg=2.0,nm_dev=nb*length,ndiag=ndiag,nen=nen,en=energies,nop=iop*nstep,
-               g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,
-               w=W0_r,v=v)
+   N,nnz,table,blocksize,num_blocks = bse_sparse.bse_sparse_pre(nm_dev=nm_dev,ndiag=ndiag)
+   # resize
+   table=table[:,:N]
 
-       epsilon_M = np.eye(nb*length) -  v[:,:,0] @ P_r
-       eps_M[iop] = np.sum( epsilon_M[ nb*length//2, nb*ns:(nb*length-nb*ns) ] )
-       print('epsilon_2=', np.imag(eps_M[iop]) )
+   Ldiag,Lupper,Llower,Lupperarrow,Llowerarrow,Ltip,Ktip,Kdiag = bse_sparse.bse_sparse_build(
+               alpha=0.99,spindeg=2.0,nm_dev=nm_dev,ndiag=ndiag,nen=nen,en=energies,nop=nops,nnop=nnop,
+               g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,w=W0_r,v=v,
+               blocksize=blocksize,num_blocks=num_blocks,n=N,table=table)
+
+
+   Adiag,Aupper,Alower,Alowerarrow,Aupperarrow,Atip = bse_sparse.bse_sparse_build_system(
+           blocksize=blocksize, num_blocks=num_blocks, nnop=nnop, iop=1, nm_dev=nm_dev,
+           ldiag=Ldiag, lupper=Lupper, llower=Llower, llowerarrow=Llowerarrow, 
+           lupperarrow=Lupperarrow, ltip=Ltip, kdiag=Kdiag, ktip=Ktip )
+
+
+
+#    for iop in range(int(0.8/dE)//nstep, nen//nstep):
+
+#        print(iop*4, "Ephot=", iop*nstep*dE)
+
+#        P_r,nn = bse_dense.bse_fullsolve(
+#                alpha=0.99,spindeg=2.0,nm_dev=nb*length,ndiag=ndiag,nen=nen,en=energies,nop=iop*nstep,
+#                g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,
+#                w=W0_r,v=v)
+
+#        epsilon_M = np.eye(nb*length) -  v[:,:,0] @ P_r
+#        eps_M[iop] = np.sum( epsilon_M[ nb*length//2, nb*ns:(nb*length-nb*ns) ] )
+#        print('epsilon_2=', np.imag(eps_M[iop]) )
 
 
    np.savez('data_ndiag'+str(ndiag)+'.npz', 
