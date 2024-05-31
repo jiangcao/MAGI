@@ -3,32 +3,13 @@ module bse_dense
     use parameters_mod,only:dp,twopi,pi,e_charge,epsilon0,m0_charge,hbar,c1i,czero,cone
     use legendre
     use omp_lib
+    use gw_dense, only: invert_inplace
+    use polarization
     implicit none
     contains
 
-    subroutine four_polarization(alpha,nm_dev,nen,en,nop,ndiag,G_lesser,G_greater,G_retarded,i,j,k,l,L0)
-       integer,intent(in) :: nm_dev,nen,nop,ndiag, i,j,k,l
-       real(dp),intent(in) :: en(nen), alpha 
-       complex(dp),intent(in),dimension(nm_dev,nm_dev,nen) :: G_lesser,G_greater,G_retarded
-       complex(dp),intent(out) :: L0
-       ! ---
-       real(dp) :: dE, weights, xen
-       integer :: ie, isub, ik, ikd
-       ! the P4 IPA tensor is computed from $P4(q,E') = \sum_{k} \int dE G(E,k) G(E-E',k-q)                
-       dE = ( En(2) - En(1) )          
-       weights = dE/twopi
-       !                        
-       ! calculate P4_IPA from GG
-       L0 =    (1.0_dp - alpha) * ( sum( G_lesser(j,l,(nop+1):nen)   * conjg(G_retarded(i,k,1:(nen-nop))) ) &
-                                 +  sum( G_retarded(j,l,(nop+1):nen) * G_lesser(k,i,1:(nen-nop)) ) )  &
-               + alpha * 0.5_dp * ( sum( G_greater(j,l,(nop+1):nen) * G_lesser(k,i,1:(nen-nop)) )  & 
-                                 -  sum( G_lesser(j,l,(nop+1):nen)  * G_greater(k,i,1:(nen-nop)) ) )  
-       L0 = L0 * weights 
-    end subroutine four_polarization
-
     ! solve the full Bethe-Salpeter Equation
     subroutine bse_fullsolve(alpha,spindeg,nm_dev,ndiag,nen,En,nop,G_lesser,G_greater,G_retarded,W,V,P_retarded,nn)
-        use gw_dense, only: invert_inplace
         integer,intent(in)::nm_dev,nen,nop,ndiag
         real(dp),intent(in)::en(nen),spindeg,alpha        
         integer, intent(out)::nn ! size of the reduced 2-body system
@@ -179,8 +160,7 @@ module bse_dense
 
 
     ! solve the full Bethe-Salpeter Equation
-    subroutine bse_fullsolve_orig(alpha,spindeg,nm_dev,ndiag,nen,nsub,En,nop,nk,G_lesser,G_greater,G_retarded,W,V,P_retarded,system,epsilon_M)
-        use gw_dense, only: invert_inplace
+    subroutine bse_fullsolve_orig(alpha,spindeg,nm_dev,ndiag,nen,nsub,En,nop,nk,G_lesser,G_greater,G_retarded,W,V,P_retarded,system,epsilon_M)        
         integer,intent(in)::nm_dev,nen,nop,ndiag,nsub,nk
         real(dp),intent(in)::en(nen),spindeg,alpha
         complex(dp),intent(in),dimension(nm_dev,nm_dev,nen,nsub,nk):: G_lesser,G_greater,G_retarded ! electron GFs
@@ -314,8 +294,7 @@ module bse_dense
   
 
     ! solve the Bethe-Salpeter Equation under approximation
-    subroutine bse_solve(alpha,spindeg,nm_dev,ndiag,nen,nsub,En,nop,nk,G_lesser,G_greater,G_retarded,W,V,P_retarded)
-        use gw_dense, only: invert_inplace
+    subroutine bse_solve(alpha,spindeg,nm_dev,ndiag,nen,nsub,En,nop,nk,G_lesser,G_greater,G_retarded,W,V,P_retarded)        
         integer,intent(in)::nm_dev,nen,nop,nsub,nk,ndiag
         real(dp),intent(in)::en(nen),spindeg,alpha
         complex(dp),intent(in),dimension(nm_dev,nm_dev,nen,nsub,nk):: G_lesser,G_greater,G_retarded ! electron GF
