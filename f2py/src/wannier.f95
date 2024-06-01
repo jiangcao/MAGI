@@ -1,6 +1,6 @@
 ! -*- f90 -*-
 
-include "../../Modules/parameters.f95"
+! include "../../Modules/parameters.f95"
 
 module linalg
     implicit none 
