@@ -30,8 +30,8 @@ if __name__=='__main__':
    Lx=L[0]
 
    ns = 2
-   length = 6
-   nen = 32
+   length = 10
+   nen = 320
    nsub = 1
    nky=1
    nkz=1
@@ -110,8 +110,8 @@ if __name__=='__main__':
    eps_en=np.zeros(nen//nstep)
 
    Ephmin = 1.14
-   nnop= int( (4.0-Ephmin)/dE/nstep )
-   nnop= 1
+   # nnop= int( (4.0-Ephmin)/dE/nstep )
+   nnop = 5
    nops=np.arange(nnop)*nstep + int(Ephmin / dE)
    print('Ephoton = ' , nops * dE)
 
@@ -119,7 +119,7 @@ if __name__=='__main__':
 
 
    print("--- Start full BSE solver ---")
-   # P_r = np.zeros((nm_dev,nm_dev,nnop),dtype="complex")
+   
    for iop in range(nnop):
       print("iop=",iop,"Ephoton=",nops[iop]*dE)      
       start_t = time.time()
@@ -166,39 +166,13 @@ if __name__=='__main__':
             ldiag=Ldiag, lupper=Lupper, llower=Llower, llowerarrow=Llowerarrow, 
             lupperarrow=Lupperarrow, ltip=Ltip, kdiag=Kdiag, ktip=Ktip )
       
-      bse_sparse.bse_sparse_check_system(  
-        alpha=0.99,spindeg=2.0,nm_dev=nm_dev,iop=iop,ndiag=ndiag,nen=nen,en=energies,nop=nops,nnop=nnop,tol=1e-6,
+      bse_sparse.bse_sparse_check_system( tol=1e-6, 
+        alpha=0.99,spindeg=2.0,nm_dev=nm_dev,ndiag=ndiag,nen=nen,en=energies,
+        nop=nops,nnop=nnop,iop=iop+1,
         blocksize=blocksize,num_blocks=num_blocks,n=N,table=table,
         g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,w=W0_r,v=v, 
         adiag=Adiag, aupper=Aupper, alower=Alower, alowerarrow=Alowerarrow, aupperarrow=Aupperarrow, atip=Atip,
         ldiag=Ldiag, lupper=Lupper, llower=Llower, llowerarrow=Llowerarrow, lupperarrow=Lupperarrow, ltip=Ltip )
-
-#       print("save checkpoint.")
-#       np.savez('data_ndiag'+str(ndiag)+'.npz', 
-#                         ID_list=ID_list,
-#                         tr=tr,
-#                         te=te,
-#                         energies=energies,
-#                         Ltip=Ltip[:,:,0],
-#                         Ldiag=Ldiag[:,:,0],
-#                         Lupper=Lupper[:,:,0],
-#                         Llower=Llower[:,:,0],
-#                         Lupperarrow=Lupperarrow[:,:,0],
-#                         Llowerarrow=Llowerarrow[:,:,0],
-#                         Ktip=Ktip,
-#                         Kdiag=Kdiag,
-#                         Atip       =Atip,
-#                         Adiag      =Adiag,
-#                         Aupper     =Aupper,
-#                         Alower     =Alower,
-#                         Aupperarrow=Aupperarrow,
-#                         Alowerarrow=Alowerarrow,
-#                         ldos=ldos,
-#                         ndos=ndos,
-#                         eps_M=eps_M,
-#                         eps_en=eps_en
-# )
-   
 
 
       start_t = time.time()
@@ -226,8 +200,7 @@ if __name__=='__main__':
          eps_M_sinv[iop] = np.sum( epsilon_M[ nm_dev//2, nb*ns:(nm_dev-nb*ns) ] )
          
          print('E=',eps_en[iop],'epsilon_2=', np.abs( np.imag(eps_M_sinv[iop]) ),'reference=', np.abs( np.imag(eps_M[iop]) ) )
-         
-         
+                  
       except:
          print("! SINV fails") 
 
@@ -243,5 +216,5 @@ if __name__=='__main__':
                         eps_M=eps_M,
                         eps_en=eps_en,
                         eps_M_sinv=eps_M_sinv
-   )
+            )
 

@@ -6,3 +6,4 @@
 *.dat
 *.swp 
 *.npz
+*.pyc

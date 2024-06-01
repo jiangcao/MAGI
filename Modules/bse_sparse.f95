@@ -126,7 +126,9 @@ module bse_sparse
                 enddo
             enddo        
             ! A_dx = - L_dx * K_xx
-            call zgemm('n','n',N,nm_dev,nm_dev,-cone,Lupperarrow(:,:,iop),N,Ktip,nm_dev,czero,Aupperarrow,N)
+            Aupperarrow = matmul(Lupperarrow(:,:,iop) , Ktip)
+            Aupperarrow = - Aupperarrow
+            ! call zgemm('n','n',N,nm_dev,nm_dev,-cone,Lupperarrow(:,:,iop),N,Ktip,nm_dev,czero,Aupperarrow,N)
             ! A_dd
             ! diagonal blocks         
             do concurrent (i=1:blocksize)
@@ -153,7 +155,7 @@ module bse_sparse
         endif
     end subroutine bse_sparse_build_system
 
-    ! check the system matrix
+    ! check the sparse BTA system matrix blocks against dense matrix
     subroutine bse_sparse_check_system( & 
         tol,alpha,spindeg,nm_dev,ndiag,nen,En,nop,nnop,iop,blocksize,num_blocks,N,table,&
         G_lesser,G_greater,G_retarded,W,V, &
@@ -174,14 +176,14 @@ module bse_sparse
         complex(dp),dimension(:,:),allocatable :: Lmat,Amat ! two-particle Green's function 
         complex(dp),dimension(:,:),allocatable :: Mmat ! 4-point Kernel
         integer :: i,j,k,l,row,col,NT,ib,p,q 
-        complex(dp) :: L0ijkl(nnop)
+        complex(dp) :: L0ijkl,tmp
         real(dp) :: error        
         !
-        NT = blocksize * num_blocks 
+        NT = blocksize * num_blocks + nm_dev
         print *, " check the system matrix"
-        allocate(Mmat(N,N), source=czero)        
-        allocate(Lmat(N,N), source=czero)     
-        allocate(Amat(N,N), source=czero)  
+        allocate(Mmat(NT,NT), source=czero)        
+        allocate(Lmat(NT,NT), source=czero)     
+        allocate(Amat(NT,NT), source=czero)  
         !           
         print *,'  start computation L0_ijkl = G_jl G_ki ...'        
         !$omp parallel default(shared) private(row,col,L0ijkl,i,j,k,l)
@@ -195,8 +197,8 @@ module bse_sparse
                 if ((abs(i-k)<=ndiag).and.(abs(j-l)<=ndiag).and.(abs(j-k)<=ndiag).and.&
                     (abs(i-l)<=ndiag).and.(abs(i-j)<=ndiag).and.(abs(k-l)<=ndiag)) then 
                     call four_polarization(alpha,nm_dev,nen,en,nop(iop),ndiag,&
-                        G_lesser,G_greater,G_retarded,i,j,k,l,L0ijkl(1))
-                    Lmat(row,col) = L0ijkl(1) * spindeg
+                        G_lesser,G_greater,G_retarded,i,j,k,l,L0ijkl)
+                    Lmat(NT-col+1,NT-row+1) = L0ijkl * spindeg
                 endif
             enddo
         enddo
@@ -204,16 +206,13 @@ module bse_sparse
         !$omp end parallel 
         !
         ! set L to zero for elements outside of arrowhead structure
-        do row = 1,N 
-            do col = 1,N 
-                if ((row>nm_dev).and.(col>nm_dev)) then 
-                    ib = (row - nm_dev - 1) / blocksize
-                    p = ib * blocksize + nm_dev 
-                    q = p + blocksize * 2
-                    if (col > (p + blocksize * 2).and.(col < (p - blocksize * 2))) then 
-                        Lmat(row,col) = czero
-                    endif
-                endif     
+        do row = 1, blocksize*num_blocks
+            do col = 1, blocksize*num_blocks
+                ib = (row-1) / blocksize
+                p = ib * blocksize 
+                if (col > (p + blocksize * 2).and.(col <= (p - blocksize))) then 
+                    Lmat(row,col) = czero
+                endif
             enddo 
         enddo 
         !$omp parallel default(shared) private(row,col,i,j,k,l)
@@ -225,36 +224,43 @@ module bse_sparse
                 k=table(1,col)
                 l=table(2,col)           
                 if ((i==j).and.(k==l)) then                        
-                    Mmat(row,col) = Mmat(row,col) - c1i *  V(i,k) * spindeg                        
+                    Mmat(NT-col+1,NT-row+1) = Mmat(NT-col+1,NT-row+1) - c1i *  V(i,k) * spindeg                        
                 endif 
                 if ((i==k).and.(j==l)) then                        
-                    Mmat(row,col) = Mmat(row,col) + c1i *  W(i,j)
+                    Mmat(NT-col+1,NT-row+1) = Mmat(NT-col+1,NT-row+1) + c1i *  W(i,j)
                 endif 
             enddo
         enddo    
         !$omp end do
         !$omp end parallel 
-        call zgemm('n','n',N,N,N,-cone,Lmat,N,Mmat,N,czero,Amat,N)         
+        !        
+        call zgemm('n','n',NT,NT,NT,-cone,Lmat,NT,Mmat,NT,czero,Amat,NT)         
         !
         ! (I - L0 K) -> A
         !$omp parallel default(shared) private(i)
         !$omp do  
-        do i=1,N 
-            Amat(i,i) = Amat(i,i) + dcmplx(1.0_dp, 0.0_dp)
+        do i=1,NT 
+            Amat(i,i) = Amat(i,i) + cone
         enddo  
         !$omp end do
         !$omp end parallel
         !
         ! check tip block   
-        do row=1,nm_dev
-            do col=1,nm_dev
-                error = abs(Amat(nm_dev-row+1,nm_dev-col+1) - Atip(row,col)) 
-                if (error > tol) then 
-                    print *, "ERROR in A tip block", row, col, error  
-                endif 
-                error = abs(Lmat(nm_dev-row+1,nm_dev-col+1) - Ltip(row,col,iop+1)) 
+        do row=NT-nm_dev+1,NT
+            do col=NT-nm_dev+1,NT
+                error = abs(Lmat(row,col) - Ltip(row - (NT-nm_dev),col - (NT-nm_dev),iop)) 
                 if (error > tol) then 
                     print *, "ERROR in L tip block", row, col, error  
+                    call abort
+                endif                 
+            enddo
+        enddo
+        do row=NT-nm_dev+1,NT
+            do col=NT-nm_dev+1,NT
+                error = abs(Amat(row,col) - Atip(row - (NT-nm_dev),col - (NT-nm_dev))) 
+                if (error > tol) then 
+                    print *, "ERROR in A tip block", row, col, error  
+                    call abort
                 endif 
             enddo
         enddo
@@ -262,68 +268,91 @@ module bse_sparse
         do ib=1,num_blocks 
             do i=1,blocksize
                 do j=1,blocksize
-                    row = NT+nm_dev -( (ib-1)*blocksize + i ) + 1
-                    col = NT+nm_dev -( (ib-1)*blocksize + j ) + 1
-                    if ((row>0).and.(col>0).and.(row<=N).and.(col<=N)) then
-                        error = abs(Amat(row,col) - Adiag(i,j+(ib-1)*blocksize))
-                        if (error > tol) then 
-                            print *, "ERROR in A diagonal block", ib, i, j, row, col, error 
-                        endif
-                        error = abs(Lmat(row,col) - Ldiag(i,j+(ib-1)*blocksize,iop+1))
-                        if (error > tol) then 
-                            print *, "ERROR in L diagonal block", ib, i, j, row, col, error 
-                        endif
+                    row = (ib-1) * blocksize + i 
+                    col = (ib-1) * blocksize + j 
+                    error = abs(Lmat(row,col) - Ldiag(i,j+(ib-1)*blocksize,iop))
+                    if (error > tol) then 
+                        print *, "ERROR in L diagonal block", ib, i, j, row, col, error 
+                        call abort
+                    endif
+                    error = abs(Amat(row,col) - Adiag(i,j+(ib-1)*blocksize))
+                    if (error > tol) then 
+                        print *, "ERROR in A diagonal block", ib, i, j, row, col, error 
+                        call abort
+                    endif
+                enddo 
+            enddo 
+        enddo 
+        ! check upper/lower diagonal blocks
+        do ib=1, num_blocks-1
+            do i=1, blocksize
+                do j=1, blocksize
+                    row = (ib-1) * blocksize + i 
+                    col = ib * blocksize + j 
+                    error = abs(Lmat(row,col) - Lupper(i,col-blocksize,iop))
+                    if (error > tol) then 
+                        print *, "ERROR in L upper diagonal block", ib, i, j, row, col, error       
+                        call abort                      
+                    endif
+                    error = abs(Amat(row,col) - Aupper(i,col-blocksize))
+                    if (error > tol) then 
+                        print *, "ERROR in A upper diagonal block", ib, i, j, row, col, error    
+                        call abort                         
+                    endif           
+                    row = ib * blocksize + i         
+                    col = (ib-1) * blocksize + j
+                    error = abs(Lmat(row,col) - Llower(i,col,iop))
+                    if (error > tol) then 
+                        print *, "ERROR in L lower diagonal block", ib, i, j, row, col, error 
+                        call abort                            
+                    endif 
+                    error = abs(Amat(row,col) - Alower(i,col))
+                    if (error > tol) then 
+                        print *, "ERROR in A lower diagonal block", ib, i, j, row, col, error         
+                        call abort                    
                     endif 
                 enddo 
             enddo 
         enddo 
-        ! ! check upper/lower diagonal blocks
-        ! do ib=1,num_blocks-1
-        !     do i=1,blocksize
-        !         do j=1,blocksize
-        !             row = NT+nm_dev -( (ib-1)*blocksize + i ) + 1
-        !             col = NT+nm_dev -( (ib-1)*blocksize + j ) + 1
-        !             if ((row>0).and.(col>0).and.(row<=N).and.(col<=N)) then
-        !                 error = abs(Amat(row,col) - Aupper(i,j+(ib-1)*blocksize))
-        !                 if (error > tol) then 
-        !                     print *, "ERROR in upper diagonal block", ib, i, j, row, col, error                             
-        !                 endif
-        !             endif 
-        !             row = NT+nm_dev -( (ib-1)*blocksize + i ) + 1
-        !             col = NT+nm_dev -( (ib-1)*blocksize + j ) + 1 - blocksize
-        !             if ((row>0).and.(col>0).and.(row<=N).and.(col<=N)) then
-        !                 error = abs(Amat(row,col) - Alower(i,j+(ib-1)*blocksize))
-        !                 if (error > tol) then 
-        !                     print *, "ERROR in lower diagonal block", ib, i, j, row, col, error                             
-        !                 endif
-        !             endif 
-        !         enddo 
-        !     enddo 
-        ! enddo 
         ! check arrow upper/lower blocks 
-        ! do ib=1,num_blocks 
-        !     do i=1,blocksize
-        !         do j=1,nm_dev
-        !             row = NT+nm_dev -( (ib-1)*blocksize + i ) + 1
-        !             col = nm_dev - j + 1
-        !             if ((row>0).and.(col>0).and.(row<=N).and.(col<=N)) then
-        !                 error = abs(Amat(row,col) - Aupperarrow(i+(ib-1)*blocksize,j))
-        !                 if (error > tol) then 
-        !                     print *, "ERROR in arrow upper blocks", ib, i, j, row, col , error                        
-        !                 endif
-        !             endif 
-        !             col = NT+nm_dev -( (ib-1)*blocksize + i ) + 1
-        !             row = nm_dev - j + 1
-        !             if ((row>0).and.(col>0).and.(row<=N).and.(col<=N)) then
-        !                 error = abs(Amat(row,col) - Alowerarrow(j, i+(ib-1)*blocksize))
-        !                 if (error > tol) then 
-        !                     print *, "ERROR in arrow lower blocks", ib, i, j, row, col , error
-        !                 endif
-        !             endif 
-        !         enddo 
-        !     enddo 
-        ! enddo 
-        print *, "PASS CHECK"
+        do ib=1,num_blocks 
+            do i=1,blocksize
+                do j=1,nm_dev
+                    col = NT - nm_dev + j 
+                    row = (ib-1)*blocksize + i 
+                    !
+                    error = abs(Lmat(row,col) - Lupperarrow(row,j,iop))
+                    if (error > tol) then 
+                        print *, "ERROR in L arrow upper blocks", ib, i, j, row, col , error                        
+                        call abort
+                    endif
+                    error = abs(Amat(row,col) - Aupperarrow(i+(ib-1)*blocksize,j))
+                    if (error > tol) then 
+                        print *, "ERROR in A arrow upper blocks", ib, i, j, row, col , error    
+                        print *, Amat(row,col) , Aupperarrow(i+(ib-1)*blocksize,j)
+                        call abort                    
+                    endif
+                    !
+                    col = (ib-1)*blocksize + i 
+                    row = NT - nm_dev + j
+                    !
+                    error = abs(Lmat(row,col) - Llowerarrow(j, i+(ib-1)*blocksize,iop))
+                    if (error > tol) then 
+                        print *, "ERROR in L arrow lower blocks", ib, i, j, row, col , error
+                        print *, Lmat(row,col) , Llowerarrow(j, i+(ib-1)*blocksize,iop)
+                        call abort
+                    endif
+                    error = abs(Amat(row,col) - Alowerarrow(j, i+(ib-1)*blocksize))
+                    if (error > tol) then 
+                        print *, "ERROR in A arrow lower blocks", ib, i, j, row, col , error
+                        print *, Amat(row,col) , Alowerarrow(j, i+(ib-1)*blocksize)
+                        call abort
+                    endif
+                    !
+                enddo 
+            enddo 
+        enddo 
+        print *, "DONE CHECK"
     end subroutine bse_sparse_check_system
 
 
@@ -363,10 +392,10 @@ module bse_sparse
         nepoch = N / 400
         start = omp_get_wtime()              
         print *,'  start computation L0_ijkl = G_jl G_ki ...'                 
-        !$omp parallel default(shared) private(row,col,i,j,k,l,L0ijkl,ib,p,q)
+        !$omp parallel default(shared) private(row,col,i,j,k,l,L0ijkl,ib,p,q,fliped_row,fliped_col)
         !$omp do        
         do row = 1,N 
-            if (mod(row-1,nepoch)==0) write(*, '(A)', advance="no") '.'     
+            if (mod(row-1,nepoch)==0) write(*, '(A)', advance="no") '.'                 
             do col = 1,N         
                 i=table(1,row)
                 j=table(2,row)
@@ -375,8 +404,10 @@ module bse_sparse
                 if ((abs(i-k)<=ndiag).and.(abs(j-l)<=ndiag).and.(abs(j-k)<=ndiag).and.&
                     (abs(i-l)<=ndiag).and.(abs(i-j)<=ndiag).and.(abs(k-l)<=ndiag)) then                   
                     ! need to flip the row and col when putting into arrowhead structure               
-                    if (row<=nm_dev) then 
-                        if (col<=nm_dev) then 
+                    fliped_row = NT + nm_dev - col + 1
+                    fliped_col = NT + nm_dev - row + 1
+                    if (fliped_col > NT) then 
+                        if (fliped_row > NT) then 
                             ! tip block
                             if (nnop>10) then
                                 call four_polarization_fft(alpha,nm_dev,nen,en,nop,nnop,ndiag,&
@@ -387,7 +418,7 @@ module bse_sparse
                                             G_lesser,G_greater,G_retarded,i,j,k,l,L0ijkl(iop))
                                 enddo
                             endif         
-                            Ltip(nm_dev-row+1,nm_dev-col+1,1:nnop) = L0ijkl * spindeg
+                            Ltip(fliped_row - NT,fliped_col - NT,1:nnop) = L0ijkl * spindeg
                         else
                             ! upper arrow block 
                             if (nnop>10) then
@@ -399,19 +430,26 @@ module bse_sparse
                                             G_lesser,G_greater,G_retarded,i,j,k,l,L0ijkl(iop))
                                 enddo
                             endif 
-                            Lupperarrow(NT-(col-nm_dev)+1,nm_dev-row+1,1:nnop) = L0ijkl * spindeg          
+                            Lupperarrow(fliped_row,fliped_col - NT,1:nnop) = L0ijkl * spindeg          
                         endif 
                     else 
-                        if (col<=nm_dev) then 
+                        if (fliped_row > NT) then 
                             ! lower arrow block 
-                            call four_polarization_fft(alpha,nm_dev,nen,en,nop,nnop,ndiag,&
+                            if (nnop>10) then
+                                call four_polarization_fft(alpha,nm_dev,nen,en,nop,nnop,ndiag,&
                                             G_lesser,G_greater,G_retarded,i,j,k,l,L0ijkl)
-                            Llowerarrow(nm_dev-col+1,NT-(row-nm_dev)+1,1:nnop) = L0ijkl * spindeg   
+                            else    
+                                do iop=1,nnop
+                                    call four_polarization(alpha,nm_dev,nen,en,nop(iop),ndiag,&
+                                            G_lesser,G_greater,G_retarded,i,j,k,l,L0ijkl(iop))
+                                enddo
+                            endif 
+                            Llowerarrow(fliped_row - NT,fliped_col,1:nnop) = L0ijkl * spindeg   
                         else 
-                            ib = (row-nm_dev-1) / blocksize
-                            p = ib * blocksize + nm_dev
+                            ib = (fliped_row-1) / blocksize
+                            p = ib * blocksize 
                             q = p + blocksize
-                            if ((col>p).and.(col<=q)) then 
+                            if ((fliped_col > p).and.(fliped_col <= q)) then 
                                 ! diag block 
                                 if (nnop>10) then
                                     call four_polarization_fft(alpha,nm_dev,nen,en,nop,nnop,ndiag,&
@@ -422,9 +460,9 @@ module bse_sparse
                                                 G_lesser,G_greater,G_retarded,i,j,k,l,L0ijkl(iop))
                                     enddo
                                 endif 
-                                Ldiag(blocksize - mod(row-nm_dev-1,blocksize), NT-(col-nm_dev)+1, 1:nnop) = L0ijkl * spindeg   
+                                Ldiag(fliped_row - p, fliped_col, 1:nnop) = L0ijkl * spindeg   
                             else
-                                if ((col>q).and.(col<=(q+blocksize))) then                             
+                                if ((fliped_col > q).and.(fliped_col <= (q+blocksize))) then                             
                                     ! upper diag block 
                                     if (nnop>10) then
                                         call four_polarization_fft(alpha,nm_dev,nen,en,nop,nnop,ndiag,&
@@ -435,9 +473,9 @@ module bse_sparse
                                                     G_lesser,G_greater,G_retarded,i,j,k,l,L0ijkl(iop))
                                         enddo
                                     endif 
-                                    Lupper(blocksize - (row-p-1), NT-(col-nm_dev)+1,1:nnop) = L0ijkl * spindeg                               
+                                    Lupper(fliped_row - p, fliped_col - blocksize,1:nnop) = L0ijkl * spindeg                               
                                 endif
-                                if ((col>(p-blocksize)).and.(col<=p)) then                             
+                                if ((fliped_col > (p-blocksize)).and.(fliped_col <= p)) then                             
                                     ! lower diag block
                                     if (nnop>10) then
                                         call four_polarization_fft(alpha,nm_dev,nen,en,nop,nnop,ndiag,&
@@ -448,7 +486,7 @@ module bse_sparse
                                                     G_lesser,G_greater,G_retarded,i,j,k,l,L0ijkl(iop))
                                         enddo
                                     endif 
-                                    Llower(blocksize - (row-p-1), NT-(col-nm_dev)+1-blocksize,1:nnop ) = L0ijkl * spindeg                            
+                                    Llower(fliped_row - p, fliped_col,1:nnop ) = L0ijkl * spindeg                            
                                 endif 
                             endif 
                         endif 
@@ -469,16 +507,15 @@ module bse_sparse
                 j=table(2,row)
                 k=table(1,col)
                 l=table(2,col)           
-                if ((i==j).and.(k==l)) then     
-                    fliped_row = nm_dev-row+1
-                    fliped_col = nm_dev-col+1                   
-                    Ktip(fliped_row,fliped_col) = Ktip(fliped_row,fliped_col) - c1i *  V(i,k) * spindeg        
+                fliped_row = NT + nm_dev - col + 1
+                fliped_col = NT + nm_dev - row + 1           
+                if ((i==j).and.(k==l)) then                               
+                    Ktip(fliped_row - NT,fliped_col - NT) = Ktip(fliped_row - NT,fliped_col - NT) - c1i *  V(i,k) * spindeg        
                     if ((i==k).and.(j==l).and.(row<=nm_dev)) then                
-                        Ktip(fliped_row,fliped_row) = Ktip(fliped_row,fliped_row) + c1i *  W(i,j)
+                        Ktip(fliped_row - NT,fliped_row - NT) = Ktip(fliped_row - NT,fliped_row - NT) + c1i *  W(i,j)
                     endif
                 endif 
-                if ((i==k).and.(j==l).and.(row>nm_dev)) then                        
-                    fliped_row = NT-(row-nm_dev)+1                    
+                if ((i==k).and.(j==l).and.(row>nm_dev)) then                                                             
                     Kdiag(fliped_row) = Kdiag(fliped_row) + c1i *  W(i,j)
                 endif 
             enddo
