@@ -17,3 +17,8 @@ This project is supported by the Swiss National Science Foundation (SNSF) QuaTrE
     conda activate 
     sh run_f2py.sh
     
+## How to cite
+
+This software is distributed under the GPL license. If you use it, please consider citing
+
+Cao, J., Ziogas, A., Deuschle, L., Ding, Q., Vetsch, N., Winka, A., Maillou, V., Maeder, A. and Luisier, M., 2023, December. Ab initio quantum transport simulations of InAs avalanche photo-diodes within the GW approximation. In 2023 International Electron Devices Meeting (IEDM) (pp. 1-4). IEEE. [link](https://ieeexplore.ieee.org/abstract/document/10413751)
