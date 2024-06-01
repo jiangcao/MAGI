@@ -34,12 +34,12 @@ if __name__ == "__main__":
 
     ns = 2
     length = 10
-    nen = 3200
+    nen = 32
     nsub = 1
     nky = 1
     nkz = 1
     nk = nky * nkz
-    niter = 0
+    niter = -1
     eps_screen = 1.0
     r0 = 3.0
     emin = -10.0
@@ -149,9 +149,10 @@ if __name__ == "__main__":
     )
 
     dE = energies[1] - energies[0]
-    nstep = 4
+    nstep = 4 # ratio/discretizqtion for photon energies
     eps_M = np.zeros(nen // nstep, dtype="complex")
 
+    # 
     for iop in range(int(0.8 / dE) // nstep, nen // nstep):
 
         print(iop * 4, "Ephot=", iop * nstep * dE)
@@ -175,6 +176,7 @@ if __name__ == "__main__":
         eps_M[iop] = np.sum(
             epsilon_M[nb * length // 2, nb * ns : (nb * length - nb * ns)]
         )
+        # img(eps_M) is absorbtion spectrum
         print("epsilon_2=", np.imag(eps_M[iop]))
 
     np.savez(
