@@ -3,7 +3,6 @@ module bse_sparse
     use parameters_mod,only:dp,twopi,pi,e_charge,epsilon0,m0_charge,hbar,c1i,czero,cone    
     use omp_lib
     use polarization
-    ! use sinv
     implicit none
     contains
 
