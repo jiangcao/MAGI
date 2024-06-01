@@ -35,7 +35,7 @@ module polarization
         complex(dp),intent(out) :: L0(nnop)
         ! ---
         complex(dp),dimension(nen) :: Gl,Gg,Gr
-        complex(dp),dimension(nen) :: Gl_down,Gg_down,Gr_down
+        complex(dp),dimension(nen) :: Gl_down,Gg_down,Ga_down
         real(dp) :: dE, weights, xen, a1,a2
         integer :: ie, isub, ik, ikd
         complex(dp),dimension(nen) :: tmp
@@ -51,9 +51,9 @@ module polarization
         !
         Gl_down(1:nen) = G_lesser(k,i,1:nen)                    
         Gg_down(1:nen) = G_greater(k,i,1:nen)
-        Gr_down(1:nen) = G_retarded(k,i,1:nen)
+        Ga_down(1:nen) = conjg(G_retarded(i,k,1:nen))
         ! calculate P4_IPA from GG
-        tmp = corr1d(nen,Gl,conjg(Gr_down),method='fft') * a1
+        tmp = corr1d(nen,Gl,Ga_down,method='fft') * a1
         tmp = tmp  + corr1d(nen,Gr,Gl_down,method='fft') * a1
         tmp = tmp  + corr1d(nen,Gg,Gl_down,method='fft') * a2
         tmp = tmp  - corr1d(nen,Gl,Gg_down,method='fft') * a2
