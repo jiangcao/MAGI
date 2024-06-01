@@ -52,7 +52,7 @@ def four_polarization(
     return L0
 
 
-def four_polarization_dot_product(
+def four_polarization(
     alpha: float,
     nm_dev: int,
     nen: int,
@@ -68,40 +68,39 @@ def four_polarization_dot_product(
     l: int,
 ) -> complex:
     """
-    Computes the P4 IPA tensor using Green's functions G_lesser, G_greater, and G_retarded with dot product.
+    Computes the P4 IPA tensor based on the given inputs.
 
-    Args:
-        alpha (float): Mixing parameter.
-        nm_dev (int): Dimension of the matrix.
-        nen (int): Number of energy points.
-        en (np.ndarray): Energy values.
-        nop (int): Offset for energy index.
-        ndiag (int): Not used in this function.
-        G_lesser (np.ndarray): Lesser Green's function.
-        G_greater (np.ndarray): Greater Green's function.
-        G_retarded (np.ndarray): Retarded Green's function.
+    Parameters:
+        alpha (float): Weighting factor.
+        nm_dev (int): Size of the nm_dev dimension.
+        nen (int): Size of the nen dimension.
+        en (ndarray): Energy values.
+        nop (int): Number of occupied states.
+        ndiag (int): Number of diagonal elements.
+        G_lesser (ndarray): Lesser Green's function.
+        G_greater (ndarray): Greater Green's function.
+        G_retarded (ndarray): Retarded Green's function.
         i, j, k, l (int): Indices.
 
     Returns:
-        complex: P4 IPA tensor value.
+        L0 (complex): Resulting P4 IPA tensor.
     """
     dE = en[1] - en[0]
     weights = dE / (2 * np.pi)
 
-    # Extract the relevant slices of the Green's functions
-    G_lesser_slice = G_lesser[j, l, nop:nen]
-    G_greater_slice = G_greater[j, l, nop:nen]
-    G_retarded_slice = G_retarded[i, k, : nen - nop]
-    G_lesser_conj_slice = np.conj(G_retarded[i, k, nop:nen])
-
-    # Compute the dot products
-    term1 = np.dot(G_lesser_slice, G_lesser_conj_slice)
-    term2 = np.dot(G_retarded_slice, G_lesser[k, i, : nen - nop])
-    term3 = np.dot(G_greater_slice, G_lesser[k, i, : nen - nop])
-    term4 = np.dot(G_lesser_slice, G_greater[k, i, : nen - nop])
-
-    # Combine the terms to compute L0
-    L0 = (1.0 - alpha) * (term1 + term2) + alpha * 0.5 * (term3 - term4)
+    # Calculate P4_IPA from GG
+    L0 = (1.0 - alpha) * (
+        np.sum(G_lesser[j, l, (nop + 1) : nen] * np.conj(G_retarded[i, k, : nen - nop]))
+        + np.sum(G_retarded[j, l, (nop + 1) : nen] * G_lesser[k, i, : nen - nop])
+    )
+    L0 += (
+        alpha
+        * 0.5
+        * (
+            np.sum(G_greater[j, l, (nop + 1) : nen] * G_lesser[k, i, : nen - nop])
+            - np.sum(G_lesser[j, l, (nop + 1) : nen] * G_greater[k, i, : nen - nop])
+        )
+    )
     L0 *= weights
 
     return L0
