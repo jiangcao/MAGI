@@ -8,6 +8,8 @@ include "../../Modules/matrix_c.f95"
 
 include "../../Modules/block_sparse.f95"
 
+include "../../Modules/sinv.f95"
+
 include "../../Modules/legendre.f95"
 
 include "../../Modules/output.f95"
