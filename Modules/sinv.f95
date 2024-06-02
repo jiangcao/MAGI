@@ -1,10 +1,10 @@
 module sinv
     use parameters_mod,only:dp,c1i,czero,cone    
     use omp_lib
-    
+    !
     implicit none
     contains
-
+    !
     ! computes an LU factorization of a complex block-tridiag-arrowhead (BTA) matrix in place
     ! it calls LAPACK `zgetrf` and `zgetri` functions
     subroutine zbtatrf( diag_blocksize, arrow_blocksize, n_diag_blocks, &
@@ -136,7 +136,7 @@ module sinv
         endif
         ipiv_arrow_tip(:) = ipiv        
     end subroutine zbtatrf
-
+    !
     ! computes the inverse of a complex block-tridiag-arrowhead (BTA) matrix in place
     ! using the LU factorization computed by [zbtatrf]
     subroutine zbtatri( diag_blocksize, arrow_blocksize, n_diag_blocks, &
@@ -249,7 +249,7 @@ module sinv
             A00 = U_inv_temp - matmul( A01,L10 ) - matmul( A0N, LN0 ) 
             A00 = matmul(A00,L_inv_temp)
         enddo                     
-
+    !
     end subroutine zbtatri
-
+    
 end module sinv
