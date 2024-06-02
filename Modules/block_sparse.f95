@@ -7,16 +7,19 @@ module block_sparse
     ! Modified Blocked CSR format (bcsr) 
     ! ----------------------------------
     !
-    ! in the data array v(:) the first N elements are the main diagonal of the
-    ! matrix, followed by simply stacking CSR of each block (without the main
-    ! diagonal) continuously, with an easy access to the i-th block on i-th
-    ! diagonal. The sizes of diagonal blocks are defined by `block_sizes`. The
-    ! diagonal blocks have to be square. The `ind_ptr(:,iblock,idiag)` is the 
-    ! CSR row pointer of the corresponding block, pointing to the
-    ! starting position of each row in the data array `v`. The `col_index` is
-    ! the CSR column index (within each block, not the column of entire matrix). 
+    ! Note that the first N elements in the data array `v(:)` are the main diagonal 
+    ! of matrix, followed by simply stacking CSR of each block continuously (without 
+    ! the main diagonal elements! Otherwise, those elements are simply  
+    ! overwritten by `v(1:N)`)
+    ! The sizes of diagonal blocks are defined by `block_sizes`. The
+    ! diagonal blocks have to be square. 
+    ! The data pointer `ind_ptr` allows an easy and direct access to the i-th block 
+    ! on i-th diagonal. 
+    ! The `ind_ptr(:,iblock,idiag)` is the CSR row pointer of the corresponding block, 
+    ! pointing to the starting position of each row in the data array `v`. The `col_index` 
+    ! is the CSR column index (just within block, NOT the global column index in the entire matrix). 
     !
-    ! return a dense block matrix of size (block_size x block_size) filled with values from 
+    ! Returns a dense block matrix of size (block_size x block_size) filled with values from 
     !   array `v` , the `col_index` is like CSR index array but with column index within block matrix
     !   the `ind_ptr` is like a CSR `ind_ptr` but for each block
     !   the `iblock` is block index, `idiag` is off-diagonal index of the wanted block 
@@ -47,7 +50,7 @@ module block_sparse
         endif
     end subroutine get_block_from_bcsr
     !
-    ! put a dense matrix values into the corresponding position of value array `v` , similar to `get_block_from_bcsr`    
+    ! Puts a dense matrix values into the corresponding position of value array `v` , similar to `get_block_from_bcsr`    
     subroutine put_block_to_bcsr(v,col_index,ind_ptr,block_size,block_start_index,num_blocks,num_diag,iblock,idiag,mat)
         complex(dp),intent(inout) :: v(:)
         integer,intent(in) :: col_index(:),block_size,num_blocks,num_diag
