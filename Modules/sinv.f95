@@ -157,8 +157,8 @@ module sinv
         integer :: i,h,l
         complex(dp),allocatable,dimension(:,:) :: L_inv_temp, U_inv_temp
         integer :: info, nn      
-        complex(dp), dimension(:), allocatable :: work
-        complex(dp), dimension(:,:), pointer :: A    
+        complex(dp), dimension(:), allocatable :: work,ipiv
+        complex(dp), dimension(:,:), pointer :: A,A10,A00,A01,A11,A1N,AN1,A0N,AN0    
         !
         nn = arrow_blocksize
         allocate(work(nn*nn))
@@ -192,23 +192,23 @@ module sinv
             print *, 'SEVERE warning: zgetri failed, info=', info                
             call abort
         end if
-        A => A_arrow_bottom_blocks(:, l:h)
-        A = - matmul(matmul(A_arrow_tip_block , A), L_inv_temp)
-        A => A_arrow_right_blocks(l:h, :)
-        A = - matmul(matmul(U_inv_temp, A), A_arrow_tip_block)
-        A => A_diagonal_blocks(:, l;h)
-        A = matmul( U_inv_temp - &
+        AN1 => A_arrow_bottom_blocks(:, l:h)
+        AN1 = - matmul(matmul(A_arrow_tip_block , AN1), L_inv_temp)
+        A1N => A_arrow_right_blocks(l:h, :)
+        A1N = - matmul(matmul(U_inv_temp, A1N), A_arrow_tip_block)
+        A11 => A_diagonal_blocks(:, l:h)
+        A11 = matmul( U_inv_temp - &
                     matmul( A_arrow_right_blocks(l:h, :) , A_arrow_bottom_blocks(:, l:h)), &
                     L_inv_temp)
         do i = n_diag_blocks-1, 1, -1
             l = diag_blocksize * (i-1) + 1
             h = diag_blocksize * i
-            A => A_diagonal_blocks(:, l:h)
+            A00 => A_diagonal_blocks(:, l:h)
             ipiv = ipiv_diagonal(:,i)
             U_inv_temp = czero 
             L_inv_temp = czero
-            call zlacpy('U',nn,nn,A,nn, U_inv_temp ,nn)
-            call zlacpy('L',nn,nn,A,nn, L_inv_temp ,nn)
+            call zlacpy('U',nn,nn,A00,nn, U_inv_temp ,nn)
+            call zlacpy('L',nn,nn,A00,nn, L_inv_temp ,nn)
             call zgetri(nn, U_inv_temp, nn, ipiv, work, nn*nn, info)
             if (info .ne. 0) then
                 print *, 'SEVERE warning: zgetri failed, info=', info                
@@ -219,13 +219,20 @@ module sinv
                 print *, 'SEVERE warning: zgetri failed, info=', info                
                 call abort
             end if
-            A => A_lower_diagonal_blocks(:, l:h)
-            A = matmul( - A_diagonal_blocks(:, (l+diag_blocksize):(h+diag_blocksize)) , A)
-            A = A - matmul( A_arrow_right_blocks((l+diag_blocksize):(h+diag_blocksize) , :) , A_arrow_bottom_blocks(:, l:h) )
-            A = matmul( A , L_inv_temp)
+            A10 => A_lower_diagonal_blocks(:, l:h)
+            A11 => A_diagonal_blocks(:, (l+diag_blocksize):(h+diag_blocksize))
+            A1N => A_arrow_right_blocks((l+diag_blocksize):(h+diag_blocksize) , :)
+            AN0 => A_arrow_bottom_blocks(:, l:h)
+            A10 = matmul( - A11 , A10)
+            A10 = A10 - matmul( A1N , AN0 )
+            A10 = matmul( A10 , L_inv_temp)
             !
-            A => A_upper_diagonal_blocks(:, l:h)
-            
+            A01 => A_upper_diagonal_blocks(:, l:h)
+            A01 = matmul( - A01 , A11 )
+            A0N => A_arrow_right_blocks(l:h, :)
+            AN1 => A_arrow_bottom_blocks(:, (l+diag_blocksize):(h+diag_blocksize))
+            A01 = A01 - matmul( A0N, AN1 )
+            A01 = matmul(U_inv_temp , A01)
 
         enddo                     
 
