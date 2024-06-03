@@ -3,6 +3,7 @@ module bse_sparse
     use parameters_mod,only:dp,twopi,pi,e_charge,epsilon0,m0_charge,hbar,c1i,czero,cone    
     use omp_lib
     use polarization
+    use sinv
     implicit none
     contains
 
@@ -74,18 +75,132 @@ module bse_sparse
     end subroutine bse_sparse_pre
 
     ! solve the Bethe-Salpeter Equation with selected inversion 
-    subroutine bse_sparse_solve(blocksize,num_blocks,nm_dev,&
-        Adiag, Aupper, Alower, Alowerarrow, Aupperarrow, Atip)
-        ! input
-        integer,intent(in)::blocksize,num_blocks,nm_dev
-        ! input/output 
-        complex(dp),intent(inout),dimension(:,:):: Adiag
-        complex(dp),intent(inout),dimension(:,:):: Aupper,Alower 
-        complex(dp),intent(inout),dimension(:,:):: Alowerarrow
-        complex(dp),intent(inout),dimension(:,:):: Aupperarrow 
-        complex(dp),intent(inout),dimension(:,:):: Atip 
-        ! --- local
-
+    subroutine bse_sparse_solve(method,alpha,spindeg,nm_dev,ndiag,nen,nsub,En,nops,nnop,nk,G_lesser,G_greater,G_retarded,W,V,P_retarded)        
+        ! in
+        character(len=*),intent(in)::method
+        integer,intent(in)::nm_dev,nen ! device dimension, number of energies
+        integer,intent(in)::nnop,nops(nnop) ! number of optical energies, optical energies in unit of energy interval
+        integer,intent(in)::nsub,nk,ndiag ! number of legendre sub-energy nodes, number of k points, number of offdiagonals
+        real(dp),intent(in)::en(nen),spindeg,alpha ! energy grid, spin degeneracy, empirical parameter
+        complex(dp),intent(in),dimension(nm_dev,nm_dev,nen,nsub,nk):: G_lesser,G_greater,G_retarded ! electron Green Functions
+        complex(dp),intent(in),dimension(nm_dev,nm_dev) :: W ! W_0 static screened Coulomb operator
+        complex(dp),intent(in),dimension(nm_dev,nm_dev) :: V ! bare Coulomb operator
+        ! out 
+        complex(dp),intent(out),dimension(nm_dev,nm_dev,nnop):: P_retarded ! 2-point polarization function with interacting electron-hole
+        !---- local
+        complex(dp),allocatable,dimension(:,:):: Adiag,Aupper,Alower,Alowerarrow,Aupperarrow,Atip 
+        complex(dp),allocatable,dimension(:,:):: Ktip 
+        complex(dp),allocatable,dimension(:)  :: Kdiag
+        complex(dp),allocatable,dimension(:,:,:):: Ldiag,Lupper,Llower,Llowerarrow,Lupperarrow,Ltip 
+        integer::N,blocksize,num_blocks, NT, local_nnop, iop, row, col, fliped_col, fliped_row, i, k
+        integer(8):: nnz
+        integer,allocatable,dimension(:,:)::table
+        integer,allocatable,dimension(:,:)::ipiv_diagonal
+        integer,allocatable,dimension(:)::ipiv_arrow_tip
+        !
+        ! pre-process the sparsity pattern of system
+        print *, "  pre-process ... "
+        allocate(table(2,nm_dev*nm_dev))
+        call bse_sparse_pre(nm_dev,ndiag,N,nnz,table,blocksize,num_blocks)
+        ! prepare the memory
+        NT = blocksize * num_blocks
+        if (trim(method) == 'batched') then 
+            local_nnop = nnop
+        else 
+            local_nnop = 1 ! compute one optical energy at a time
+        endif 
+        print *, "  init memory ... "
+        allocate(Ldiag(blocksize,NT,local_nnop), source=czero) 
+        allocate(Lupper(blocksize,NT-blocksize,local_nnop), source=czero)
+        allocate(Llower(blocksize,NT-blocksize,local_nnop), source=czero) 
+        allocate(Llowerarrow(nm_dev,NT,local_nnop), source=czero) 
+        allocate(Lupperarrow(NT,nm_dev,local_nnop), source=czero)              
+        allocate(Ltip(nm_dev,nm_dev,local_nnop), source=czero)  
+        allocate(Kdiag(NT), source=czero)  ! diagonal of Kernel
+        allocate(Ktip(nm_dev,nm_dev), source=czero)  ! dense tip block of Kernel
+        allocate(Adiag(blocksize,NT), source=czero) 
+        allocate(Aupper(blocksize,NT-blocksize), source=czero)
+        allocate(Alower(blocksize,NT-blocksize), source=czero) 
+        allocate(Alowerarrow(nm_dev,NT), source=czero) 
+        allocate(Aupperarrow(NT,nm_dev), source=czero)              
+        allocate(Atip(nm_dev,nm_dev), source=czero)  
+        allocate(ipiv_diagonal(blocksize,num_blocks), source=0)
+        allocate(ipiv_arrow_tip(nm_dev), source=0)
+        !
+        print *, "  start computation ... "
+        if (local_nnop > 1) then  
+            ! build BTA blocks of RPA polarization L0 and 2-body interaction kernal K                     
+            call bse_sparse_build(alpha,spindeg,nm_dev,ndiag,nen,En,nops,nnop,blocksize,num_blocks,N,table,&
+                                    G_lesser,G_greater,G_retarded,W,V,&
+                                    Ldiag,Lupper,Llower,Lupperarrow,Llowerarrow,Ltip,Ktip,Kdiag)       
+            do iop = 1,nnop
+                ! build system matrix blocks (I - L0 @ K)
+                call bse_sparse_build_system(blocksize,num_blocks,nm_dev,nnop,iop,&
+                                Ldiag, Lupper, Llower, Llowerarrow, Lupperarrow, Ltip, &
+                                Kdiag, Ktip,&
+                                Adiag, Aupper, Alower, Alowerarrow, Aupperarrow, Atip)
+                ! selected inversion of the system matrix
+                call zbtatrf( blocksize, nm_dev, num_blocks, &
+                            Adiag,Alower,Aupper,Alowerarrow,Aupperarrow,Atip, &
+                            ipiv_diagonal,ipiv_arrow_tip)
+                call zbtatri( blocksize, nm_dev, num_blocks, &
+                            Adiag,Alower,Aupper,Alowerarrow,Aupperarrow,Atip, &
+                            ipiv_diagonal,ipiv_arrow_tip)
+                ! compute P_retarded
+                ! 
+                Atip = matmul( Atip , Ltip(:,:,iop) )
+                Atip = Atip + matmul( Alowerarrow, Lupperarrow(:,:,iop) ) 
+                !$omp parallel default(shared) private(row,col,fliped_row,fliped_col,i,k)
+                !$omp do
+                do row=1,nm_dev
+                    do col=1,nm_dev
+                        fliped_row = nm_dev - col + 1
+                        fliped_col = nm_dev - row + 1 
+                        i=table(1,row)
+                        k=table(1,col)
+                        P_retarded(i,k,iop) =  - c1i * Atip(fliped_row,fliped_col)                
+                    enddo
+                enddo                          
+                !$omp end do
+                !$omp end parallel  
+            enddo
+        else 
+            do iop = 1,nnop
+                ! build BTA blocks of RPA polarization L0 and 2-body interaction kernal K         
+                call bse_sparse_build(alpha,spindeg,nm_dev,ndiag,nen,En,nops(iop),1,blocksize,num_blocks,N,table,&
+                                    G_lesser,G_greater,G_retarded,W,V,&
+                                    Ldiag,Lupper,Llower,Lupperarrow,Llowerarrow,Ltip,Ktip,Kdiag)                   
+                ! build system matrix blocks (I - L0 @ K)
+                call bse_sparse_build_system(blocksize,num_blocks,nm_dev,1,1,&
+                                Ldiag, Lupper, Llower, Llowerarrow, Lupperarrow, Ltip, &
+                                Kdiag, Ktip,&
+                                Adiag, Aupper, Alower, Alowerarrow, Aupperarrow, Atip)
+                ! selected inversion of the system matrix
+                call zbtatrf( blocksize, nm_dev, num_blocks, &
+                            Adiag,Alower,Aupper,Alowerarrow,Aupperarrow,Atip, &
+                            ipiv_diagonal,ipiv_arrow_tip)
+                call zbtatri( blocksize, nm_dev, num_blocks, &
+                            Adiag,Alower,Aupper,Alowerarrow,Aupperarrow,Atip, &
+                            ipiv_diagonal,ipiv_arrow_tip)
+                ! compute P_retarded
+                ! 
+                Atip = matmul( Atip , Ltip(:,:,1) )
+                Atip = Atip + matmul( Alowerarrow, Lupperarrow(:,:,1) ) 
+                !$omp parallel default(shared) private(row,col,fliped_row,fliped_col,i,k)
+                !$omp do
+                do row=1,nm_dev
+                    do col=1,nm_dev
+                        fliped_row = nm_dev - col + 1
+                        fliped_col = nm_dev - row + 1 
+                        i=table(1,row)
+                        k=table(1,col)
+                        P_retarded(i,k,iop) =  - c1i * Atip(fliped_row,fliped_col)                
+                    enddo
+                enddo                          
+                !$omp end do
+                !$omp end parallel  
+            enddo
+        endif 
     end subroutine bse_sparse_solve
 
   

@@ -21,7 +21,7 @@ module fft_mod
               Z(i+n)=Z(i+n) + X(ie)*Y(ie-i)
             enddo
           enddo
-        case('simple')
+        case('sum')
           do i=-n+1,n-1
             Z(i+n)=sum(X(max(1,1+i):min(n+i,n))*Y(max(1-i,1):min(n,n-i)))
           enddo
@@ -56,7 +56,7 @@ module fft_mod
               Z(i+n/2)=Z(i+n/2) + X(ie)*Y(ie-i)
             enddo
           enddo
-        case('simple')
+        case('sum')
           do i=-n/2+1,n/2-1
             Z(i+n/2)=sum(X(max(1,1+i):min(n+i,n))*Y(max(1-i,1):min(n,n-i)))
           enddo
@@ -94,7 +94,7 @@ module fft_mod
               endif
             enddo
           enddo
-        case('simple')
+        case('sum')
           do i=1,n
             Z(i)=sum(X(n:1:-1)*Y(i:i+n-1))
           enddo
@@ -134,7 +134,7 @@ module fft_mod
               iop = i+n/2
               Z((max(i,1)+1):min(n,(n+i)))=Z(max(i,1)+1:min(n,(n+i))) + X((max(i,1)+1-i):(min(n,(n+i))-i))*Y(iop)
             enddo    
-          case('simple')
+          case('sum')
             allocate(Y_in(n*2-1))    
             Y_in=czero
             Y_in(n/2+1:n/2+n-1)=Y(1:n-1)    
@@ -174,7 +174,7 @@ module fft_mod
             iop = i+n/2
             Z((max(i,1)+1):min(n,(n+i)))=Z(max(i,1)+1:min(n,(n+i))) + X((max(i,1)+1-i):(min(n,(n+i))-i))*Y(iop)
           enddo    
-        case('simple')
+        case('sum')
           allocate(Y_in(n*2-1))    
           Y_in=czero
           Y_in(n/2+1:n/2+n-1)=Y(1:n-1)    
