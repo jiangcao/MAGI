@@ -17,57 +17,41 @@ from scipy import interpolate
 
 
 
-
-
-#############################################################################
-#Parameters to modify depending on the studied system (Graphene, hBn, ...)
-#############################################################################
 nb=16
-nx=10
+nb_L=8
+nx=41
 ny=41
-nz=41
+nz=10
+ns_L=2
+
+
 folder='/usr/scratch/mont-fort1/sem24f6/MAGI/f2py/QE_local-tests/'
-
-
-
-
-material='graphen'
-
-if material=='graphene':
-    hamiltonian='ham_dat'
-    alt=[0,1]#Altitude of different layers
-    delta_alt=0.4#delta around those layer to find the Wannier centers
-
-if material=='hetero':
-    hamiltonian='gr_hbn_hr.dat'
-    alt=[0,3]
-    delta_alt=1.0   
-
-
-hr,wannier_center,n_range,cell,L= wannierham.load_from_file(fname=folder+hamiltonian,lreorder_axis=True,axis=[3,2,1],nb=nb,nx=nx,ny=ny,nz=nz)
-folder_save='/usr/scratch/mont-fort1/sem24f6/MAGI/f2py/QE_local-tests/Save_hetero4/'
+hamiltonian='gr_hbn_hr.dat'
+hr,wannier_center,n_range,cell,L = wannierham.load_from_file(fname=folder+hamiltonian,lreorder_axis=False,axis=[3,2,1],nb=nb,nx=nx,ny=ny,nz=nz)
+folder_save='/usr/scratch/mont-fort1/sem24f6/MAGI/f2py/QE_local-tests/Save_heteroside2/'
 label='hetero0'
+
+
 # %%
+#parameters Wannier centers
+alt=[0,3] #Altitude of different layers
+delta_alt=1. #delta around those layer to find the Wannier centers
 
-interaction_photon=True
+interaction_photon=False #Activate or not the scattering 
 interaction_phonon=False
-
-
-#############################################################################
-#############################################################################
-
 # Global variables for the GF calculation
-ns= 2
-length= 2
-nen= 3000 # number of energy points
+ns = ns_L
+length = 2
+nen = 2000 # number of energy points
 nky=12
 nkz=12
+nkx=12
 nk=nky*nkz
 
 
 emin=-15.0
 emax=30.0
-energies= np.linspace(emin,emax,nen)
+energies = np.linspace(emin,emax,nen)
 dE=energies[1]-energies[0]
 #definition of k-space vectors, real space vectores, ...
 Lz=L[2]
@@ -93,17 +77,16 @@ K=((b_2+b_3)/3)
 Gamma=np.zeros(3)
 Z=b_1/2
 Q=(b_2+b_3)/3+b_1/2
-# L=(b_1+b_3)/2
 M=(b_3/2)
 
 
 
 #parameters of the leads
-dim_lead= np.ones(2)* nb*ns
-temp=  np.ones(2)* 300.0
+dim_lead = np.ones(2)* nb*ns
+temp =  np.ones(2)* 300.0
 EF=8
 DEF=0.0
-mu= np.array( [EF+DEF, EF-DEF] )
+mu = np.array( [EF+DEF, EF-DEF] )
 
 
 # Variables of the phonon interaction calculations
@@ -171,6 +154,177 @@ def layer(list_coord,delta,L, nbr_of_layers,ns,alt):
 
 
 
+
+
+
+
+
+
+
+def energies_top(kx,ky,layer_top):
+    h00,h10 = wannierham.block_mat_def(kx=kx, ky=ky, kz=0.0,nb=nb,ns=ns_L,n_range=n_range,hr=hr,cell=cell)
+    h00_top=h00[layer_top,:][:,layer_top]
+    h10_top=h10[layer_top,:][:,layer_top]
+
+    h=h00_top+np.exp(-1j*kx*Lx*ns_L)*h10_top+np.exp(1j*kx*Lx*ns_L)*h10_top.conj().T
+    e=np.real(eig(h)[0])
+    e=np.sort(e)
+    return e
+
+
+def energies_bot(kx,ky,layer_bot):
+    h00,h10 = wannierham.block_mat_def(kx=kx, ky=ky, kz=0.0,nb=nb,ns=ns_L,n_range=n_range,hr=hr,cell=cell)
+    
+    h00_bot=h00[layer_bot,:][:,layer_bot]
+
+    h10_bot=h10[layer_bot,:][:,layer_bot]
+
+    h=h00_bot+np.exp(-1j*kx*Lx*ns_L)*h10_bot+np.exp(1j*kx*Lx*ns_L)*h10_bot.conj().T
+    
+    e=np.real(eig(h)[0])
+    e=np.sort(e)
+    return e
+
+def energies_full(kx,ky):
+    h00,h10 = wannierham.block_mat_def(kx=kx, ky=ky, kz=0.0,nb=nb,ns=ns_L,n_range=n_range,hr=hr,cell=cell)
+
+    h00_top=h00
+    h10_top=h10
+
+    h=h00_top+np.exp(-1j*kx*Lx*ns_L)*h10_top+np.exp(1j*kx*Lx*ns_L)*h10_top.conj().T
+    e=np.real(eig(h)[0])
+    e=np.sort(e)
+    return e
+
+
+
+
+def energies_fct(path,wannier_center,delta,L, nbr_of_layers,ns_,nb_L,alt):
+    layer_top=np.zeros(ns_L*nb_L,dtype='i')
+    layer_bot=np.zeros(ns_L*nb_L,dtype='i')
+    layer_list=layer(list_coord=wannier_center, delta=delta,L=L, nbr_of_layers=nbr_of_layers,ns=ns_,alt=alt)
+
+    
+    for k in range(ns_):
+        layer_top[nb_L*k:nb_L*(k+1)]=layer_list[k][0]
+        layer_bot[nb_L*k:nb_L*(k+1)]=layer_list[k][1]
+    energy_top_list=np.zeros((len(path),ns_*nb_L))
+    energy_bot_list=np.zeros((len(path),ns_*nb_L))
+    energy_full_list=np.zeros((len(path),nb_L*ns_*nbr_of_layers))
+    for k in range(len(path)):
+        energy_top_list[k]=energies_top(path[k][0],path[k][1],layer_top)
+        energy_bot_list[k]=energies_bot(path[k][0],path[k][1],layer_bot)
+        energy_full_list[k]=energies_full(path[k][0],path[k][1])
+
+    return energy_top_list,energy_bot_list,energy_full_list
+
+
+def ham_block(path,wannier_center,delta,L, nbr_of_layers,ns_,nb_L,alt):
+    layer_top=np.zeros(ns_L*nb_L,dtype='i')
+    layer_bot=np.zeros(ns_L*nb_L,dtype='i')
+    layer_list=layer(list_coord=wannier_center, delta=delta,L=L, nbr_of_layers=nbr_of_layers,ns=ns_,alt=alt)
+
+    
+    for k in range(ns_):
+        layer_top[nb_L*k:nb_L*(k+1)]=layer_list[k][0]
+        layer_bot[nb_L*k:nb_L*(k+1)]=layer_list[k][1]
+    h00_top=np.zeros((len(path),len(layer_top),len(layer_top)),dtype='complex')
+    h10_top=np.zeros((len(path),len(layer_top),len(layer_top)),dtype='complex')
+    h00_bot=np.zeros((len(path),len(layer_bot),len(layer_bot)),dtype='complex')
+    h10_bot=np.zeros((len(path),len(layer_bot),len(layer_bot)),dtype='complex')
+    h00_full=np.zeros((len(path),nb_L*nbr_of_layers*ns_,nb_L*nbr_of_layers*ns_),dtype='complex')
+    h10_full=np.zeros((len(path),nb_L*nbr_of_layers*ns_,nb_L*nbr_of_layers*ns_),dtype='complex')
+    for j in range(len(path)):
+        kx=path[j][0]
+        ky=path[j][1]
+        h00,h10 = wannierham.block_mat_def(kx=kx, ky=ky, kz=0.,nb=nb,ns=ns_L,n_range=n_range,hr=hr,cell=cell)
+        h00_top[j]=h00[layer_top,:][:,layer_top]
+        h10_top[j]=h10[layer_top,:][:,layer_top]
+        h00_bot[j]=h00[layer_bot,:][:,layer_bot]
+        h10_bot[j]=h10[layer_bot,:][:,layer_bot]
+        h00_full[j]=h00
+        h10_full[j]=h10
+    return h00_top,h10_top,h00_bot,h10_bot,h00_full,h10_full
+
+
+
+
+
+band_struct=np.zeros((nb_L*ns_L,nkx))
+
+
+
+dkx=2*np.pi/nkx/Lx
+
+path=np.zeros((nkx*nky,2))
+dky=2*np.pi/Ly/nky
+
+for iky in range(nky):
+    for ikx in range(nkx):
+        ik = ikx + iky*nkx
+        kx=-np.pi/Lx + dkx*ikx
+        ky=-np.pi/Ly + dky*iky
+        path[ik] = [kx,ky]
+
+h00_top,h10_top,h00_bot,h10_bot,h00_full,h10_full=ham_block(path=path,wannier_center=wannier_center,delta=delta_alt,L=L,nbr_of_layers= 2,ns_=ns_L,nb_L=nb_L,alt=alt)
+
+# for iky in range(nky):
+#     for ikx in range(nkx):
+#         ik = ikx + iky*nkx
+        
+#         kx=path[ik][0]
+        
+
+#         h=h00_top[ik,:,:]+np.exp(-1j*kx*Lx*ns_L)*h10_top[ik,:,:]+np.exp(1j*kx*Lx*ns_L)*h10_top[ik,:,:].conj().T
+#         e=np.real(eig(h)[0])
+#         e=np.sort(e)
+#         band_struct[:,ikx]=e
+#     fig=plt.figure()
+#     for ind in range(nb_L*ns_L):
+#         plt.plot(band_struct[ind])
+#     plt.savefig(folder_save+'test_bs.pdf')
+#     plt.show()
+##Calculation out of plan
+nb=16
+nb_L=8
+nx=10
+ny=41
+nz=41
+ns_L=2
+
+hr,wannier_center,n_range,cell,L = wannierham.load_from_file(fname=folder+hamiltonian,lreorder_axis=True,axis=[3,2,1],nb=nb,nx=nx,ny=ny,nz=nz)
+
+nkz=nkx
+nk=nky*nkz
+
+
+ns=1
+Lz=L[2]
+Ly=L[1]
+Lx=L[0]
+dkz=2.0*np.pi/Lz / (nkz)
+dky=2.0*np.pi/Ly / (nky)
+
+alpha=cell[:,0]
+beta=cell[:,1]
+gamma=cell[:,2]
+V=np.dot(np.cross(beta,gamma),alpha)
+b_1=np.cross(beta,gamma)/V*2*np.pi
+b_2=np.cross(gamma,alpha)/V*2*np.pi
+b_3=np.cross(alpha,beta)/V*2*np.pi
+xhat=alpha/np.linalg.norm(alpha)
+yhat=-np.cross(xhat,gamma)
+yhat=yhat/np.linalg.norm(yhat)
+zhat=gamma/np.linalg.norm(gamma)
+
+
+K=((b_2+b_3)/3)
+Gamma=np.zeros(3)
+Z=b_1/2
+Q=(b_2+b_3)/3+b_1/2
+# L=(b_1+b_3)/2
+M=(b_3/2)
+
 def make_dk_list(k_list,nstep):
     list=[]
     for k in range(len(k_list)-1):
@@ -189,78 +343,6 @@ l=len(dk_list)
 
 
 
-## Calculation for the balistic case a long the path k_list
-
-ham_balist= np.zeros((nb*length,nb*length,nk), dtype='complex')  
-lead_h00_balist= np.zeros((nb*ns,nb*ns,2,nk), dtype='complex')
-lead_h10_balist= np.zeros((nb*ns,nb*ns,2,nk), dtype='complex')
-lead_coupling_balist= np.zeros((nb*ns,nb*length,2,nk), dtype='complex')
-
-sig_r_balist= np.zeros((nb*length,nb*length,nen,nk), dtype='complex')
-sig_l_balist= np.zeros((nb*length,nb*length,nen,nk), dtype='complex')
-sig_g_balist= np.zeros((nb*length,nb*length,nen,nk), dtype='complex')
-siglead_balist=np.zeros((nb*ns,nb*ns,nen,2),dtype='complex')
-
-
-for j in range(l):
-    for ikz in range(nkz):
-        ik= ikz+j*nkz
-        k=dk_list[j]*ikz+k_list[j]
-        ky=k[1]
-        kz=k[0]
-        
-        ham_balist[:,:,ik]= wannierham.full_device_mat_def(ky=ky,kz=kz,nb=nb,ns=1,length=length,hr=hr,cell=cell,n_range=n_range)
-
-        h00_balist,h10_balist= wannierham.block_mat_def(kx=0.0, ky=ky, kz=kz,nb=nb,ns=ns,n_range=n_range,hr=hr,cell=cell)
-
-        lead_h10_balist[:,:,0,ik]= np.transpose( np.conjugate(h10_balist) ) 
-        lead_h10_balist[:,:,1,ik]= h10_balist
-        lead_h00_balist[:,:,0,ik]= h00_balist
-        lead_h00_balist[:,:,1,ik]= h00_balist
-        lead_coupling_balist[0:nb*ns,0:nb*ns,0,ik]= lead_h10_balist[:,:,0,ik]
-        lead_coupling_balist[0:nb*ns,nb*(length-ns):nb*length,1,ik]= lead_h10_balist[:,:,1,ik]
-        
-
-
-G_retarded_diag_balist=np.zeros((l*nkz,nb*length,nen),dtype='complex')
-G_lesser_diag_balist=np.zeros((l*nkz,nb*length,nen),dtype='complex')
-te_balist=np.zeros((l*nkz,nen,2,2),dtype='complex')
-for j in range(l):
-    for ikz in range(nkz):
-        ik= ikz+j*nkz
-        k=dk_list[j]*ikz+k_list[j]
-        ky=k[1]
-        kz=k[0]
-        
-
-        
-
-        G_retarded_balist,G_lesser_balist,G_greater_balist,cur_balist,te_balist[ik]= gw_dense.calc_gf(ne=nen,e=energies,num_lead=2,nm_dev=nb*length,nm_lead=dim_lead,max_nm_lead=nb*ns,
-                                                        ham=ham_balist[:,:,ik],lead_h00=lead_h00_balist[:,:,:,ik],lead_h10=lead_h10_balist[:,:,:,ik],
-                                                        siglead=siglead_balist,t=lead_coupling_balist[:,:,:,ik],
-                                                        scat_sig_retarded=sig_r_balist[:,:,:,ik],scat_sig_lesser=sig_l_balist[:,:,:,ik],scat_sig_greater=sig_g_balist[:,:,:,ik],
-                                                        mu=mu,temp=temp,flatband=False)
-        G_retarded_diag_balist[ik]=np.diagonal(G_retarded_balist,axis1=1,axis2=0).T
-        G_lesser_diag_balist[ik]=np.diagonal(G_lesser_balist,axis1=1,axis2=0).T
-
-
-##Calculation of teh band structure in the lead
-
-fig=plt.figure()
-
-band_struct=np.zeros((nb*ns,nkz*l))
-kz=np.linspace(0,2*np.pi/Lz/3,nkz*l)
-ky=np.linspace(1,np.pi/Lz,nky)
-for i in range(nkz*l):
-    h=lead_h00_balist[:,:,0,i]+lead_h10_balist[:,:,0,i]+lead_h10_balist[:,:,0,i].conj().T
-    e=np.real(eig(h)[0])
-    e=np.sort(e)
-    band_struct[:,i]=e
-
-for j in range(0,nb*ns):
-    plt.plot(kz,band_struct[j,:])
-plt.savefig(folder_save+'Band-structure-lead.pdf')
-
 
 
 # %% [markdown]
@@ -269,17 +351,17 @@ plt.savefig(folder_save+'Band-structure-lead.pdf')
 # %%
 #Calculation of Pmn in real space for photon interaction :
 
-pmn_r= wannierham.calc_momentum_operator(method='approx',nb=nb,nx=nx,ny=ny,nz=nz,hr=hr,cell=cell,n_range=n_range,wannier_center=wannier_center,rmn=np.zeros((3,nb,nb,nx,ny,nz)))
+pmn_r = wannierham.calc_momentum_operator(method='approx',nb=nb,nx=nx,ny=ny,nz=nz,hr=hr,cell=cell,n_range=n_range,wannier_center=wannier_center,rmn=np.zeros((3,nb,nb,nx,ny,nz)))
 
 # %%
 
 #Initialization of the initial array without putting to 0 the self-energies
 
 
-ham= np.zeros((nb*length,nb*length,nk), dtype='complex')  
-lead_h00= np.zeros((nb*ns,nb*ns,2,nk), dtype='complex')
-lead_h10= np.zeros((nb*ns,nb*ns,2,nk), dtype='complex')
-lead_coupling= np.zeros((nb*ns,nb*length,2,nk), dtype='complex')
+ham = np.zeros((nb*length,nb*length,nk), dtype='complex')  
+lead_h00 = np.zeros((nb*ns_L,nb*ns_L,2,nk), dtype='complex')
+lead_h10 = np.zeros((nb*ns_L,nb*ns_L,2,nk), dtype='complex')
+lead_coupling = np.zeros((nb*ns_L,nb*length,2,nk), dtype='complex')
 M_mat= np.zeros((nb*length,nb*length,nk,1), dtype='complex')
 
 cur=np.zeros((nk,nen,2),dtype='complex')
@@ -288,59 +370,62 @@ G_lesser=np.zeros((nk,nb*length,nb*length,nen),dtype='complex')
 G_greater=np.zeros((nk,nb*length,nb*length,nen),dtype='complex')
 te=np.zeros((nk,nen,2,2),dtype='complex')
 
-#Initialization of the initial array of the self-energies if restart= True or not
+#Initialization of the initial array of the self-energies if restart = True or not
 
 
-restart=True
+# restart=True
 
-if restart== False:
-    sig_g=sig_g_tempo
-    sig_l=sig_l_tempo
-    siglead=siglead_tempo
-    sig_r=sig_r_tempo
+# if restart == False:
+#     sig_g=sig_g_tempo
+#     sig_l=sig_l_tempo
+#     siglead=siglead_tempo
+#     sig_r=sig_r_tempo
 
-if restart==True:
+# if restart==True:
 
-    sig_r= np.zeros((nb*length,nb*length,nen,nk), dtype='complex')
-    sig_l= np.zeros((nb*length,nb*length,nen,nk), dtype='complex')
-    sig_r_photon= np.zeros((nb*length,nb*length,nen,nk), dtype='complex')
-    sig_l_photon= np.zeros((nb*length,nb*length,nen,nk), dtype='complex')
-    sig_g_photon= np.zeros((nb*length,nb*length,nen,nk), dtype='complex')
+sig_r = np.zeros((nb*length,nb*length,nen,nk), dtype='complex')
+sig_l = np.zeros((nb*length,nb*length,nen,nk), dtype='complex')
+sig_r_photon = np.zeros((nb*length,nb*length,nen,nk), dtype='complex')
+sig_l_photon = np.zeros((nb*length,nb*length,nen,nk), dtype='complex')
+sig_g_photon = np.zeros((nb*length,nb*length,nen,nk), dtype='complex')
 
-    sig_g= np.zeros((nb*length,nb*length,nen,nk), dtype='complex')
-    siglead=np.zeros((nb*ns,nb*ns,nen,2),dtype='complex')
-
-
-
-    nac=np.zeros((len(Ac_fact),nk),dtype='i')
-    nac= np.maximum(np.rint(Ac_fact[:, np.newaxis] * sc.h * k_dist(np.arange(nk)) / dE / sc.e),1)
+sig_g = np.zeros((nb*length,nb*length,nen,nk), dtype='complex')
+siglead=np.zeros((nb*ns_L,nb*ns_L,nen,2),dtype='complex')
 
 
-#initialization of the values in the hamiltonian
+
+nac=np.zeros((len(Ac_fact),nk),dtype='i')
+nac = np.maximum(np.rint(Ac_fact[:, np.newaxis] * sc.h * k_dist(np.arange(nk)) / dE / sc.e),1)
+
+
+
 
 for iky in range(nky):
         for ikz in range(nkz):
-            ik= ikz + iky*nkz
+            ik = ikz + iky*nkz
             ky=-np.pi/Ly + dky*iky
             kz=-np.pi/Lz + dkz*ikz
+            
+            ham[:,:,ik] = wannierham.full_device_mat_def(ky=ky,kz=kz,nb=nb,ns=ns,length=length,hr=hr,cell=cell,n_range=n_range)
+            # v[:,:,ik] = wannierham.full_device_bare_coulomb(ky=kz,kz=kz,length=length,eps=eps_screen,r0=r0,ldiag=True,nb=nb,ns=ns,
+            #                                             method='pointlike',n_range=n_range,wannier_center=wannier_center,cell=cell)
 
             
-            
-            ham[:,:,ik]= wannierham.full_device_mat_def(ky=ky,kz=kz,nb=nb,ns=ns,length=length,hr=hr,cell=cell,n_range=n_range)
-
-            Pmn= wannierham.w90_momentum_full_device(ky=ky,kz=kz,length=length,ns=ns,n_range=n_range,nb=nb,cell=cell,pmn=pmn_r)
+            Pmn = wannierham.w90_momentum_full_device(ky=ky,kz=kz,length=length,ns=ns,n_range=n_range,nb=nb,cell=cell,pmn=pmn_r)
 
             M_mat[:,:,ik,0]=np.tensordot(polarization_direction, Pmn, axes=(0, -1))
 
 
-            h00,h10= wannierham.block_mat_def(kx=0.0, ky=ky, kz=kz,nb=nb,ns=ns,n_range=n_range,hr=hr,cell=cell)
+            # h00,h10 = wannierham.block_mat_def(kx=0.0, ky=ky, kz=kz,nb=nb,ns=ns,n_range=n_range,hr=hr,cell=cell)
 
-            lead_h10[:,:,0,ik]= np.transpose( np.conjugate(h10) ) 
-            lead_h10[:,:,1,ik]= h10
-            lead_h00[:,:,0,ik]= h00
-            lead_h00[:,:,1,ik]= h00
-            lead_coupling[0:nb*ns,0:nb*ns,0,ik]= lead_h10[:,:,0,ik]
-            lead_coupling[0:nb*ns,nb*(length-ns):nb*length,1,ik]= lead_h10[:,:,1,ik]
+            lead_h10[0:nb*ns_L,0:nb*ns_L,0,ik] = np.transpose( np.conjugate(h10_full[ik,:,:]) ) 
+            lead_h10[nb*ns_L-(nb*ns_L):nb*ns_L,nb*ns_L-(nb*ns_L):nb*ns_L,1,ik] = h10_full[ik,:,:]
+            lead_h00[0:(nb*ns_L),0:(nb*ns_L),0,ik] = h00_full[ik,:,:]
+            lead_h00[nb*ns_L-(nb*ns_L):nb*ns_L,nb*ns_L-(nb*ns_L):nb*ns_L,1,ik] = h00_full[ik,:,:]
+            lead_coupling[0:nb*ns_L,0:nb,0,ik] = lead_h10[:,0:nb,0,ik]
+            lead_coupling[0:nb*ns_L,nb*(length-ns):nb*length,1,ik] = lead_h10[:,0:nb,1,ik]
+
+
 
 
 delta=1
@@ -353,12 +438,12 @@ print('end Ham loop')
 while delta> epsilon and niter<30:
     for iky in range(nky):
         for ikz in range(nkz):
-            ik= ikz + iky*nkz
+            ik = ikz + iky*nkz
             ky=-np.pi/Ly + dky*iky
             kz=-np.pi/Lz + dkz*ikz
 
             
-            G_retarded[ik],G_lesser[ik],G_greater[ik],cur[ik],te[ik]= gw_dense.calc_gf(ne=nen,e=energies,num_lead=2,nm_dev=nb*length,nm_lead=dim_lead,max_nm_lead=nb*ns,
+            G_retarded[ik],G_lesser[ik],G_greater[ik],cur[ik],te[ik] = gw_dense.calc_gf(ne=nen,e=energies,num_lead=2,nm_dev=nb*length,nm_lead=dim_lead,max_nm_lead=nb*ns_L,
                                                             ham=ham[:,:,ik],lead_h00=lead_h00[:,:,:,ik],lead_h10=lead_h10[:,:,:,ik],
                                                             siglead=siglead,t=lead_coupling[:,:,:,ik],
                                                             scat_sig_retarded=sig_r[:,:,:,ik],scat_sig_lesser=sig_l[:,:,:,ik],scat_sig_greater=sig_g[:,:,:,ik],
@@ -366,7 +451,8 @@ while delta> epsilon and niter<30:
     
     print('end_GF')
     #calculation of the photon SE:
-    if (interaction_photon==False and interaction_phonon==False):
+
+    if interaction_photon==False and interaction_phonon==False:
         break
     if interaction_photon:
         sig_l_photon,sig_g_photon=gw_dense.selfenergy_eph_mono(nm=nb*length,nen=nen,en=energies,nop=nop,nky=nky,nkz=nkz,nqy=1,nqz=1,ik_start=1,ik_end=nky*nkz,iq_in=1,m=M_mat,g_lesser=np.transpose(G_lesser,(1,2,3,0)),g_greater=np.transpose(G_greater,(1,2,3,0)),
@@ -452,32 +538,44 @@ while delta> epsilon and niter<30:
         print('Iteration : ', niter)
         print('Delta : ', 'first iteration')
     niter+=1
-
-sig_g_tempo=sig_g
-sig_l_tempo=sig_l
-siglead_tempo=siglead
-sig_r_tempo=sig_r
-
-
-# %%
-band_struct=np.zeros((nb*ns,nk))
-
-for i in range(nk):
-    h=lead_h00[:,:,0,i]+lead_h10[:,:,0,i]+lead_h10[:,:,0,i].conj().T
-    e=np.real(eig(h)[0])
-    e=np.sort(e)
-    band_struct[:,i]=e
+print('End Green-function loop')
+# sig_g_tempo=sig_g
+# sig_l_tempo=sig_l
+# siglead_tempo=siglead
+# sig_r_tempo=sig_r
 
 
 
+
+######################################################################################################
+#####################################################################################################
+band_struct=np.zeros((nb*ns_L,nk,ns_L))
+
+# for ibz in range(ns_L):
+for iky in range(nky):
+    for ikx in range(nkx):
+        ik = ikx + iky*nkx
+        
+        kx=path[ik][0]        
+        phiz=kx*Lz*ns_L
+        h=lead_h00[:,:,0,ik]+np.exp(+1j*phiz)*lead_h10[:,:,0,ik] + np.exp(-1j*phiz)*lead_h10[:,:,0,ik].conj().T
+        e=np.real(eig(h)[0])
+        e=np.sort(e)
+        band_struct[:,ik,0]=e
+
+
+######################################################################################################
+#####################################################################################################
 
 fig=plt.figure()
 x=np.arange(nk)
 A=-np.sum(np.imag(np.diagonal(G_retarded,axis1=1,axis2=2)),2)
-pcm= plt.pcolormesh(x,energies,A[:,:].T, 
+pcm = plt.pcolormesh(x,energies,A[:,:].T, 
                     vmax=10,
                    cmap='hot')
-
+for ind in range(nb*ns_L):
+    # for ibz in range(ns_L):
+    plt.plot(band_struct[ind,:,0],'r-',alpha=0.5)
 plt.colorbar(pcm)
 plt.title('Density of state over the whole grid')
 plt.xlabel('k points indices')
@@ -486,7 +584,9 @@ plt.ylabel('Energies')
 plt.savefig(folder_save+'DOS-BZ.pdf')
 
 
-
+######################################################################################################
+#CUT BY CLOSEST NEIGHBOUR METHOD
+#####################################################################################################
 
 # %% [markdown]
 # # Cut with closest neighbour method
@@ -495,7 +595,6 @@ plt.savefig(folder_save+'DOS-BZ.pdf')
 nk_cut=101
 
 k_list=[K,Gamma,M]
-
 dk_list=make_dk_list(k_list,nstep=nk_cut)
 
 k_cut_list=np.zeros((len(dk_list)*nk_cut,3))
@@ -510,10 +609,10 @@ for ind in range(len(dk_list)):
 
 k_points_coords=np.array([ind2coord(N=nkz,ik=ik,starty=-np.pi/Ly,startz=-np.pi/Lz,stepy=dky,stepz=dkz,yhat=yhat,zhat=zhat) for ik in np.arange(nk)])
 
-nn= NearestNeighbors(n_neighbors=1, algorithm='auto').fit(k_points_coords)
+nn = NearestNeighbors(n_neighbors=1, algorithm='auto').fit(k_points_coords)
 
 
-replength=0 #nbr of cells around the unit cell taken into account
+replength=1 #nbr of cells around the unit cell taken into account
 
 intermediate_dist=np.zeros(2*(2*replength+1)**2)
 intermediate_ind=np.zeros(2*(2*replength+1)**2)
@@ -523,18 +622,17 @@ for k_pt in range(len(k_cut_list)):
     a=0
     for i in np.arange(-replength,replength+1):
         for j in np.arange(-replength,replength+1):
-            intermediate_dist[a], intermediate_ind[a]= nn.kneighbors([k_cut_list[k_pt]+i*b_2+j*b_3])
-            intermediate_dist[a+1], intermediate_ind[a+1]= nn.kneighbors([-k_cut_list[k_pt]+i*b_2+j*b_3])
+            intermediate_dist[a], intermediate_ind[a] = nn.kneighbors([k_cut_list[k_pt]+i*b_2+j*b_3])
+            intermediate_dist[a+1], intermediate_ind[a+1] = nn.kneighbors([-k_cut_list[k_pt]+i*b_2+j*b_3])
             a+=2
     f=np.argmin(intermediate_dist)
     ind_final[k_pt]=intermediate_ind.flat[f]
     distances_final[k_pt]=intermediate_dist.flat[f]
 
 
-
-
-nk_cut=len(k_cut_list)
-cur_nn=np.zeros((nk_cut,nen,2),dtype='complex')
+# %%
+nk_cut=len(k_cut_list) #redefinition of nk_cut
+cur_nn=cur[ind_final,...]
 
 G_retarded_diag_nn=(np.diagonal(G_retarded,axis1=2,axis2=1))[ind_final,...]
 G_lesser_diag_nn=(np.diagonal(G_lesser,axis1=2,axis2=1))[ind_final,...]
@@ -544,7 +642,35 @@ R_out_nn=np.zeros((nk_cut,nb*length,nen),dtype='complex')
 te_nn=te[ind_final,...]
 
 
+# for j in range(len(k_cut_list)):
+#     ik = int(ind_final[j])
+#     k=ind2coord(N=nkz,ik=ik,starty=-np.pi/Ly,startz=-np.pi/Lz,stepy=dky,stepz=dkz,yhat=yhat,zhat=zhat)
+    
+#     ky=k[0]
+#     kz=k[1]
+    
 
+    
+
+#     G_retarded_nn,G_lesser_nn,G_greater_nn,cur_nn[j],te_nn[j] = gw_dense.calc_gf(ne=nen,e=energies,num_lead=2,nm_dev=nb*length,nm_lead=dim_lead,max_nm_lead=nb*ns,
+#                                                     ham=ham[:,:,ik],lead_h00=lead_h00[:,:,:,ik],lead_h10=lead_h10[:,:,:,ik],
+#                                                     siglead=siglead,t=lead_coupling[:,:,:,ik],
+#                                                     scat_sig_retarded=sig_r[:,:,:,ik],scat_sig_lesser=sig_l[:,:,:,ik],scat_sig_greater=sig_g[:,:,:,ik],
+#                                                     mu=mu,temp=temp,flatband=False)
+#     G_retarded_diag_nn[j]=np.diagonal(G_retarded_nn,axis1=1,axis2=0).T
+#     G_lesser_diag_nn[j]=np.diagonal(G_lesser_nn,axis1=1,axis2=0).T
+#     G_greater_diag_nn[j]=np.diagonal(G_greater_nn,axis1=1,axis2=0).T
+
+#     G_retarded_balist_nn,G_lesser_balist_nn,G_greater_balist_nn,cur_balist_nn[j],te_balist_nn[j] = gw_dense.calc_gf(ne=nen,e=energies,num_lead=2,nm_dev=nb*length,nm_lead=dim_lead,max_nm_lead=nb*ns,
+#                                                     ham=ham[:,:,ik],lead_h00=lead_h00[:,:,:,ik],lead_h10=lead_h10[:,:,:,ik],
+#                                                     siglead=siglead,t=lead_coupling[:,:,:,ik],
+#                                                     scat_sig_retarded=np.zeros((nb*length,nb*length,nen)),scat_sig_lesser=np.zeros((nb*length,nb*length,nen)),scat_sig_greater=np.zeros((nb*length,nb*length,nen)),
+#                                                     mu=mu,temp=temp,flatband=False)
+#     G_retarded_diag_balist_nn[j]=np.diagonal(G_retarded_balist_nn,axis1=1,axis2=0).T
+#     G_lesser_diag_balist_nn[j]=np.diagonal(G_lesser_balist_nn,axis1=1,axis2=0).T
+#     G_greater_diag_balist_nn[j]=np.diagonal(G_greater_balist_nn,axis1=1,axis2=0).T
+
+## can also be obtain by taking the indices of final_ind (much faster)
 
 # %%
 sig_l_nn=sig_l[...,ind_final]
@@ -553,17 +679,18 @@ sig_l_nn=sig_l[...,ind_final]
 # %%
 
 
-
+######################################################################################################
+#####################################################################################################
 
 fig=plt.figure()
 
 x=np.arange(nk_cut)
 A=np.log(np.sum(np.imag(np.diagonal(sig_l_nn,axis1=0,axis2=1)),-1).T)
 
-for i in range(nb*ns):
+for i in range(nb*ns_L):
     plt.plot(x,band_struct[:,ind_final][i],'--',color='white')
-pcm= plt.pcolormesh(x,energies,A[:,:].T, 
-                    vmin=-12, vmax=1,
+pcm = plt.pcolormesh(x,energies,A[:,:].T, 
+                    # vmin=-12, vmax=1,
                    cmap='hot')
 plt.xlabel('Path indices')
 plt.ylabel('Energies (eV)')
@@ -573,7 +700,9 @@ plt.savefig(folder_save+'sig_l_nn.pdf')
 
 
 # %%
-
+######################################################################################################
+#CUT BY INTERPOLATION
+#####################################################################################################
 
 nk_cut=101
 
@@ -667,8 +796,8 @@ def interp(f,cut):
 
 # %%
 
-band_struct_interpolate=np.zeros((nb*ns,len(k_cut_list)))
-for k in range(nb*ns):
+band_struct_interpolate=np.zeros((nb*ns_L,len(k_cut_list)))
+for k in range(nb*ns_L):
     band_struct_larger_k=larger(np.reshape(band_struct[k],(nky,nkz)),3,nky,nkz)
     band_struct_k=interpolate.interp2d(K_list_large[:,0],K_list_large[:,1],band_struct_larger_k)
     for ik in range(len(k_cut_list)):
@@ -676,19 +805,23 @@ for k in range(nb*ns):
         band_struct_interpolate[k,ik]=band_struct_k(k_cut_list[ik,0],k_cut_list[ik,1])
 
 # %%
+######################################################################################################
+#####################################################################################################
 fig=plt.figure()
-for k in range(nb*ns):
+for k in range(nb*ns_L):
     plt.plot(band_struct_interpolate[k])
 
 #plt.show()
 
 # %%
+######################################################################################################
+#####################################################################################################
 fig=plt.figure()
-pcm= plt.pcolormesh(np.arange(nk_cut),energies,np.log(-np.real(G_retarded_calc).T), 
-                    vmin=-10, vmax=4,
+pcm = plt.pcolormesh(np.arange(nk_cut),energies,np.log(-np.real(G_retarded_calc).T), 
+                    # vmin=-10, vmax=4,
                    cmap='hot')
 
-for k in range(nb*ns):
+for k in range(nb*ns_L):
     plt.plot(band_struct_interpolate[k],'--',color='white',alpha=0.5)
 plt.xlabel('Path indices')
 plt.ylabel('Energies (eV)')
@@ -696,12 +829,16 @@ plt.colorbar(pcm)
 plt.ylim(0, 14)
 plt.savefig(folder_save+'Greaterdedinterp014.pdf')
 
+
+######################################################################################################
+#####################################################################################################
+
 fig=plt.figure()
-pcm= plt.pcolormesh(np.arange(nk_cut),energies,np.real(cur_calc_2.T), 
+pcm = plt.pcolormesh(np.arange(nk_cut),energies,np.real(cur_calc_2.T), 
                     # vmin=-1e-4, vmax=4,
                    cmap=cm.seismic)
 
-for k in range(nb*ns):
+for k in range(nb*ns_L):
     plt.plot(band_struct_interpolate[k],'--',color='black',alpha=0.1)
 plt.xlabel('Path indices')
 plt.ylabel('Energies (eV)')
@@ -710,12 +847,15 @@ plt.ylim(0, 20)
 plt.savefig(folder_save+'current.pdf')
 
 
+######################################################################################################
+#####################################################################################################
+
 fig=plt.figure()
-pcm= plt.pcolormesh(np.arange(nk_cut),energies,np.log(-np.real(G_retarded_calc).T), 
+pcm = plt.pcolormesh(np.arange(nk_cut),energies,np.log(-np.real(G_retarded_calc).T), 
                     vmin=-10, vmax=4,
                    cmap='hot')
 
-for k in range(nb*ns):
+for k in range(nb*ns_L):
     plt.plot(band_struct_interpolate[k],'--',color='white',alpha=0.5)
 plt.xlabel('Path indices')
 plt.ylabel('Energies (eV)')
@@ -723,14 +863,18 @@ plt.colorbar(pcm)
 plt.ylim(0, 20)
 plt.savefig(folder_save+'Gretardeddedinterp.pdf')
 # %%
+
+######################################################################################################
+#####################################################################################################
+
 fig=plt.figure()
-pcm= plt.pcolormesh(np.arange(nk_cut),energies,np.log(np.real(G_lesser_calc).T), 
+pcm = plt.pcolormesh(np.arange(nk_cut),energies,np.log(np.real(G_lesser_calc).T), 
                     vmin=-10,vmax=4,
                    cmap='hot')
 
 plt.axhline(7.7,color='green',linestyle='--')
 plt.axhline(8.2,color='green',linestyle='--')
-for k in range(nb*ns):
+for k in range(nb*ns_L):
     plt.plot(band_struct_interpolate[k],'--',color='white',alpha=0.5)
 plt.axhline(EF+en_photon/2, color='white', linestyle='--')
 plt.ylim(0,14)
@@ -740,22 +884,32 @@ plt.ylabel('Energies (eV)')
 plt.colorbar(pcm)
 plt.savefig(folder_save+'glesserinterp.pdf')
 # %%
+
+
+######################################################################################################
+#####################################################################################################
+
 fig=plt.figure()
-pcm= plt.pcolormesh(np.arange(nk_cut),energies,np.log(np.real(sig_l_interp_calc).T), 
+pcm = plt.pcolormesh(np.arange(nk_cut),energies,np.log(np.real(sig_l_interp_calc).T), 
                     vmin=-12,vmax=3,
                    cmap='hot')
-for k in range(nb*ns):
+for k in range(nb*ns_L):
     plt.plot(band_struct_interpolate[k],'--',color='white',alpha=0.5)
 plt.xlabel('Path indices')
 plt.ylabel('Energies (eV)')
 plt.colorbar(pcm)
 plt.savefig(folder_save+'sigl-interp.pdf')
 # %%
+
+######################################################################################################
+#####################################################################################################
+
+
 fig=plt.figure()
-pcm= plt.pcolormesh(np.arange(nk_cut),energies,np.log(np.real(sig_l_photon_interp_calc).T), 
+pcm = plt.pcolormesh(np.arange(nk_cut),energies,np.log(np.real(sig_l_photon_interp_calc).T), 
                     vmin=-12,vmax=-4,
                    cmap='hot')
-for k in range(nb*ns):
+for k in range(nb*ns_L):
     plt.plot(band_struct_interpolate[k],'--',color='white',alpha=0.5)
 plt.xlabel('Path indices')
 plt.ylabel('Energies (eV)')
@@ -763,9 +917,9 @@ plt.savefig(folder_save+'sigl_photon-interp.pdf')
 plt.colorbar(pcm)
 
 
-
+######################################################################################################
 #calculation of the current
-
+#####################################################################################################
 
 
 nEF=int((EF-emin)/dE)
@@ -819,7 +973,9 @@ plt.ylabel('Energy current')
 plt.savefig(folder_save+'energy current electron.pdf')
 
 
-
+######################################################################################################
+#CALCULATION OF THE SCATTERING
+#####################################################################################################
 
 # %% [markdown]
 # ### R_in and R_out
@@ -879,6 +1035,8 @@ e_current_dens_list_cut_interp_phonon=interp(e_current_dens_list_phonon,k_cut_li
 
 
 # %%
+######################################################################################################
+#####################################################################################################
 fig=plt.figure()
 
 x=np.arange(nk_cut)
@@ -886,11 +1044,11 @@ x=np.arange(nk_cut)
 
 
 
-pcm= plt.pcolormesh(x,energies,np.log(np.maximum(np.real(e_current_dens_list_cut_interp).T,1e-20)), 
+pcm = plt.pcolormesh(x,energies,np.log(np.maximum(np.real(e_current_dens_list_cut_interp).T,1e-20)), 
                      vmin=-15,vmax=-2,
                    cmap='hot')
 
-for k in range(nb*ns):
+for k in range(nb*ns_L):
     plt.plot(x,band_struct_interpolate[k],'--',color='white',alpha=0.5)
 plt.colorbar(pcm)
 plt.axhline(7.7,color='red',linestyle='--')
@@ -904,17 +1062,18 @@ plt.ylim(4,13)
 
 
 plt.savefig(folder_save+'e-current-interp.pdf')
-
+######################################################################################################
+#####################################################################################################
 fig=plt.figure()
 x=np.arange(nk_cut)
 
 
 
-pcm= plt.pcolormesh(x,energies,np.log(np.maximum(np.real(e_current_dens_list_cut_interp_photon).T,1e-20)), 
+pcm = plt.pcolormesh(x,energies,np.log(np.maximum(np.real(e_current_dens_list_cut_interp_photon).T,1e-20)), 
                      vmin=-15,vmax=-2,
                    cmap='hot')
 
-for k in range(nb*ns):
+for k in range(nb*ns_L):
     plt.plot(x,band_struct_interpolate[k],'--',color='white',alpha=0.5)
 plt.colorbar(pcm)
 plt.axhline(7.7,color='red',linestyle='--')
@@ -930,14 +1089,15 @@ plt.savefig(folder_save+'e-current-interp-photon.pdf')
 
 
 x=np.arange(nk_cut)
-
+######################################################################################################
+#####################################################################################################
 
 fig=plt.figure()
-pcm= plt.pcolormesh(x,energies,np.log(np.maximum(np.real(e_current_dens_list_cut_interp_phonon).T,1e-20)), 
+pcm = plt.pcolormesh(x,energies,np.log(np.maximum(np.real(e_current_dens_list_cut_interp_phonon).T,1e-20)), 
                      vmin=-15,vmax=-2,
                    cmap='hot')
 
-for k in range(nb*ns):
+for k in range(nb*ns_L):
     plt.plot(x,band_struct_interpolate[k],'--',color='white',alpha=0.5)
 plt.colorbar(pcm)
 plt.axhline(7.7,color='red',linestyle='--')
@@ -951,7 +1111,8 @@ plt.ylim(4,13)
 
 plt.savefig(folder_save+'e-current-interp-phonon.pdf')
 
-
+######################################################################################################
+#####################################################################################################
 
 # %%
 R_in_cut=interp(R_in,k_cut_list)
@@ -962,14 +1123,15 @@ R_in_photon_cut=interp(R_in_photon,k_cut_list)
 R_out_photon_cut=interp(R_out_photon,k_cut_list)
 
 # %%
-
+######################################################################################################
+#####################################################################################################
 fig=plt.figure()
 
 x=np.arange(nk_cut)
-pcm= plt.pcolormesh(x,energies,np.log(np.maximum(np.real(R_in_cut),1e-20)).T, 
+pcm = plt.pcolormesh(x,energies,np.log(np.maximum(np.real(R_in_cut),1e-20)).T, 
                     vmin=-15,vmax=-3,
                    cmap='hot')
-for k in range(nb*ns):
+for k in range(nb*ns_L):
     plt.plot(x,band_struct_interpolate[k],'--',color='white',alpha=0.5)
 
 plt.colorbar(pcm)
@@ -981,14 +1143,15 @@ plt.xlabel('Path indices')
 plt.ylabel('Energies (eV)')
 plt.savefig(folder_save+'Rin-cut.pdf')
 #plt.show()
-
+######################################################################################################
+#####################################################################################################
 fig=plt.figure()
 
 x=np.arange(nk_cut)
-pcm= plt.pcolormesh(x,energies,np.log(np.maximum(np.real(R_out_cut),1e-20)).T, 
+pcm = plt.pcolormesh(x,energies,np.log(np.maximum(np.real(R_out_cut),1e-20)).T, 
                     vmin=-15,vmax=-3,
                    cmap='hot')
-for k in range(nb*ns):
+for k in range(nb*ns_L):
     plt.plot(x,band_struct_interpolate[k],'--',color='white',alpha=0.5)
 
 plt.colorbar(pcm)
@@ -1005,11 +1168,12 @@ plt.savefig(folder_save+'Routcut.pdf')
 
 
 # %%
-
+######################################################################################################
+#####################################################################################################
 fig=plt.figure()
 
 x=np.arange(nk_cut)
-pcm= plt.pcolormesh(x,energies,np.log(np.maximum(np.real(R_in_photon_cut),1e-20)).T, 
+pcm = plt.pcolormesh(x,energies,np.log(np.maximum(np.real(R_in_photon_cut),1e-20)).T, 
                     vmin=-15,vmax=-4,
                    cmap='hot')
 plt.colorbar(pcm)
@@ -1021,16 +1185,17 @@ plt.axhline(EF+en_photon/2,color='white',linestyle='--')
 #plt.gca().set_aspect("equal")
 plt.xlabel('Path indices')
 plt.ylabel('Energies (eV)')
-for k in range(nb*ns):
+for k in range(nb*ns_L):
     plt.plot(x,band_struct_interpolate[k],'--',color='white',alpha=0.5)
 
 plt.savefig(folder_save+'rinphoton.pdf')
 #plt.show()
-
+######################################################################################################
+#####################################################################################################
 fig=plt.figure()
 
 x=np.arange(nk_cut)
-pcm= plt.pcolormesh(x,energies,np.log(np.maximum(np.real(R_out_photon_cut),1e-20)).T, 
+pcm = plt.pcolormesh(x,energies,np.log(np.maximum(np.real(R_out_photon_cut),1e-20)).T, 
                     vmin=-15,vmax=-4,
                    cmap='hot')
 plt.axhline(7.7,color='red',linestyle='--')
@@ -1041,23 +1206,24 @@ plt.colorbar(pcm)
 plt.ylim(0,14)
 plt.xlabel('Path indices')
 plt.ylabel('Energies (eV)')#plt.gca().set_aspect("equal")
-for k in range(nb*ns):
+for k in range(nb*ns_L):
     plt.plot(x,band_struct_interpolate[k],'--',color='white',alpha=0.5)
 
 plt.savefig(folder_save+'routphoton.pdf')
 #plt.show()
 
-
+######################################################################################################
+#####################################################################################################
 # %%
 
 fig=plt.figure()
 
 x=np.arange(nk_cut)
 
-pcm= plt.pcolormesh(x,energies,np.log(np.maximum(np.real(R_out_cut),1e-20)).T, 
+pcm = plt.pcolormesh(x,energies,np.log(np.maximum(np.real(R_out_cut),1e-20)).T, 
                     vmin=-10,vmax=0,
                    cmap='hot')
-for k in range(nb*ns):
+for k in range(nb*ns_L):
     plt.plot(x,band_struct_interpolate[k],'--',color='white',alpha=0.5)
 plt.xlabel('Path indices')
 plt.ylabel('Energies (eV)')
@@ -1071,7 +1237,8 @@ plt.ylim(0,14)
 plt.savefig(folder_save+'routcut2.pdf')
 #plt.show()
 
-
+######################################################################################################
+#####################################################################################################
 # %%
 fig=plt.figure()
 
@@ -1080,10 +1247,10 @@ e_current_dens_list_cut=(e_current_dens_list)[ind_final]
 #plt.contourf(energies,x,A[:,:,6], cmap='hot')
 
 
-pcm= plt.pcolormesh(x,energies,np.log(np.maximum(e_current_dens_list_cut.T,1e-20)), 
+pcm = plt.pcolormesh(x,energies,np.log(np.maximum(e_current_dens_list_cut.T,1e-20)), 
                     vmin=-15,vmax=-2,
                    cmap='hot')
-for k in range(nb*ns):
+for k in range(nb*ns_L):
     plt.plot(x,band_struct[:,ind_final][k],'--',color='white',alpha=0.5)
 
 plt.colorbar(pcm)
@@ -1097,7 +1264,8 @@ plt.ylabel('Energies (eV)')
 #plt.gca().set_aspect("equal")
 plt.savefig(folder_save+'ecurrentcutnn.pdf')
 
-
+######################################################################################################
+#####################################################################################################
 # %%
 fig=plt.figure()
 
@@ -1106,10 +1274,10 @@ e_current_dens_list_cut=(e_current_dens_list)[ind_final]
 #plt.contourf(energies,x,A[:,:,6], cmap='hot')
 
 
-pcm= plt.pcolormesh(x,energies,np.log(np.maximum(e_current_dens_list_cut.T,1e-20)), 
+pcm = plt.pcolormesh(x,energies,np.log(np.maximum(e_current_dens_list_cut.T,1e-20)), 
                     vmin=-15,vmax=-2,
                    cmap='hot')
-for k in range(nb*ns):
+for k in range(nb*ns_L):
     plt.plot(x,band_struct[:,ind_final][k],'--',color='white',alpha=0.5)
 
 plt.colorbar(pcm)
@@ -1124,7 +1292,8 @@ plt.ylabel('Energies (eV)')
 plt.savefig(folder_save+'ecurrentcutnn014.pdf')
 #plt.show()
 
-
+######################################################################################################
+#####################################################################################################
 # %%
 fig=plt.figure()
 
@@ -1133,10 +1302,10 @@ e_current_dens_list_cut_phonon=(e_current_dens_list_phonon)[ind_final]
 #plt.contourf(energies,x,A[:,:,6], cmap='hot')
 
 
-pcm= plt.pcolormesh(x,energies,np.log(np.maximum(e_current_dens_list_cut_phonon.T,1e-20)), 
+pcm = plt.pcolormesh(x,energies,np.log(np.maximum(e_current_dens_list_cut_phonon.T,1e-20)), 
                     vmin=-15,vmax=-2,
                    cmap='hot')
-for k in range(nb*ns):
+for k in range(nb*ns_L):
     plt.plot(x,band_struct[:,ind_final][k],'--',color='white',alpha=0.5)
 
 plt.colorbar(pcm)
@@ -1151,6 +1320,8 @@ plt.ylabel('Energies (eV)')
 plt.savefig(folder_save+'ecurrentphononnn.pdf')
 #plt.show()
 # %%
+######################################################################################################
+#####################################################################################################
 fig=plt.figure()
 
 x=np.arange(nk_cut)
@@ -1158,10 +1329,10 @@ e_current_dens_list_cut_phonon=(e_current_dens_list_phonon)[ind_final]
 #plt.contourf(energies,x,A[:,:,6], cmap='hot')
 
 
-pcm= plt.pcolormesh(x,energies,np.log(np.maximum(e_current_dens_list_cut_phonon.T,1e-20)), 
+pcm = plt.pcolormesh(x,energies,np.log(np.maximum(e_current_dens_list_cut_phonon.T,1e-20)), 
                     vmin=-15,vmax=-2,
                    cmap='hot')
-for k in range(nb*ns):
+for k in range(nb*ns_L):
     plt.plot(x,band_struct[:,ind_final][k],'--',color='white',alpha=0.5)
 
 plt.colorbar(pcm)
@@ -1176,6 +1347,10 @@ plt.ylabel('Energies (eV)')
 plt.savefig(folder_save+'ecurrentphononnn014.pdf')
 
 # %%
+
+######################################################################################################
+#####################################################################################################
+
 fig=plt.figure()
 
 x=np.arange(nk_cut)
@@ -1183,11 +1358,11 @@ e_current_dens_list_cut_photon=(e_current_dens_list_photon)[ind_final]
 #plt.contourf(energies,x,A[:,:,6], cmap='hot')
 
 
-pcm= plt.pcolormesh(x,energies,np.log(np.maximum(e_current_dens_list_cut_photon.T,1e-20)), 
+pcm = plt.pcolormesh(x,energies,np.log(np.maximum(e_current_dens_list_cut_photon.T,1e-20)), 
                     vmin=-15,vmax=-2,
                    cmap='hot')
 
-for k in range(nb*ns):
+for k in range(nb*ns_L):
     plt.plot(x,band_struct[:,ind_final][k],'--',color='white',alpha=0.5)
 plt.colorbar(pcm)
 plt.axhline(7.7,color='red',linestyle='--')
@@ -1200,6 +1375,10 @@ plt.ylabel('Energies (eV)')
 #plt.gca().set_aspect("equal")
 plt.savefig(folder_save+'ecurrentphotonnn.pdf')
 #plt.show()
+
+######################################################################################################
+#####################################################################################################
+
 fig=plt.figure()
 
 x=np.arange(nk_cut)
@@ -1207,11 +1386,11 @@ e_current_dens_list_cut_photon=(e_current_dens_list_photon)[ind_final]
 #plt.contourf(energies,x,A[:,:,6], cmap='hot')
 
 
-pcm= plt.pcolormesh(x,energies,np.log(np.maximum(e_current_dens_list_cut_photon.T,1e-20)), 
+pcm = plt.pcolormesh(x,energies,np.log(np.maximum(e_current_dens_list_cut_photon.T,1e-20)), 
                     vmin=-15,vmax=-2,
                    cmap='hot')
 
-for k in range(nb*ns):
+for k in range(nb*ns_L):
     plt.plot(x,band_struct[:,ind_final][k],'--',color='white',alpha=0.5)
 plt.colorbar(pcm)
 plt.axhline(7.7,color='red',linestyle='--')
@@ -1225,18 +1404,19 @@ plt.ylabel('Energies (eV)')
 plt.savefig(folder_save+'ecurrentphotonnn014.pdf')
 
 # %%
-
+######################################################################################################
+#####################################################################################################
 fig=plt.figure()
 x=np.arange(nk_cut)
 A=np.log(np.maximum(np.abs(np.real(R_in_phonon)[ind_final]),1e-20))
 #plt.contourf(energies,x,A[:,:,6], cmap='hot')
 
 
-pcm= plt.pcolormesh(x,energies,A[:,:].T, 
+pcm = plt.pcolormesh(x,energies,A[:,:].T, 
                     vmin=-12,vmax=-4,
                    cmap='hot')
 
-for k in range(nb*ns):
+for k in range(nb*ns_L):
     plt.plot(x,band_struct[:,ind_final][k],'--',color='white',alpha=0.5)
 plt.colorbar(pcm)
 plt.axhline(7.7,color='red',linestyle='--')
@@ -1254,10 +1434,10 @@ A=np.log(np.maximum(np.abs(np.real(R_out_phonon[ind_final])),1e-20))
 #plt.contourf(energies,x,A[:,:,6], cmap='hot')
 
 
-pcm= plt.pcolormesh(x,energies,A[:,:].T, 
+pcm = plt.pcolormesh(x,energies,A[:,:].T, 
                     vmin=-12,vmax=-4,
                    cmap='hot')
-for k in range(nb*ns):
+for k in range(nb*ns_L):
     plt.plot(x,band_struct[:,ind_final][k],'--',color='white',alpha=0.5)
 plt.axhline(7.7,color='red',linestyle='--')
 plt.axhline(8.2,color='red',linestyle='--')
@@ -1275,18 +1455,19 @@ plt.savefig(folder_save+'routphononnn.pdf')
 #plt.show()
 
 # %%
-
-fig=plt.figure()
+######################################################################################################
+#####################################################################################################
+fig =plt.figure()
 x=np.arange(nk_cut)
 A=np.log(np.maximum(np.abs(np.real(R_in_photon)[ind_final]),1e-20))
 #plt.contourf(energies,x,A[:,:,6], cmap='hot')
 
 
-pcm= plt.pcolormesh(x,energies,A[:,:].T, 
+pcm = plt.pcolormesh(x,energies,A[:,:].T, 
                     vmin=-12,vmax=-4,
                    cmap='hot')
 
-for k in range(nb*ns):
+for k in range(nb*ns_L):
     plt.plot(x,band_struct[:,ind_final][k],'--',color='white',alpha=0.5)
 plt.colorbar(pcm)
 
@@ -1300,14 +1481,14 @@ A=np.log(np.maximum(np.abs(np.real(R_out_photon)[ind_final]),1e-20))
 #plt.contourf(energies,x,A[:,:,6], cmap='hot')
 
 
-pcm= plt.pcolormesh(x,energies,A[:,:].T, 
+pcm = plt.pcolormesh(x,energies,A[:,:].T, 
                     vmin=-15,vmax=-4,
                    cmap='hot')
 
 plt.xlabel('Path indices')
 plt.ylabel('Energies (eV)')
 plt.colorbar(pcm)
-for k in range(nb*ns):
+for k in range(nb*ns_L):
     plt.plot(x,band_struct[:,ind_final][k],'--',color='white',alpha=0.5)
 plt.ylim(0,14)
 plt.savefig(folder_save+'routphotonnn.pdf')
@@ -1316,43 +1497,45 @@ plt.savefig(folder_save+'routphotonnn.pdf')
 
 
 
+######################################################################################################
+#####################################################################################################
 
 
+fig, ax = plt.subplots(1, 2, figsize=(15, 7))
 
-fig= plt.figure()
+x = np.arange(nk_cut)
+A = -np.sum(np.imag(G_retarded_diag_nn), axis=-1)
 
-x= np.arange(nk_cut)
-A= -np.sum(np.imag(G_retarded_diag_nn), axis=-1)
-
-for i in range(nb*ns):
+for i in range(nb*ns_L):
     plt.plot(x,band_struct[:,ind_final][i],'--',color='white')
 
-pcm= plt.pcolormesh(x, energies, A.T, vmin=0, vmax=10, cmap='hot')
+pcm = plt.pcolormesh(x, energies, A.T, vmin=0, vmax=10, cmap='hot')
 fig.colorbar(pcm)
 plt.title('Band structure obtained after a cut and used closest neighbour')
 plt.xlabel('k points indices of the cut')
 plt.ylabel('Energies')
 plt.ylim(0, 20)
 
-
 # plt.ylim(0,20)
 #plt.gca().set_aspect("equal")
 plt.savefig(folder_save+'Band-structure-cut-closest.pdf')
 #plt.show()
-
+######################################################################################################
+#####################################################################################################
 
 
 # %%
 
-fig= plt.figure()
+fig=plt.figure()
 
-x= np.arange(nk_cut)
-A= np.log(np.sum(np.imag(G_lesser_diag_nn), axis=-1))
+x = np.arange(nk_cut)
+A = np.log(np.sum(np.imag(G_lesser_diag_nn), axis=-1))
 
-pcm= plt.pcolormesh(x, energies, A.T, vmin=-10, vmax=4, cmap='hot')
-plt.colorbar(pcm)
-for i in range(nb*ns):
+pcm = plt.pcolormesh(x, energies, A.T, vmin=-10, vmax=4, cmap='hot')
+fig.colorbar(pcm)
+for i in range(nb*ns_L):
     plt.plot(x,band_struct[:,ind_final][i],'--',color='white')
+# ax[0].set_title('Band structure obtained after a cut and used closest neighbour')
 plt.xlabel('k points indices of the cut')
 plt.ylabel('Energies')
 plt.ylim(0, 14)
@@ -1361,14 +1544,15 @@ plt.ylim(0, 14)
 #plt.gca().set_aspect("equal")
 plt.savefig(folder_save+'Delec-cut.pdf')
 
-
+######################################################################################################
+#####################################################################################################
 
 
 fig=plt.figure()
-x= np.arange(nk_cut)
-A= np.sum(np.imag(G_lesser_diag_nn), axis=-1)
+x = np.arange(nk_cut)
+A = np.sum(np.imag(G_lesser_diag_nn), axis=-1)
 
-pcm= plt.pcolormesh(x, energies, np.log(A.T), vmin=-12, vmax=2, cmap='hot')
+pcm = plt.pcolormesh(x, energies, A.T, vmin=0, vmax=2, cmap='hot')
 fig.colorbar(pcm)
 # plt.title('Band structure obtained after a cut and used closest neighbour')
 plt.xlabel('k points indices of the cut')
@@ -1376,24 +1560,28 @@ plt.ylabel('Energies (eV)')
 plt.ylim(0, 14)
 plt.savefig(folder_save+'Delec-nn.pdf')
 #plt.show()
-
+######################################################################################################
+#####################################################################################################
 fig=plt.figure()
-x= np.arange(nk_cut)
-A= np.log(-np.sum(np.imag(G_greater_diag_nn), axis=-1))
+x = np.arange(nk_cut)
+A = np.log(np.sum(np.imag(G_greater_diag_nn), axis=-1))
 
-pcm= plt.pcolormesh(x, energies, A.T, vmin=-12, vmax=2, cmap='hot')
+pcm = plt.pcolormesh(x, energies, A.T, vmin=-12, vmax=2, cmap='hot')
 fig.colorbar(pcm)
 # plt.title('Band structure obtained after a cut and used closest neighbour')
 plt.xlabel('k points indices of the cut')
 plt.ylabel('Energies (eV)')
 plt.ylim(0, 20)
 plt.savefig(folder_save+'Dos-nn.pdf')
-fig, ax= plt.subplots(1, 2, figsize=(15, 7))
-fig=plt.figure()
-x= np.arange(nk_cut)
-A= -np.sum(np.imag(G_greater_diag_nn), axis=-1)
+######################################################################################################
+#####################################################################################################
 
-pcm= plt.pcolormesh(x, energies, np.log(A.T), vmin=-12, vmax=2, cmap='hot')
+fig= plt.figure()
+fig=plt.figure()
+x = np.arange(nk_cut)
+A = np.sum(np.imag(G_greater_diag_nn), axis=-1)
+
+pcm = plt.pcolormesh(x, energies, np.log(A.T), vmin=-12, vmax=2, cmap='hot')
 fig.colorbar(pcm)
 # plt.title('Band structure obtained after a cut and used closest neighbour')
 plt.xlabel('k points indices of the cut')
@@ -1401,24 +1589,22 @@ plt.ylabel('Energies (eV)')
 plt.ylim(0, 14)
 plt.savefig(folder_save+'Dos014-nn.pdf')
 
-def set_axes_equal(ax):
-    x_limits= ax.get_xlim3d()
-    y_limits= ax.get_ylim3d()
-    z_limits= ax.get_zlim3d()
 
-    x_range= abs(x_limits[1] - x_limits[0])
-    y_range= abs(y_limits[1] - y_limits[0])
-    z_range= abs(z_limits[1] - z_limits[0])
+######################################################################################################
+#####################################################################################################
 
-    plot_radius= 0.5 * max([x_range, y_range, z_range])
 
-    x_middle= np.mean(x_limits)
-    y_middle= np.mean(y_limits)
-    z_middle= np.mean(z_limits)
 
-    ax.set_xlim3d([x_middle - plot_radius, x_middle + plot_radius])
-    ax.set_ylim3d([y_middle - plot_radius, y_middle + plot_radius])
-    ax.set_zlim3d([z_middle - plot_radius, z_middle + plot_radius])
+
+
+
+
+
+
+
+######################################################################################################
+#CURRENT CALCULATION
+#####################################################################################################
 
 
 I=np.zeros((nb*length,nb*length))
@@ -1436,7 +1622,9 @@ for i in range (nb*length):
 
 
 
-# %%
+
+
+
 # %%
 nEF=int((EF-emin)/dE)
 I_=np.zeros((nb*length,nb*length))
@@ -1454,60 +1642,64 @@ for i in range (length*nb):
     for j in range(length*nb):
         I_[i,j],J[i,j]=current_int(ham,i,j,G_lesser,nky*nkz,nEF)
 
+######################################################################################################
+#SAVE OF VARIABLES
+#####################################################################################################
 
-filename= folder_save + 'G_lesser'
-fileObject= open(filename, 'wb')
+filename = folder_save + 'G_lesser'
+fileObject = open(filename, 'wb')
+
 
 pickle.dump(G_lesser,fileObject)
 fileObject.close()
 
 
-filename= folder_save + 'G_retarded'
-fileObject= open(filename, 'wb')
+filename = folder_save + 'G_retarded'
+fileObject = open(filename, 'wb')
 
 pickle.dump(G_retarded,fileObject)
 fileObject.close()
 
 
-filename= folder_save + 'R_in'
-fileObject= open(filename, 'wb')
+filename = folder_save + 'R_in'
+fileObject = open(filename, 'wb')
 
 pickle.dump(R_in,fileObject)
 fileObject.close()
 
-filename= folder_save + 'R_out'
-fileObject= open(filename, 'wb')
+filename = folder_save + 'R_out'
+fileObject = open(filename, 'wb')
 
 pickle.dump(R_out,fileObject)
 fileObject.close()
 
-filename= folder_save + 'R_in_photon'
-fileObject= open(filename, 'wb')
+filename = folder_save + 'R_in_photon'
+fileObject = open(filename, 'wb')
 
 pickle.dump(R_in_photon,fileObject)
 fileObject.close()
 
-filename= folder_save + 'R_out_photon'
-fileObject= open(filename, 'wb')
+filename = folder_save + 'R_out_photon'
+fileObject = open(filename, 'wb')
 
 pickle.dump(R_out_photon,fileObject)
 fileObject.close()
 
 
-filename= folder_save + 'I'
-fileObject= open(filename, 'wb')
+filename = folder_save + 'I'
+fileObject = open(filename, 'wb')
 
 pickle.dump(I,fileObject)
 fileObject.close()
 
-filename= folder_save + 'I_'
-fileObject= open(filename, 'wb')
+filename = folder_save + 'I_'
+fileObject = open(filename, 'wb')
 
 pickle.dump(I_,fileObject)
 fileObject.close()
 
-filename= folder_save + 'J'
-fileObject= open(filename, 'wb')
+filename = folder_save + 'J'
+fileObject = open(filename, 'wb')
 
 pickle.dump(J,fileObject)
 fileObject.close()
