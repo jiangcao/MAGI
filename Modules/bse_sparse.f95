@@ -40,12 +40,12 @@ module bse_sparse
             it=it + k-i
         enddo
         if ((it-1)/=N) then 
-            print *, 'ERROR!'
+            print *, '  ERROR!'
             call abort
         endif        
-        print *, 'nm_dev=', nm_dev
-        print *, 'ndiag =', ndiag
-        print *, 'resized system size=', N 
+        print '("  nm_dev=             ", I20)', nm_dev
+        print '("  ndiag =             ", I20)', ndiag
+        print '("  resized system size=", I20)', N 
         ! determine coordinates of nnz
         nnz=0
         bandwidth=0
@@ -67,11 +67,11 @@ module bse_sparse
         blocksize = bandwidth
         num_blocks = ceiling( dble(N - nm_dev) / blocksize )  
         NT = blocksize * num_blocks         
-        print '("  total arrow size=", I20)', NT
-        print '("  arrow block size=", I20)', blocksize
+        print '("  total arrow size=      ", I20)', NT
+        print '("  arrow block size=      ", I20)', blocksize
         print '("  arrow number of blocks=", I20)', num_blocks
-        print '("  nonzero elements=", F0.3, " Million")', dble(nnz)/1e6
-        print '("  nonzero ratio = ", F0.3 ," %")', dble(nnz)/(dble(NT+nm_dev)**2)*100
+        print '("  nonzero elements=      ", F0.3, " Million")', dble(nnz)/1e6
+        print '("  nonzero ratio =        ", F0.3 ," %")', dble(nnz)/(dble(NT+nm_dev)**2)*100
     end subroutine bse_sparse_pre
 
     ! solve the Bethe-Salpeter Equation with selected inversion 
@@ -97,9 +97,10 @@ module bse_sparse
         integer,allocatable,dimension(:,:)::table
         integer,allocatable,dimension(:,:)::ipiv_diagonal
         integer,allocatable,dimension(:)::ipiv_arrow_tip
+        real(dp) :: start, finish
         !
         ! pre-process the sparsity pattern of system
-        print *, "  pre-process ... "
+        print *, " pre-process ... "
         allocate(table(2,nm_dev*nm_dev))
         call bse_sparse_pre(nm_dev,ndiag,N,nnz,table,blocksize,num_blocks)
         ! prepare the memory
@@ -109,7 +110,7 @@ module bse_sparse
         else 
             local_nnop = 1 ! compute one optical energy at a time
         endif 
-        print *, "  init memory ... "
+        print *, " init memory ... "
         allocate(Ldiag(blocksize,NT,local_nnop), source=czero) 
         allocate(Lupper(blocksize,NT-blocksize,local_nnop), source=czero)
         allocate(Llower(blocksize,NT-blocksize,local_nnop), source=czero) 
@@ -127,15 +128,17 @@ module bse_sparse
         allocate(ipiv_diagonal(blocksize,num_blocks), source=0)
         allocate(ipiv_arrow_tip(nm_dev), source=0)
         !
-        print *, "  start computation ... "
+        print *, " start computation ... "
         if (local_nnop > 1) then  
             ! build BTA blocks of RPA polarization L0 and 2-body interaction kernal K                     
-            call bse_sparse_build(alpha,spindeg,nm_dev,ndiag,nen,En,nops,nnop,blocksize,num_blocks,N,table,&
+            call bse_sparse_build(alpha,spindeg,nm_dev,ndiag,nen,En,nops,local_nnop,blocksize,num_blocks,N,table,&
                                     G_lesser,G_greater,G_retarded,W,V,&
                                     Ldiag,Lupper,Llower,Lupperarrow,Llowerarrow,Ltip,Ktip,Kdiag)       
-            do iop = 1,nnop
+            print *, " start sinv ... " 
+            start = omp_get_wtime()                                     
+            do iop = 1,local_nnop
                 ! build system matrix blocks (I - L0 @ K)
-                call bse_sparse_build_system(blocksize,num_blocks,nm_dev,nnop,iop,&
+                call bse_sparse_build_system(blocksize,num_blocks,nm_dev,local_nnop,iop,&
                                 Ldiag, Lupper, Llower, Llowerarrow, Lupperarrow, Ltip, &
                                 Kdiag, Ktip,&
                                 Adiag, Aupper, Alower, Alowerarrow, Aupperarrow, Atip)
@@ -164,6 +167,9 @@ module bse_sparse
                 !$omp end do
                 !$omp end parallel  
             enddo
+            finish = omp_get_wtime()
+            print *
+            print '("  computation time = ", F0.3 ," seconds.")', finish-start
         else 
             do iop = 1,nnop
                 ! build BTA blocks of RPA polarization L0 and 2-body interaction kernal K         
