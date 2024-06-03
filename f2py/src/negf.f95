@@ -1919,7 +1919,9 @@ module gf_dense
         complex(8),intent(out),dimension(nm,nm,nen,nky*nkz)::Sig_lesser,Sig_greater
         !---------
         integer::ie,ikd,ik ,iq,iqd
-        complex(8),allocatable::B(:,:),A(:,:) ! tmp matrix               
+        complex(8),allocatable::B(:,:),A(:,:) ! tmp matrix
+        Sig_lesser = czero
+        Sig_greater =czero               
         if (gamma_q) then 
 			iq=1
 			iqd=1
