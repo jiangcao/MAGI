@@ -1,4 +1,5 @@
-
+# Script realized by Loris CROS during its semester project with Dr. Jiang CAO, during spring 2024. End the 3/06/2024. If questions contact the locros@student.ethz.ch
+# This script permits to calculate quantum transport observables while injecting current by the sides. This work is still in progress.
 
 # %%
 import numpy as np

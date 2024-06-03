@@ -1,4 +1,5 @@
-
+# Script realized by Loris CROS during its semester project with Dr. Jiang CAO, during spring 2024. End the 3/06/2024. If questions contact the locros@student.ethz.ch
+# This script permits to calculate quantum transport observable taking into account electron-phonon and electron-photon interactions.
 
 # %%
 import numpy as np
