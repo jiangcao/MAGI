@@ -1,4 +1,9 @@
 *.mod
 *.o
 *.so
+*.swp
 
+*.dat
+*.swp 
+*.npz
+*.pyc
