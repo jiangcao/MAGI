@@ -43,9 +43,9 @@ module bse_sparse
             print *, '  ERROR!'
             call abort
         endif        
-        print '("  nm_dev=             ", I20)', nm_dev
-        print '("  ndiag =             ", I20)', ndiag
-        print '("  resized system size=", I20)', N 
+        print '("  nm_dev=                ", I10)', nm_dev
+        print '("  ndiag =                ", I10)', ndiag
+        print '("  resized system size=   ", I10)', N 
         ! determine coordinates of nnz
         nnz=0
         bandwidth=0
@@ -67,9 +67,9 @@ module bse_sparse
         blocksize = bandwidth
         num_blocks = ceiling( dble(N - nm_dev) / blocksize )  
         NT = blocksize * num_blocks         
-        print '("  total arrow size=      ", I20)', NT
-        print '("  arrow block size=      ", I20)', blocksize
-        print '("  arrow number of blocks=", I20)', num_blocks
+        print '("  total arrow size=      ", I10)', NT
+        print '("  arrow block size=      ", I10)', blocksize
+        print '("  arrow number of blocks=", I10)', num_blocks
         print '("  nonzero elements=      ", F0.3, " Million")', dble(nnz)/1e6
         print '("  nonzero ratio =        ", F0.3 ," %")', dble(nnz)/(dble(NT+nm_dev)**2)*100
     end subroutine bse_sparse_pre

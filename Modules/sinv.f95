@@ -20,7 +20,7 @@ module sinv
         integer,intent(out),dimension(diag_blocksize, n_diag_blocks) :: ipiv_diagonal
         integer,intent(out),dimension(arrow_blocksize)::ipiv_arrow_tip
         ! ---- local
-        integer :: i,h,l
+        integer :: i,h,l,j
         complex(dp),allocatable,dimension(:,:) :: L_inv_temp, U_inv_temp
         integer :: info, nn
         integer, dimension(:), allocatable :: ipiv        
@@ -62,7 +62,10 @@ module sinv
             AN0 = matmul(AN0 , U_inv_temp)
             !             
             L_inv_temp = czero
-            call zlacpy('L',nn,nn,A00,nn,L_inv_temp,nn)      
+            call zlacpy('L',nn,nn,A00,nn,L_inv_temp,nn)    
+            do j=1,nn 
+                L_inv_temp(j,j) = cone
+            enddo
             !      
             call zgetri(nn, L_inv_temp, nn, ipiv, work, nn*nn, info)
             if (info .ne. 0) then
@@ -116,6 +119,9 @@ module sinv
         !
         L_inv_temp = czero
         call zlacpy('L',nn,nn,A00,nn,L_inv_temp,nn)
+        do j=1,nn 
+            L_inv_temp(j,j) = cone
+        enddo
         !
         call zgetri(nn, L_inv_temp, nn, ipiv, work, nn*nn, info)
         if (info .ne. 0) then
@@ -157,7 +163,7 @@ module sinv
         complex(dp),intent(inout),dimension(:,:),target :: A_arrow_bottom_blocks,A_arrow_right_blocks,A_arrow_tip_block
         !        
         ! ---- local
-        integer :: i,h,l
+        integer :: i,h,l,j
         complex(dp),allocatable,dimension(:,:) :: L_inv_temp, U_inv_temp, L10,LN0,U0N,U01,LN1,U1N
         integer :: info, nn      
         complex(dp), dimension(:), allocatable :: work
@@ -186,6 +192,9 @@ module sinv
         L_inv_temp = czero
         call zlacpy('U',nn,nn,A11,nn, U_inv_temp ,nn)
         call zlacpy('L',nn,nn,A11,nn, L_inv_temp ,nn)
+        do j=1,nn 
+            L_inv_temp(j,j) = cone
+        enddo
         call zgetri(nn, U_inv_temp, nn, ipiv, work, nn*nn, info)
         if (info .ne. 0) then
             print *, 'SEVERE warning: zgetri failed, info=', info                
@@ -221,6 +230,9 @@ module sinv
             L_inv_temp = czero
             call zlacpy('U',nn,nn,A00,nn, U_inv_temp ,nn)
             call zlacpy('L',nn,nn,A00,nn, L_inv_temp ,nn)
+            do j=1,nn 
+                L_inv_temp(j,j) = cone
+            enddo
             call zgetri(nn, U_inv_temp, nn, ipiv, work, nn*nn, info)
             if (info .ne. 0) then
                 print *, 'SEVERE warning: zgetri failed, info=', info                
