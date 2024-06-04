@@ -280,9 +280,9 @@ module sinv
     !
     !
     ! computes the selected inverse of a complex block-tridiag-arrowhead (BTA) matrix 
-    ! in place using the LU factorization without explicitly returning the LU and pivot.
+    ! in place without explicitly returning the LU and pivot.
     ! This function is not a simple wrapper of [[zbtatrf]] and [[zbtatri]], but a different
-    ! implementation using the schur complement formulation.
+    ! implementation using the Schur complement formulation.
     subroutine zbtatrsinv( diag_blocksize, arrow_blocksize, n_diag_blocks, &
         A_diagonal_blocks,A_lower_diagonal_blocks,A_upper_diagonal_blocks, &
         A_arrow_bottom_blocks,A_arrow_right_blocks,A_arrow_tip_block )
