@@ -64,7 +64,7 @@ module bse_sparse
                 endif
             enddo 
         enddo
-        blocksize = bandwidth
+        blocksize = bandwidth 
         num_blocks = ceiling( dble(N - nm_dev) / blocksize )  
         NT = blocksize * num_blocks         
         print '("  total arrow size=      ", I10)', NT
@@ -128,15 +128,15 @@ module bse_sparse
         allocate(ipiv_diagonal(blocksize,num_blocks), source=0)
         allocate(ipiv_arrow_tip(nm_dev), source=0)
         !
-        print *, " start computation ... "
         if (local_nnop > 1) then  
             ! build BTA blocks of RPA polarization L0 and 2-body interaction kernal K                     
             call bse_sparse_build(alpha,spindeg,nm_dev,ndiag,nen,En,nops,local_nnop,blocksize,num_blocks,N,table,&
                                     G_lesser,G_greater,G_retarded,W,V,&
                                     Ldiag,Lupper,Llower,Lupperarrow,Llowerarrow,Ltip,Ktip,Kdiag)       
-            print *, " start sinv ... " 
+            print *, " start selected inversion " 
             start = omp_get_wtime()                                     
             do iop = 1,local_nnop
+                write(*, '(A)', advance="no") '.'
                 ! build system matrix blocks (I - L0 @ K)
                 call bse_sparse_build_system(blocksize,num_blocks,nm_dev,local_nnop,iop,&
                                 Ldiag, Lupper, Llower, Llowerarrow, Lupperarrow, Ltip, &
@@ -149,6 +149,8 @@ module bse_sparse
                 call zbtatri( blocksize, nm_dev, num_blocks, &
                             Adiag,Alower,Aupper,Alowerarrow,Aupperarrow,Atip, &
                             ipiv_diagonal,ipiv_arrow_tip)
+                ! call zbtatrsinv(blocksize, nm_dev, num_blocks, &
+                !             Adiag,Alower,Aupper,Alowerarrow,Aupperarrow,Atip)
                 ! compute P_retarded
                 ! 
                 Atip = matmul( Atip , Ltip(:,:,iop) )
@@ -188,6 +190,8 @@ module bse_sparse
                 call zbtatri( blocksize, nm_dev, num_blocks, &
                             Adiag,Alower,Aupper,Alowerarrow,Aupperarrow,Atip, &
                             ipiv_diagonal,ipiv_arrow_tip)
+                ! call zbtatrsinv(blocksize, nm_dev, num_blocks, &
+                !             Adiag,Alower,Aupper,Alowerarrow,Aupperarrow,Atip)
                 ! compute P_retarded
                 ! 
                 Atip = matmul( Atip , Ltip(:,:,1) )
@@ -498,7 +502,6 @@ module bse_sparse
         real(dp) :: start, finish
         integer :: i,j,k,l,p,q,ie,row,col,it,iop,ib,NT,nepoch,fliped_row,fliped_col                
         !
-        print *,'  init memory ...'
         Ltip = czero
         Ldiag = czero
         Lupper = czero

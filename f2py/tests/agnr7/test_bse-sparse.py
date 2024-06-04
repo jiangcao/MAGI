@@ -31,7 +31,7 @@ if __name__=='__main__':
 
    ns = 2
    length = 10
-   nen = 320
+   nen = 32
    nsub = 1
    nky=1
    nkz=1

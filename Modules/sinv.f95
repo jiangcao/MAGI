@@ -295,31 +295,30 @@ module sinv
         integer :: i,h,l,j
         complex(dp),allocatable,dimension(:,:) :: tmp1, tmp2, tmp3, tmp4, tmp5
         integer :: info, nn
-        complex(dp), dimension(:,:), pointer :: X00,A01,A10,A11,A0N,AN0,A1N,AN1,ANN
+        complex(dp),dimension(:,:),pointer :: X00,A01,A10,A11,A0N,AN0,A1N,AN1,ANN
         !
         nn = diag_blocksize        
         allocate(tmp1(nn,nn))
-        allocate(tmp2(nn,nn))
-        allocate(tmp3(nn,nn))
-        allocate(tmp4(nn,nn))
-        allocate(tmp5(nn,nn))
+        allocate(tmp2(nn,arrow_blocksize))
         !
-        h = 1 * diag_blocksize
+        h = diag_blocksize
         l = 1
         X00 => A_diagonal_blocks(:, l : h)
         call invert_inplace( X00, nn )
         !        
         ! forward pass
         ANN => A_arrow_tip_block
-        do i = 2, n_diag_blocks
-            h = i * diag_blocksize
-            l = (i-1) * diag_blocksize + 1
+        do i = 2, n_diag_blocks            
+            h = h + diag_blocksize
+            l = l + diag_blocksize
             X00 => A_diagonal_blocks(:, l-diag_blocksize : h-diag_blocksize)
             A11 => A_diagonal_blocks(:, l : h)
             A10 => A_lower_diagonal_blocks(:, l-diag_blocksize : h-diag_blocksize)
             A01 => A_upper_diagonal_blocks(:, l-diag_blocksize : h-diag_blocksize)
             AN1 => A_arrow_bottom_blocks(: , l : h)
             A1N => A_arrow_right_blocks(l : h , :)
+            AN0 => A_arrow_bottom_blocks(: , l-diag_blocksize : h-diag_blocksize)
+            A0N => A_arrow_right_blocks(l-diag_blocksize : h-diag_blocksize , :)
             ! X11 = ( A11 - A10 @ X00 @ A01 )^{-1}
             tmp1 = matmul(X00 , A01)
             A11 = A11 - matmul(A10 , tmp1)
@@ -327,20 +326,15 @@ module sinv
             ! AN1 = AN1 - AN0 @ X00 @ A01            
             AN1 = AN1 - matmul(AN0, tmp1)
             ! A1N = A1N - A10 @ X00 @ A0N
-            tmp1 = matmul(X00 , A0N)
-            A1N = A1N - matmul(A10, tmp1)
+            tmp2 = matmul(X00 , A0N)
+            A1N = A1N - matmul(A10, tmp2)
             ! ANN = ANN - AN0 @ X00 @ A0N 
-            ANN = ANN - matmul(AN0, tmp1)            
+            ANN = ANN - matmul(AN0, tmp2)            
         enddo 
-        ! XNN = (ANN - AN0 @ X00 @ A0N)^{-1}
-        l = (n_diag_blocks - 1) * diag_blocksize + 1
-        h = n_diag_blocks * diag_blocksize
-        AN0 => A_arrow_bottom_blocks(:, l:h)
-        A0N => A_arrow_right_blocks(l:h, :)
-        X00 => A_diagonal_blocks(:, l:h)        
-        tmp1 = matmul(X00 , A0N)
-        ANN = ANN - matmul( AN0 , tmp1)
-        call invert_inplace( ANN , nn )
+        ! XNN = (ANN - AN1 @ X11 @ A1N)^{-1}          
+        tmp2 = matmul(A11 , A1N)
+        ANN = ANN - matmul( AN1 , tmp2)
+        call invert_inplace( ANN , arrow_blocksize )
         !
         ! backward pass
         ! X00 = X00 + X00 @ A0N @ XNN @ AN0 @ X00
@@ -352,6 +346,12 @@ module sinv
         ! X0N = - X00 @ A0N @ XNN
         A0N = - matmul(tmp1, ANN)
         !
+        deallocate(tmp1,tmp2)
+        allocate(tmp1(nn,nn))
+        allocate(tmp2(nn,arrow_blocksize))
+        allocate(tmp3(nn,nn))
+        allocate(tmp4(arrow_blocksize,nn))
+        allocate(tmp5(nn,nn))
         do i = n_diag_blocks - 1 , 1 , -1 
             h = i * diag_blocksize
             l = (i-1) * diag_blocksize + 1
@@ -360,7 +360,9 @@ module sinv
             A10 => A_lower_diagonal_blocks(:, l : h)
             A01 => A_upper_diagonal_blocks(:, l : h)
             AN0 => A_arrow_bottom_blocks(: , l : h)
+            AN1 => A_arrow_bottom_blocks(: , l+diag_blocksize : h+diag_blocksize)
             A0N => A_arrow_right_blocks(l : h , :)
+            A1N => A_arrow_right_blocks(l+diag_blocksize : h+diag_blocksize , :)
             ! B1 = (A01 @ X11 + A0N @ XN1)
             tmp1 = matmul( A01 , A11 ) + matmul( A0N, AN1 )
             ! B2 = (A01 @ X1N + A0N @ XNN )
@@ -373,7 +375,7 @@ module sinv
             A0N = - matmul( X00 , tmp2 )
             ! X10 = - (X11 @ A10 + X1N @ AN0) @ X00
             ! C1 = (X11 @ A10 + X1N @ AN0)
-            tmp3 = matmul( A11 , A10) + matmul( A1N , AN0 )
+            tmp3 = matmul( A11 , A10 ) + matmul( A1N , AN0 )
             ! X10 = - C1 @ X00
             A10 = - matmul( tmp3 , X00)
             ! XN0 = - (XN1 @ A10 + XNN @ AN0) @ X00
@@ -399,13 +401,12 @@ module sinv
         call zgetrf(nn, nn, A, nn, ipiv, info)
         if (info .ne. 0) then
             print *, 'SEVERE warning: zgetrf failed, info=', info
-            A = czero
-        else
-            call zgetri(nn, A, nn, ipiv, work, nn*nn, info)
-            if (info .ne. 0) then
-                print *, 'SEVERE warning: zgetri failed, info=', info
-                A = czero
-            end if
+            call abort
+        endif
+        call zgetri(nn, A, nn, ipiv, work, nn*nn, info)
+        if (info .ne. 0) then
+            print *, 'SEVERE warning: zgetri failed, info=', info
+            call abort
         end if
     end subroutine invert_inplace
 
