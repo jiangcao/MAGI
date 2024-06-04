@@ -5,8 +5,8 @@ module sinv
     implicit none
     contains
     !
-    ! computes an LU factorization of a complex block-tridiag-arrowhead (BTA) matrix in place
-    ! it calls LAPACK `zgetrf` and `zgetri` functions
+    ! computes an LU factorization of a complex block-tridiag-arrowhead (BTA) 
+    ! matrix in place. It calls LAPACK `zgetrf` and `zgetri` functions
     subroutine zbtatrf( diag_blocksize, arrow_blocksize, n_diag_blocks, &
         A_diagonal_blocks,A_lower_diagonal_blocks,A_upper_diagonal_blocks, &
         A_arrow_bottom_blocks,A_arrow_right_blocks,A_arrow_tip_block, &
@@ -46,6 +46,7 @@ module sinv
             endif
             ipiv_diagonal(:,i) = ipiv
             !Compute lower factors
+            U_inv_temp = czero
             call zlacpy('U',nn,nn,A00,nn,U_inv_temp,nn)            
             !
             call zgetri(nn, U_inv_temp, nn, ipiv, work, nn*nn, info)            
@@ -60,6 +61,7 @@ module sinv
             AN0 => A_arrow_bottom_blocks(:, l : h)
             AN0 = matmul(AN0 , U_inv_temp)
             !             
+            L_inv_temp = czero
             call zlacpy('L',nn,nn,A00,nn,L_inv_temp,nn)      
             !      
             call zgetri(nn, L_inv_temp, nn, ipiv, work, nn*nn, info)
@@ -99,7 +101,8 @@ module sinv
             call abort
         endif
         ipiv_diagonal(:,n_diag_blocks) = ipiv
-        ! L_{ndb+1, ndb} = A_{ndb+1, ndb} @ U_{ndb, ndb}^{-1}
+        !
+        U_inv_temp = czero
         call zlacpy('U',nn,nn,A00,nn,U_inv_temp,nn)
         !
         call zgetri(nn, U_inv_temp, nn, ipiv, work, nn*nn, info)
@@ -107,10 +110,11 @@ module sinv
             print *, 'SEVERE warning: zgetri failed, info=', info       
             call abort         
         end if
+        ! L_{ndb+1, ndb} = A_{ndb+1, ndb} @ U_{ndb, ndb}^{-1}
         AN0 => A_arrow_bottom_blocks(:, l : h)
-        AN0 = matmul(AN0 , U_inv_temp)
-        ! U_{ndb, ndb+1} = L_{ndb, ndb}^{-1} @ A_{ndb, ndb+1}
+        AN0 = matmul(AN0 , U_inv_temp)        
         !
+        L_inv_temp = czero
         call zlacpy('L',nn,nn,A00,nn,L_inv_temp,nn)
         !
         call zgetri(nn, L_inv_temp, nn, ipiv, work, nn*nn, info)
@@ -118,6 +122,7 @@ module sinv
             print *, 'SEVERE warning: zgetri failed, info=', info     
             call abort           
         end if
+        ! U_{ndb, ndb+1} = L_{ndb, ndb}^{-1} @ A_{ndb, ndb+1}
         A0N => A_arrow_right_blocks(l : h, :)
         A0N = matmul(L_inv_temp, A0N)
         ! A_{ndb+1, ndb+1} = A_{ndb+1, ndb+1} - L_{ndb+1, ndb} @ U_{ndb, ndb+1}
@@ -137,8 +142,8 @@ module sinv
         ipiv_arrow_tip(:) = ipiv        
     end subroutine zbtatrf
     !
-    ! computes the inverse of a complex block-tridiag-arrowhead (BTA) matrix in place
-    ! using the LU factorization computed by [zbtatrf]
+    ! computes the inverse of a complex block-tridiag-arrowhead (BTA) matrix 
+    ! in place using the LU factorization computed by [zbtatrf]
     subroutine zbtatri( diag_blocksize, arrow_blocksize, n_diag_blocks, &
         A_diagonal_blocks,A_lower_diagonal_blocks,A_upper_diagonal_blocks, &
         A_arrow_bottom_blocks,A_arrow_right_blocks,A_arrow_tip_block, &
@@ -150,21 +155,21 @@ module sinv
         ! in & out
         complex(dp),intent(inout),dimension(:,:),target :: A_diagonal_blocks,A_lower_diagonal_blocks,A_upper_diagonal_blocks
         complex(dp),intent(inout),dimension(:,:),target :: A_arrow_bottom_blocks,A_arrow_right_blocks,A_arrow_tip_block
-        ! out       
+        !        
         ! ---- local
         integer :: i,h,l
-        complex(dp),allocatable,dimension(:,:) :: L_inv_temp, U_inv_temp, L10,LN0,U01
+        complex(dp),allocatable,dimension(:,:) :: L_inv_temp, U_inv_temp, L10,LN0,U0N,U01,LN1,U1N
         integer :: info, nn      
         complex(dp), dimension(:), allocatable :: work
         integer, dimension(:), allocatable :: ipiv  
-        complex(dp), dimension(:,:), pointer :: A,A10,A00,A01,A11,A1N,AN1,A0N,AN0    
+        complex(dp), dimension(:,:), pointer :: A10,A00,A01,A11,A1N,AN1,A0N,AN0,ANN    
         !
         nn = arrow_blocksize
         allocate(work(nn*nn))
         allocate(ipiv(nn))        
         ipiv = ipiv_arrow_tip
-        A => A_arrow_tip_block
-        call zgetri(nn, A, nn, ipiv, work, nn*nn, info)
+        ANN => A_arrow_tip_block
+        call zgetri(nn, ANN, nn, ipiv, work, nn*nn, info)
         !
         nn = diag_blocksize
         deallocate(work,ipiv)
@@ -175,12 +180,12 @@ module sinv
         !
         l = diag_blocksize * (n_diag_blocks-1) + 1
         h = diag_blocksize * n_diag_blocks
-        A => A_diagonal_blocks(:, l:h)
+        A11 => A_diagonal_blocks(:, l:h)
         ipiv = ipiv_diagonal(:,n_diag_blocks)
         U_inv_temp = czero
         L_inv_temp = czero
-        call zlacpy('U',nn,nn,A,nn, U_inv_temp ,nn)
-        call zlacpy('L',nn,nn,A,nn, L_inv_temp ,nn)
+        call zlacpy('U',nn,nn,A11,nn, U_inv_temp ,nn)
+        call zlacpy('L',nn,nn,A11,nn, L_inv_temp ,nn)
         call zgetri(nn, U_inv_temp, nn, ipiv, work, nn*nn, info)
         if (info .ne. 0) then
             print *, 'SEVERE warning: zgetri failed, info=', info                
@@ -191,17 +196,22 @@ module sinv
             print *, 'SEVERE warning: zgetri failed, info=', info                
             call abort
         end if
+        allocate(LN1(diag_blocksize,diag_blocksize))
+        allocate(U1N(diag_blocksize,diag_blocksize))
         AN1 => A_arrow_bottom_blocks(:, l:h)
-        AN1 = - matmul(matmul(A_arrow_tip_block , AN1), L_inv_temp)
+        LN1 = AN1
+        AN1 = - matmul(matmul(ANN , AN1), L_inv_temp)
         A1N => A_arrow_right_blocks(l:h, :)
-        A1N = - matmul(matmul(U_inv_temp, A1N), A_arrow_tip_block)
+        U1N = A1N
+        A1N = - matmul(matmul(U_inv_temp, A1N), ANN)
         A11 => A_diagonal_blocks(:, l:h)
         A11 = matmul( U_inv_temp - &
-                    matmul( A_arrow_right_blocks(l:h, :) , A_arrow_bottom_blocks(:, l:h)), &
+                    matmul( A1N , LN1), &
                     L_inv_temp)
         allocate(U01(diag_blocksize,diag_blocksize))
         allocate(L10(diag_blocksize,diag_blocksize))
         allocate(LN0(arrow_blocksize,diag_blocksize))
+        allocate(U0N(diag_blocksize,diag_blocksize))
         do i = n_diag_blocks-1, 1, -1
             l = diag_blocksize * (i-1) + 1
             h = diag_blocksize * i
@@ -228,26 +238,27 @@ module sinv
             A1N => A_arrow_right_blocks((l+diag_blocksize):(h+diag_blocksize) , :)
             AN0 => A_arrow_bottom_blocks(:, l:h)
             LN0 = AN0
-            A10 = matmul( - A11 , A10)
-            A10 = A10 - matmul( A1N , AN0 )
+            A10 = - matmul( A11 , L10)
+            A10 = A10 - matmul( A1N , LN0 )
             A10 = matmul( A10 , L_inv_temp)
             !
             A01 => A_upper_diagonal_blocks(:, l:h)
             U01 = A01
-            A01 = matmul( - A01 , A11 )
-            A0N => A_arrow_right_blocks(l:h, :)
+            A0N => A_arrow_right_blocks(l:h, :)         
+            U0N = A0N   
             AN1 => A_arrow_bottom_blocks(:, (l+diag_blocksize):(h+diag_blocksize))
-            A01 = A01 - matmul( A0N, AN1 )
+            A01 = - matmul( U01 , A11 )            
+            A01 = A01 - matmul( U0N, AN1 )
             A01 = matmul(U_inv_temp , A01)
             ! arrow part
-            AN0 = matmul( -AN1 , L10 ) - matmul( A_arrow_tip_block , LN0 )
+            AN0 = - matmul( AN1 , L10 ) - matmul( ANN , LN0 )
             AN0 = matmul( AN0 , L_inv_temp)
             !
-            A0N = matmul( -U01 , A1N ) - matmul( A0N , A_arrow_tip_block)
+            A0N = - matmul( U01 , A1N ) - matmul( U0N , ANN)
             A0N = matmul( U_inv_temp , A0N )
             ! diag part
             A00 = U_inv_temp - matmul( A01,L10 ) - matmul( A0N, LN0 ) 
-            A00 = matmul(A00,L_inv_temp)
+            A00 = matmul( A00,L_inv_temp )
         enddo                     
     !
     end subroutine zbtatri

@@ -8,16 +8,16 @@ module block_sparse
     ! ----------------------------------
     !
     ! Note that the first N elements in the data array `v(:)` are the main diagonal 
-    ! of matrix, followed by simply stacking CSR of each block continuously (without 
+    ! of matrix, followed by simply stacking CSR of each block continuously (exculding 
     ! the main diagonal elements! Otherwise, those elements are simply  
     ! overwritten by `v(1:N)`)
     ! The sizes of diagonal blocks are defined by `block_sizes`. The
     ! diagonal blocks have to be square. 
     ! The data pointer `ind_ptr` allows an easy and direct access to the i-th block 
     ! on i-th diagonal. 
-    ! The `ind_ptr(:,iblock,idiag)` is the CSR row pointer of the corresponding block, 
-    ! pointing to the starting position of each row in the data array `v`. The `col_index` 
-    ! is the CSR column index (just within block, NOT the global column index in the entire matrix). 
+    ! The `ind_ptr(row:row+1,iblock,idiag)` is the CSR row pointer of the corresponding block, 
+    ! pointing to the starting position in the data array `v` of `row` and `row+1`. The `col_index` 
+    ! is the CSR column index array (just within the block, NOT the global column index of the entire sparse matrix). 
     !
     ! Returns a dense block matrix of size (block_size x block_size) filled with values from 
     !   array `v` , the `col_index` is like CSR index array but with column index within block matrix
