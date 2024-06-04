@@ -63,7 +63,7 @@ module bse_sparse
                 endif
             enddo 
         enddo
-        blocksize = bandwidth/2 
+        blocksize = bandwidth
         num_blocks = ceiling( dble(N - nm_dev) / blocksize )  
         NT = blocksize * num_blocks         
         print '("  total arrow size=", I20)', NT
@@ -124,10 +124,8 @@ module bse_sparse
                     Alowerarrow(i,j) = - Llowerarrow(i,j,iop) * Kdiag(j)
                 enddo
             enddo        
-            ! A_dx = - L_dx * K_xx
-            Aupperarrow = matmul(Lupperarrow(:,:,iop) , Ktip)
-            Aupperarrow = - Aupperarrow
-            ! call zgemm('n','n',N,nm_dev,nm_dev,-cone,Lupperarrow(:,:,iop),N,Ktip,nm_dev,czero,Aupperarrow,N)
+            ! A_dx = - L_dx * K_xx            
+            call zgemm('n','n',N,nm_dev,nm_dev,-cone,Lupperarrow(:,:,iop),N,Ktip,nm_dev,czero,Aupperarrow,N)
             ! A_dd
             ! diagonal blocks         
             do concurrent (i=1:blocksize)
