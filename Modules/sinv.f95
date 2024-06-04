@@ -1,4 +1,6 @@
 module sinv
+    ! selected inversion of a structured sparse matrices
+    ! The algorithm is based on the python library (SerinV)[https://github.com/vincent-maillou/serinv] 
     use parameters_mod,only:dp,c1i,czero,cone    
     use omp_lib
     !
@@ -6,7 +8,8 @@ module sinv
     contains
     !
     ! computes an LU factorization of a complex block-tridiag-arrowhead (BTA) 
-    ! matrix in place. It calls LAPACK `zgetrf` and `zgetri` functions
+    ! matrix in place. It calls LAPACK `zgetrf` and `zgetri` functions on the
+    ! dense blocks.
     subroutine zbtatrf( diag_blocksize, arrow_blocksize, n_diag_blocks, &
         A_diagonal_blocks,A_lower_diagonal_blocks,A_upper_diagonal_blocks, &
         A_arrow_bottom_blocks,A_arrow_right_blocks,A_arrow_tip_block, &
@@ -149,7 +152,7 @@ module sinv
     end subroutine zbtatrf
     !
     ! computes the inverse of a complex block-tridiag-arrowhead (BTA) matrix 
-    ! in place using the LU factorization computed by [zbtatrf]
+    ! in place using the LU factorization computed by [[zbtatrf]]
     subroutine zbtatri( diag_blocksize, arrow_blocksize, n_diag_blocks, &
         A_diagonal_blocks,A_lower_diagonal_blocks,A_upper_diagonal_blocks, &
         A_arrow_bottom_blocks,A_arrow_right_blocks,A_arrow_tip_block, &
@@ -274,5 +277,136 @@ module sinv
         enddo                     
     !
     end subroutine zbtatri
-    
+    !
+    !
+    ! computes the selected inverse of a complex block-tridiag-arrowhead (BTA) matrix 
+    ! in place using the LU factorization without explicitly returning the LU and pivot.
+    ! This function is not a simple wrapper of [[zbtatrf]] and [[zbtatri]], but a different
+    ! implementation using the schur complement formulation.
+    subroutine zbtatrsinv( diag_blocksize, arrow_blocksize, n_diag_blocks, &
+        A_diagonal_blocks,A_lower_diagonal_blocks,A_upper_diagonal_blocks, &
+        A_arrow_bottom_blocks,A_arrow_right_blocks,A_arrow_tip_block )
+        ! in
+        integer,intent(in) :: diag_blocksize, arrow_blocksize, n_diag_blocks
+        ! in & out 
+        complex(dp),intent(inout),dimension(:,:),target :: A_diagonal_blocks,A_lower_diagonal_blocks,A_upper_diagonal_blocks
+        complex(dp),intent(inout),dimension(:,:),target :: A_arrow_bottom_blocks,A_arrow_right_blocks,A_arrow_tip_block
+        ! ---- local
+        integer :: i,h,l,j
+        complex(dp),allocatable,dimension(:,:) :: tmp1, tmp2, tmp3, tmp4, tmp5
+        integer :: info, nn
+        complex(dp), dimension(:,:), pointer :: X00,A01,A10,A11,A0N,AN0,A1N,AN1,ANN
+        !
+        nn = diag_blocksize        
+        allocate(tmp1(nn,nn))
+        allocate(tmp2(nn,nn))
+        allocate(tmp3(nn,nn))
+        allocate(tmp4(nn,nn))
+        allocate(tmp5(nn,nn))
+        !
+        h = 1 * diag_blocksize
+        l = 1
+        X00 => A_diagonal_blocks(:, l : h)
+        call invert_inplace( X00, nn )
+        !        
+        ! forward pass
+        ANN => A_arrow_tip_block
+        do i = 2, n_diag_blocks
+            h = i * diag_blocksize
+            l = (i-1) * diag_blocksize + 1
+            X00 => A_diagonal_blocks(:, l-diag_blocksize : h-diag_blocksize)
+            A11 => A_diagonal_blocks(:, l : h)
+            A10 => A_lower_diagonal_blocks(:, l-diag_blocksize : h-diag_blocksize)
+            A01 => A_upper_diagonal_blocks(:, l-diag_blocksize : h-diag_blocksize)
+            AN1 => A_arrow_bottom_blocks(: , l : h)
+            A1N => A_arrow_right_blocks(l : h , :)
+            ! X11 = ( A11 - A10 @ X00 @ A01 )^{-1}
+            tmp1 = matmul(X00 , A01)
+            A11 = A11 - matmul(A10 , tmp1)
+            call invert_inplace(A11, nn)
+            ! AN1 = AN1 - AN0 @ X00 @ A01            
+            AN1 = AN1 - matmul(AN0, tmp1)
+            ! A1N = A1N - A10 @ X00 @ A0N
+            tmp1 = matmul(X00 , A0N)
+            A1N = A1N - matmul(A10, tmp1)
+            ! ANN = ANN - AN0 @ X00 @ A0N 
+            ANN = ANN - matmul(AN0, tmp1)            
+        enddo 
+        ! XNN = (ANN - AN0 @ X00 @ A0N)^{-1}
+        l = (n_diag_blocks - 1) * diag_blocksize + 1
+        h = n_diag_blocks * diag_blocksize
+        AN0 => A_arrow_bottom_blocks(:, l:h)
+        A0N => A_arrow_right_blocks(l:h, :)
+        X00 => A_diagonal_blocks(:, l:h)        
+        tmp1 = matmul(X00 , A0N)
+        ANN = ANN - matmul( AN0 , tmp1)
+        call invert_inplace( ANN , nn )
+        !
+        ! backward pass
+        ! X00 = X00 + X00 @ A0N @ XNN @ AN0 @ X00
+        tmp1 = matmul(X00,A0N)
+        tmp2 = matmul(AN0,X00)
+        X00 = X00 + matmul(matmul( tmp1 , ANN) , tmp2)  
+        ! XN0 = - XNN @ AN0 @ X00
+        AN0 = - matmul(ANN, tmp2)        
+        ! X0N = - X00 @ A0N @ XNN
+        A0N = - matmul(tmp1, ANN)
+        !
+        do i = n_diag_blocks - 1 , 1 , -1 
+            h = i * diag_blocksize
+            l = (i-1) * diag_blocksize + 1
+            X00 => A_diagonal_blocks(:, l : h)
+            A11 => A_diagonal_blocks(:, l+diag_blocksize : h+diag_blocksize)
+            A10 => A_lower_diagonal_blocks(:, l : h)
+            A01 => A_upper_diagonal_blocks(:, l : h)
+            AN0 => A_arrow_bottom_blocks(: , l : h)
+            A0N => A_arrow_right_blocks(l : h , :)
+            ! B1 = (A01 @ X11 + A0N @ XN1)
+            tmp1 = matmul( A01 , A11 ) + matmul( A0N, AN1 )
+            ! B2 = (A01 @ X1N + A0N @ XNN )
+            tmp2 = matmul( A01 , A1N ) + matmul( A0N, ANN )
+            ! X01 = - X00 @ (A01 @ X11 + A0N @ XN1)
+            ! X01 = - X00 @ B1
+            A01 = - matmul( X00 , tmp1 )
+            ! X0N = - X00 @ (A01 @ X1N + A0N @ XNN )
+            ! X0N = - X00 @ B2
+            A0N = - matmul( X00 , tmp2 )
+            ! X10 = - (X11 @ A10 + X1N @ AN0) @ X00
+            ! C1 = (X11 @ A10 + X1N @ AN0)
+            tmp3 = matmul( A11 , A10) + matmul( A1N , AN0 )
+            ! X10 = - C1 @ X00
+            A10 = - matmul( tmp3 , X00)
+            ! XN0 = - (XN1 @ A10 + XNN @ AN0) @ X00
+            ! C2 = (XN1 @ A10 + XNN @ AN0)
+            tmp4 = matmul( AN1 , A10 ) + matmul( ANN , AN0 )
+            ! XN0 = - C2 @ X00
+            AN0 = - matmul( tmp4 , X00)
+            ! X00 = X00 + X00 @ (B1 @ C1 + B2 @ C2) @ X00
+            tmp5 = matmul( tmp1 , tmp3 ) + matmul(tmp2 , tmp4)
+            X00 = X00 + matmul(matmul( X00 , tmp5) , X00)
+        enddo 
+    end subroutine zbtatrsinv
+
+
+    ! matrix inversion
+    subroutine invert_inplace(A, nn)
+        integer :: info, nn
+        integer, dimension(:), allocatable :: ipiv
+        complex(dp), dimension(nn, nn), intent(inout) :: A
+        complex(dp), dimension(:), allocatable :: work
+        allocate(work(nn*nn))
+        allocate(ipiv(nn))
+        call zgetrf(nn, nn, A, nn, ipiv, info)
+        if (info .ne. 0) then
+            print *, 'SEVERE warning: zgetrf failed, info=', info
+            A = czero
+        else
+            call zgetri(nn, A, nn, ipiv, work, nn*nn, info)
+            if (info .ne. 0) then
+                print *, 'SEVERE warning: zgetri failed, info=', info
+                A = czero
+            end if
+        end if
+    end subroutine invert_inplace
+
 end module sinv
