@@ -283,7 +283,7 @@ module sinv
     ! in place without explicitly returning the LU and pivot.
     ! This function is not a simple wrapper of [[zbtatrf]] and [[zbtatri]], but a different
     ! implementation using the Schur complement formulation.
-    subroutine zbtatrsinv( diag_blocksize, arrow_blocksize, n_diag_blocks, &
+    subroutine zbtasinv( diag_blocksize, arrow_blocksize, n_diag_blocks, &
         A_diagonal_blocks,A_lower_diagonal_blocks,A_upper_diagonal_blocks, &
         A_arrow_bottom_blocks,A_arrow_right_blocks,A_arrow_tip_block )
         ! in
@@ -387,7 +387,7 @@ module sinv
             tmp5 = matmul( tmp1 , tmp3 ) + matmul(tmp2 , tmp4)
             X00 = X00 + matmul(matmul( X00 , tmp5) , X00)
         enddo 
-    end subroutine zbtatrsinv
+    end subroutine zbtasinv
 
 
     ! matrix inversion

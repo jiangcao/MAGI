@@ -138,21 +138,21 @@ module bse_sparse
             do iop = 1,local_nnop
                 write(*, '(A)', advance="no") '.'
                 ! build system matrix blocks (I - L0 @ K)
-                print *, "  build system "
+                ! print *, "  build system "
                 call bse_sparse_build_system(blocksize,num_blocks,nm_dev,local_nnop,iop,&
                                 Ldiag, Lupper, Llower, Llowerarrow, Lupperarrow, Ltip, &
                                 Kdiag, Ktip,&
                                 Adiag, Aupper, Alower, Alowerarrow, Aupperarrow, Atip)
                 ! selected inversion of the system matrix
-                print *, "  factorize "
+                ! print *, "  factorize "
                 call zbtatrf( blocksize, nm_dev, num_blocks, &
                             Adiag,Alower,Aupper,Alowerarrow,Aupperarrow,Atip, &
                             ipiv_diagonal,ipiv_arrow_tip)
-                print *, "  invert "
+                ! print *, "  invert "
                 call zbtatri( blocksize, nm_dev, num_blocks, &
                             Adiag,Alower,Aupper,Alowerarrow,Aupperarrow,Atip, &
                             ipiv_diagonal,ipiv_arrow_tip)
-                ! call zbtatrsinv(blocksize, nm_dev, num_blocks, &
+                ! call zbtasinv(blocksize, nm_dev, num_blocks, &
                 !             Adiag,Alower,Aupper,Alowerarrow,Aupperarrow,Atip)
                 ! compute P_retarded
                 ! 
@@ -193,7 +193,7 @@ module bse_sparse
                 call zbtatri( blocksize, nm_dev, num_blocks, &
                             Adiag,Alower,Aupper,Alowerarrow,Aupperarrow,Atip, &
                             ipiv_diagonal,ipiv_arrow_tip)
-                ! call zbtatrsinv(blocksize, nm_dev, num_blocks, &
+                ! call zbtasinv(blocksize, nm_dev, num_blocks, &
                 !             Adiag,Alower,Aupper,Alowerarrow,Aupperarrow,Atip)
                 ! compute P_retarded
                 ! 
