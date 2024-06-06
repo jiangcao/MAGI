@@ -13,7 +13,8 @@ from wannier import wannierham
 import matplotlib.pyplot as plt
 import os
 os.environ["OMP_NUM_THREADS"] = "20"
-from sinv import sinv_tridiagonal_arrowhead
+# from sinv import sinv_tridiagonal_arrowhead
+from serinv.sequential import ddbtasinv
 import time
 
 if __name__=='__main__':   
@@ -31,7 +32,7 @@ if __name__=='__main__':
 
    ns = 2
    length = 10
-   nen = 32
+   nen = 320
    nsub = 1
    nky=1
    nkz=1
@@ -110,7 +111,7 @@ if __name__=='__main__':
    eps_M_sinv2=np.zeros(nen//nstep,dtype='complex')
    eps_en=np.zeros(nen//nstep)
 
-   Ephmin = 0.5
+   Ephmin = 0.8
    nnop= int( (4.0-Ephmin)/dE/nstep )
    # nnop = 5
    nops=np.arange(nnop)*nstep + int(Ephmin / dE)
@@ -153,7 +154,8 @@ if __name__=='__main__':
                         eps_M=eps_M,
                         eps_en=eps_en)
    
-   print("--- Start sparse BSE solver ---")
+   print("")
+   print("--- Start sparse BSE solver with LU ---")
       
    start_t = time.time()
 
@@ -185,6 +187,7 @@ if __name__=='__main__':
                         eps_M_sinv=eps_M_sinv,
                         eps_en=eps_en)
 
+   print("--- Start pre-processing for SINV solver ---")
 
    N,nnz,table,blocksize,num_blocks = bse_sparse.bse_sparse_pre(nm_dev=nm_dev,ndiag=ndiag)
    # resize
@@ -195,7 +198,9 @@ if __name__=='__main__':
                g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,w=W0_r,v=v,
                blocksize=blocksize,num_blocks=num_blocks,n=N,table=table)
 
-   print("--- Start SINV solver ---")
+   print("")
+   print("--- Start SINV solver with Schur ---")
+   start_t = time.time()
 
    for iop in range(nnop): 
       Adiag,Aupper,Alower,Alowerarrow,Aupperarrow,Atip = bse_sparse.bse_sparse_build_system(
@@ -203,6 +208,12 @@ if __name__=='__main__':
             ldiag=Ldiag, lupper=Lupper, llower=Llower, llowerarrow=Llowerarrow, 
             lupperarrow=Lupperarrow, ltip=Ltip, kdiag=Kdiag, ktip=Ktip )
       
+      print("reshaping ...")      
+
+      newAdiag,newAupper,newAlower,newAlowerarrow,newAupperarrow = bse_sparse.reshape_bta_block2stack(
+         num_blocks=num_blocks,blocksize=blocksize,nm_dev=nm_dev,
+         adiag=Adiag, aupper=Aupper, alower=Alower, alowerarrow=Alowerarrow, aupperarrow=Aupperarrow)      
+
       # bse_sparse.bse_sparse_check_system( tol=1e-6, 
       #   alpha=0.99,spindeg=2.0,nm_dev=nm_dev,ndiag=ndiag,nen=nen,en=energies,
       #   nop=nops,nnop=nnop,iop=iop+1,
@@ -212,36 +223,42 @@ if __name__=='__main__':
       #   ldiag=Ldiag, lupper=Lupper, llower=Llower, llowerarrow=Llowerarrow, lupperarrow=Lupperarrow, ltip=Ltip )
 
 
-      start_t = time.time()
       try:
          (
-          X_diagonal_blocks,
-          X_lower_diagonal_blocks,
-          X_upper_diagonal_blocks,
-          X_arrow_bottom_blocks,
-          X_arrow_right_blocks,
-          X_arrow_tip_block,
-         ) = sinv_tridiagonal_arrowhead(
-         A_diagonal_blocks=Adiag,
-         A_lower_diagonal_blocks=Alower,
-         A_arrow_bottom_blocks=Alowerarrow,
-         A_arrow_tip_block=Atip,
-         A_upper_diagonal_blocks=Aupper,
-         A_arrow_right_blocks=Aupperarrow,
+            X_diagonal_blocks,
+            X_lower_diagonal_blocks,
+            X_upper_diagonal_blocks,
+            X_arrow_bottom_blocks,
+            X_arrow_right_blocks,
+            X_arrow_tip_block,
+         ) = ddbtasinv(
+            A_diagonal_blocks=newAdiag,
+            A_lower_diagonal_blocks=newAlower,
+            A_arrow_bottom_blocks=newAlowerarrow,
+            A_arrow_tip_block=Atip,
+            A_upper_diagonal_blocks=newAupper,
+            A_arrow_right_blocks=newAupperarrow,
          )
-         finish_t = time.time()
-         print("! SINV takes %s second " % (finish_t - start_t))
-         P_r = - 1j* X_arrow_bottom_blocks @ Lupperarrow[:,:,iop] - 1j* X_arrow_tip_block @ Ltip[:,:,iop]
-         epsilon_M = np.eye(nm_dev) -  v[:,:,0] @ P_r
 
-         eps_M_sinv2[iop] = np.sum( epsilon_M[ nm_dev//2, nb*ns:(nm_dev-nb*ns) ] )
-         
-         print('E=',eps_en[iop],'epsilon_2=', np.abs( np.imag(eps_M_sinv2[iop]) ),'reference=', np.abs( np.imag(eps_M[iop]) ) )
-                  
-      except:
-         print("! SINV fails") 
+      except Exception as error:
 
+         print("! SINV fails with error: ", error ) 
+
+      P_r = - 1j* X_arrow_tip_block @ Ltip[:,:,iop]
+
+      for i in range(num_blocks):
+         P_r += - 1j* X_arrow_bottom_blocks[i,:,:] @ Lupperarrow[i*blocksize:(i+1)*blocksize,:,iop] 
       
+      epsilon_M = np.eye(nm_dev) -  v[:,:,0] @ P_r
+
+      eps_M_sinv2[iop] = np.sum( epsilon_M[ nm_dev//2, nb*ns:(nm_dev-nb*ns) ] )
+      
+      print('E=',eps_en[iop],'epsilon_2=', np.abs( np.imag(eps_M_sinv2[iop]) ),'reference=', np.abs( np.imag(eps_M[iop]) ) )
+                  
+
+   finish_t = time.time()
+   print("! SINV takes %s second in total " % (finish_t - start_t))
+   
    print("save checkpoint.")
    np.savez('data_ndiag'+str(ndiag)+'.npz', 
                         ID_list=ID_list,
@@ -255,4 +272,66 @@ if __name__=='__main__':
                         eps_M_sinv=eps_M_sinv,
                         eps_M_sinv2=eps_M_sinv2
             )
+
+
+   # print("--- Start SINV solver ---")
+
+   # for iop in range(nnop): 
+   #    Adiag,Aupper,Alower,Alowerarrow,Aupperarrow,Atip = bse_sparse.bse_sparse_build_system(
+   #          blocksize=blocksize, num_blocks=num_blocks, nnop=nnop, iop=iop+1, nm_dev=nm_dev,
+   #          ldiag=Ldiag, lupper=Lupper, llower=Llower, llowerarrow=Llowerarrow, 
+   #          lupperarrow=Lupperarrow, ltip=Ltip, kdiag=Kdiag, ktip=Ktip )
+      
+   #    # bse_sparse.bse_sparse_check_system( tol=1e-6, 
+   #    #   alpha=0.99,spindeg=2.0,nm_dev=nm_dev,ndiag=ndiag,nen=nen,en=energies,
+   #    #   nop=nops,nnop=nnop,iop=iop+1,
+   #    #   blocksize=blocksize,num_blocks=num_blocks,n=N,table=table,
+   #    #   g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,w=W0_r,v=v, 
+   #    #   adiag=Adiag, aupper=Aupper, alower=Alower, alowerarrow=Alowerarrow, aupperarrow=Aupperarrow, atip=Atip,
+   #    #   ldiag=Ldiag, lupper=Lupper, llower=Llower, llowerarrow=Llowerarrow, lupperarrow=Lupperarrow, ltip=Ltip )
+
+
+   #    start_t = time.time()
+   #    try:
+   #       (
+   #        X_diagonal_blocks,
+   #        X_lower_diagonal_blocks,
+   #        X_upper_diagonal_blocks,
+   #        X_arrow_bottom_blocks,
+   #        X_arrow_right_blocks,
+   #        X_arrow_tip_block,
+   #       ) = sinv_tridiagonal_arrowhead(
+   #       A_diagonal_blocks=Adiag,
+   #       A_lower_diagonal_blocks=Alower,
+   #       A_arrow_bottom_blocks=Alowerarrow,
+   #       A_arrow_tip_block=Atip,
+   #       A_upper_diagonal_blocks=Aupper,
+   #       A_arrow_right_blocks=Aupperarrow,
+   #       )
+   #       finish_t = time.time()
+   #       print("! SINV takes %s second " % (finish_t - start_t))
+   #       P_r = - 1j* X_arrow_bottom_blocks @ Lupperarrow[:,:,iop] - 1j* X_arrow_tip_block @ Ltip[:,:,iop]
+   #       epsilon_M = np.eye(nm_dev) -  v[:,:,0] @ P_r
+
+   #       eps_M_sinv2[iop] = np.sum( epsilon_M[ nm_dev//2, nb*ns:(nm_dev-nb*ns) ] )
+         
+   #       print('E=',eps_en[iop],'epsilon_2=', np.abs( np.imag(eps_M_sinv2[iop]) ),'reference=', np.abs( np.imag(eps_M[iop]) ) )
+                  
+   #    except:
+   #       print("! SINV fails") 
+
+      
+   # print("save checkpoint.")
+   # np.savez('data_ndiag'+str(ndiag)+'.npz', 
+   #                      ID_list=ID_list,
+   #                      tr=tr,
+   #                      te=te,
+   #                      energies=energies,
+   #                      ldos=ldos,
+   #                      ndos=ndos,
+   #                      eps_M=eps_M,
+   #                      eps_en=eps_en,
+   #                      eps_M_sinv=eps_M_sinv,
+   #                      eps_M_sinv2=eps_M_sinv2
+   #          )
 

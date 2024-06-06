@@ -8,17 +8,23 @@ module hilbert
     CONTAINS
 
     !!  Compute the hilbert transform with FFT
-    subroutine hilbert_transform_fft()
+    subroutine hilbert_transform_fft(nse,nomega,nomegasf,sf_chi0,chi0)
+      integer,intent(in) :: nomega,nomegasf,nse
+      complex(dp),intent(inout) :: sf_chi0(nse,nomegasf)
+      complex(dp),intent(inout) :: chi0(nse,nomega)
+      ! using method proposed by Lucas [AIP Advances 2, 032144 (2012)]
+
 
     end subroutine hilbert_transform_fft
 
 
-    !!  Compute the Hilbert Transform    
+    !!  Compute the Hilbert Transform with matrix-matrix multiplication
+    !!  the computational cost scales with O(nomegasf*nomega)
     !!  $\chi^0( r r' ; \omega_j) = \sum_i t_{ji} \chi^s( r r' ; \omega_i)
     !!  $\chi$ represents a real-space response function between r and r' at frequency $\omega$
     !!  $t_{ji}$ is obtained from the [[calc_kkweight]] function
     !!  `nse` is the number of specified elements (r r') in the matrix $\chi$ to compute HT
-    subroutine hilbert_transform(nse,nomega,nomegasf,kkweight,sf_chi0,chi0)
+    subroutine hilbert_transform_mmm(nse,nomega,nomegasf,kkweight,sf_chi0,chi0)
       integer,intent(in) :: nomega,nomegasf,nse
       complex(dp) :: kkweight(nomegasf,nomega)
       complex(dp),intent(inout) :: sf_chi0(nse,nomegasf)
@@ -27,9 +33,9 @@ module hilbert
       ! and Shishkin & Kresse [PRB 74, 035101]
       ! Compute chi0 = MATMUL(chi0_sf,kkweight)
       call ZGEMM('N','N',nse,nomega,nomegasf,cone,sf_chi0,nse,kkweight,nomegasf,czero,chi0,nse)
-    end subroutine hilbert_transform
+    end subroutine hilbert_transform_mmm
 
-    
+    !   This subroutine is copied from Abinit 'm_chi0tk.F90'
     !!  Calculate frequency dependent weights needed to perform the Hilbert transform
     !!  Subroutine needed to implement the calculation
     !!  of the polarizability using the spectral representation as proposed in:

@@ -22,11 +22,32 @@ module bse_sparse
         complex(dp),intent(out),dimension(num_blocks,nm_dev,blocksize):: out_Alowerarrow
         complex(dp),intent(out),dimension(num_blocks,blocksize,nm_dev):: out_Aupperarrow 
         !
-        out_Adiag = reshape(Adiag, [num_blocks,blocksize,blocksize], order=[3,1,2])
-        out_Aupper = reshape(Aupper, [num_blocks-1,blocksize,blocksize], order=[3,1,2])
-        out_Alower = reshape(Alower, [num_blocks-1,blocksize,blocksize], order=[3,1,2])
+        integer::ib,i,j 
+        ! !$omp parallel default(shared) private(ib,i,j)
+        ! !$omp do
+        ! do ib=1,num_blocks            
+        !     do i=1,blocksize
+        !         do j=1,blocksize
+        !             out_Adiag(ib,i,j) = Adiag(i,j+(ib-1)*blocksize)
+        !             if (ib<num_blocks) then 
+        !                 out_Aupper(ib,i,j) = Aupper(i,j+(ib-1)*blocksize)
+        !                 out_Alower(ib,i,j) = Alower(i,j+(ib-1)*blocksize)
+        !             endif                     
+        !         enddo 
+        !         do j=1,nm_dev
+        !             out_Alowerarrow(ib,j,i) = Alowerarrow(j,i+(ib-1)*blocksize)
+        !             out_Aupperarrow(ib,i,j) = Aupperarrow(i+(ib-1)*blocksize,j)
+        !         enddo 
+        !     enddo 
+        ! enddo            
+        ! !$omp end do
+        ! !$omp end parallel  
+
+        out_Adiag = reshape(Adiag, [num_blocks,blocksize,blocksize], order=[2,3,1])
+        out_Aupper = reshape(Aupper, [num_blocks-1,blocksize,blocksize], order=[2,3,1])
+        out_Alower = reshape(Alower, [num_blocks-1,blocksize,blocksize], order=[2,3,1])
         out_Aupperarrow = reshape(Aupperarrow, [num_blocks,blocksize,nm_dev], order=[2,1,3])
-        out_Alowerarrow = reshape(Alowerarrow, [num_blocks,nm_dev,blocksize], order=[3,1,2])
+        out_Alowerarrow = reshape(Alowerarrow, [num_blocks,nm_dev,blocksize], order=[2,3,1])
     end subroutine reshape_BTA_block2stack
 
     ! preprocessing the sparsity pattern and decide the block_size and num_blocks in the BTA matrix
