@@ -220,6 +220,11 @@ module fft_mod
       Status = DftiFreeDescriptor(My_Desc1_Handle)
       Z_out(:) = Z_out(:) / dble(n)
     end subroutine do_mkl_dfti_conv
+
+    ! calculates the Hilbert transformation 
+    subroutine hilbert_transformation(method,) 
+      ! following Shishkin & Kresse [PRB 74, 035101]
+    end subroutine hilbert_transformation
     
 end module fft_mod
     

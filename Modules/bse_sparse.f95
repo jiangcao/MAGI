@@ -138,14 +138,17 @@ module bse_sparse
             do iop = 1,local_nnop
                 write(*, '(A)', advance="no") '.'
                 ! build system matrix blocks (I - L0 @ K)
+                print *, "  build system "
                 call bse_sparse_build_system(blocksize,num_blocks,nm_dev,local_nnop,iop,&
                                 Ldiag, Lupper, Llower, Llowerarrow, Lupperarrow, Ltip, &
                                 Kdiag, Ktip,&
                                 Adiag, Aupper, Alower, Alowerarrow, Aupperarrow, Atip)
                 ! selected inversion of the system matrix
+                print *, "  factorize "
                 call zbtatrf( blocksize, nm_dev, num_blocks, &
                             Adiag,Alower,Aupper,Alowerarrow,Aupperarrow,Atip, &
                             ipiv_diagonal,ipiv_arrow_tip)
+                print *, "  invert "
                 call zbtatri( blocksize, nm_dev, num_blocks, &
                             Adiag,Alower,Aupper,Alowerarrow,Aupperarrow,Atip, &
                             ipiv_diagonal,ipiv_arrow_tip)
@@ -240,36 +243,56 @@ module bse_sparse
             N = blocksize*num_blocks
             ! A_xx
             call zgemm('n','n',nm_dev,nm_dev,nm_dev,-cone,Ltip(:,:,iop),nm_dev,Ktip,nm_dev,czero,Atip,nm_dev)  
-            do concurrent (i=1:nm_dev)
+            !$omp parallel default(shared) private(i)
+            !$omp do
+            do i=1,nm_dev
                 Atip(i,i) = Atip(i,i) + cone 
             enddo 
+            !$omp end do
+            !$omp end parallel  
             ! A_xd = - L_xd * K_dd
-            do concurrent (i = 1:nm_dev)
+            !$omp parallel default(shared) private(i,j)
+            !$omp do   
+            do i = 1,nm_dev
                 do concurrent (j = 1:N) 
                     Alowerarrow(i,j) = - Llowerarrow(i,j,iop) * Kdiag(j)
                 enddo
-            enddo        
+            enddo                   
+            !$omp end do
+            !$omp end parallel  
             ! A_dx = - L_dx * K_xx            
             call zgemm('n','n',N,nm_dev,nm_dev,-cone,Lupperarrow(:,:,iop),N,Ktip,nm_dev,czero,Aupperarrow,N)
             ! A_dd
             ! diagonal blocks         
-            do concurrent (i=1:blocksize)
+            !$omp parallel default(shared) private(i,j)
+            !$omp do  
+            do i=1,blocksize
                 do concurrent (j=1:blocksize*num_blocks)
                     Adiag(i,j) = - Ldiag(i,j,iop) * Kdiag(j)
                 enddo               
-            enddo 
-            do concurrent (ib=1:num_blocks)
+            enddo                        
+            !$omp end do
+            !$omp end parallel  
+            !$omp parallel default(shared) private(ib,i)
+            !$omp do  
+            do ib=1,num_blocks
                 do concurrent (i=1:blocksize)
                     Adiag(i,i+(ib-1)*blocksize) = Adiag(i,i+(ib-1)*blocksize) + cone
                 enddo 
-            enddo
+            enddo                      
+            !$omp end do
+            !$omp end parallel 
             ! upper and lower diagonal blocks
-            do concurrent (i=1:blocksize)
+            !$omp parallel default(shared) private(i,j)
+            !$omp do  
+            do i=1,blocksize
                 do concurrent (j=1:blocksize*(num_blocks-1))
                     Aupper(i,j) = - Lupper(i,j,iop) * Kdiag(j+blocksize)
                     Alower(i,j) = - Llower(i,j,iop) * Kdiag(j)
                 enddo 
-            enddo 
+            enddo                       
+            !$omp end do
+            !$omp end parallel 
             !
         else 
             print *,"iop not correct!"

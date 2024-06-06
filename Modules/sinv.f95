@@ -1,7 +1,7 @@
 module sinv
     ! selected inversion of a structured sparse matrices
     ! The algorithm is based on the python library (SerinV)[https://github.com/vincent-maillou/serinv] 
-    use parameters_mod,only:dp,c1i,czero,cone    
+    use parameters_mod,only:dp,c1i,czero,cone        
     use omp_lib
     !
     implicit none
