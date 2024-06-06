@@ -12,7 +12,7 @@ from negf import gw_dense,bse_dense,bse_sparse
 from wannier import wannierham
 import matplotlib.pyplot as plt
 import os
-os.environ["OMP_NUM_THREADS"] = "28"
+os.environ["OMP_NUM_THREADS"] = "20"
 from sinv import sinv_tridiagonal_arrowhead
 import time
 
@@ -107,11 +107,12 @@ if __name__=='__main__':
    nstep=4
    eps_M=np.zeros(nen//nstep,dtype='complex')
    eps_M_sinv=np.zeros(nen//nstep,dtype='complex')
+   eps_M_sinv2=np.zeros(nen//nstep,dtype='complex')
    eps_en=np.zeros(nen//nstep)
 
-   Ephmin = 1.14
-   # nnop= int( (4.0-Ephmin)/dE/nstep )
-   nnop = 5
+   Ephmin = 0.5
+   nnop= int( (4.0-Ephmin)/dE/nstep )
+   # nnop = 5
    nops=np.arange(nnop)*nstep + int(Ephmin / dE)
    print('Ephoton = ' , nops * dE)
 
@@ -119,23 +120,26 @@ if __name__=='__main__':
 
 
    print("--- Start full BSE solver ---")
-   
+   start_t = time.time()
+
    for iop in range(nnop):
       print("iop=",iop,"Ephoton=",nops[iop]*dE)      
-      start_t = time.time()
+      
       P_r,nn = bse_dense.bse_fullsolve(
-               alpha=0.99,spindeg=2.0,nm_dev=nm_dev,ndiag=ndiag,nen=nen,en=energies,nop=nops[iop],
+               alpha=0.99,spindeg=2.0,nm_dev=nm_dev,ndiag=ndiag,nen=nen,
+               en=energies,nop=nops[iop],
                g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,
-               w=W0_r,v=v)
-      finish_t = time.time()
-      print("! dense BSE solver takes %s second " % (finish_t - start_t))
+               w=W0_r,v=v)      
 
       epsilon_M = np.eye(nm_dev) -  v[:,:,0] @ P_r
 
       eps_M[iop] = np.sum( epsilon_M[ nm_dev//2, nb*ns:(nm_dev-nb*ns) ] )
       eps_en[iop]=nops[iop]*dE
-      print('E=',eps_en[iop],'epsilon_2=', np.abs( np.imag(eps_M[iop]) ) )
-      print("-----")      
+      print('- E=',eps_en[iop],'epsilon_2=', np.abs( np.imag(eps_M[iop]) ) )
+      print(" ")      
+
+   finish_t = time.time()
+   print("! dense BSE solver takes %s second for all optical energies " % (finish_t - start_t))
       
 
    print("save checkpoint.")
@@ -149,6 +153,39 @@ if __name__=='__main__':
                         eps_M=eps_M,
                         eps_en=eps_en)
    
+   print("--- Start sparse BSE solver ---")
+      
+   start_t = time.time()
+
+   P_r = bse_sparse.bse_sparse_solve(
+                  method='batched',alpha=0.99,spindeg=2.0,
+                  nm_dev=nm_dev,ndiag=ndiag,nen=nen,nsub=1,
+                  en=energies,nops=nops,nnop=nnop,nk=1,
+                  g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,
+                  w=W0_r,v=v)        
+   
+   finish_t = time.time()
+   print("! sparse BSE solver takes %s second for all optical energies " % (finish_t - start_t))
+
+   for iop in range(nnop):
+      epsilon_M = np.eye(nm_dev) -  v[:,:,0] @ P_r[:,:,iop]
+      eps_M_sinv[iop] = np.sum( epsilon_M[ nm_dev//2, nb*ns:(nm_dev-nb*ns) ] )
+      eps_en[iop]=nops[iop]*dE
+      print('- E=',eps_en[iop],np.abs( np.imag(eps_M_sinv[iop]) ),'reference=', np.abs( np.imag(eps_M[iop]) ) )      
+      
+   print("save checkpoint.")
+   np.savez('data_ndiag'+str(ndiag)+'.npz', 
+                        ID_list=ID_list,
+                        tr=tr,
+                        te=te,
+                        energies=energies,
+                        ldos=ldos,
+                        ndos=ndos,
+                        eps_M=eps_M,
+                        eps_M_sinv=eps_M_sinv,
+                        eps_en=eps_en)
+
+
    N,nnz,table,blocksize,num_blocks = bse_sparse.bse_sparse_pre(nm_dev=nm_dev,ndiag=ndiag)
    # resize
    table=table[:,:N]
@@ -166,13 +203,13 @@ if __name__=='__main__':
             ldiag=Ldiag, lupper=Lupper, llower=Llower, llowerarrow=Llowerarrow, 
             lupperarrow=Lupperarrow, ltip=Ltip, kdiag=Kdiag, ktip=Ktip )
       
-      bse_sparse.bse_sparse_check_system( tol=1e-6, 
-        alpha=0.99,spindeg=2.0,nm_dev=nm_dev,ndiag=ndiag,nen=nen,en=energies,
-        nop=nops,nnop=nnop,iop=iop+1,
-        blocksize=blocksize,num_blocks=num_blocks,n=N,table=table,
-        g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,w=W0_r,v=v, 
-        adiag=Adiag, aupper=Aupper, alower=Alower, alowerarrow=Alowerarrow, aupperarrow=Aupperarrow, atip=Atip,
-        ldiag=Ldiag, lupper=Lupper, llower=Llower, llowerarrow=Llowerarrow, lupperarrow=Lupperarrow, ltip=Ltip )
+      # bse_sparse.bse_sparse_check_system( tol=1e-6, 
+      #   alpha=0.99,spindeg=2.0,nm_dev=nm_dev,ndiag=ndiag,nen=nen,en=energies,
+      #   nop=nops,nnop=nnop,iop=iop+1,
+      #   blocksize=blocksize,num_blocks=num_blocks,n=N,table=table,
+      #   g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,w=W0_r,v=v, 
+      #   adiag=Adiag, aupper=Aupper, alower=Alower, alowerarrow=Alowerarrow, aupperarrow=Aupperarrow, atip=Atip,
+      #   ldiag=Ldiag, lupper=Lupper, llower=Llower, llowerarrow=Llowerarrow, lupperarrow=Lupperarrow, ltip=Ltip )
 
 
       start_t = time.time()
@@ -197,9 +234,9 @@ if __name__=='__main__':
          P_r = - 1j* X_arrow_bottom_blocks @ Lupperarrow[:,:,iop] - 1j* X_arrow_tip_block @ Ltip[:,:,iop]
          epsilon_M = np.eye(nm_dev) -  v[:,:,0] @ P_r
 
-         eps_M_sinv[iop] = np.sum( epsilon_M[ nm_dev//2, nb*ns:(nm_dev-nb*ns) ] )
+         eps_M_sinv2[iop] = np.sum( epsilon_M[ nm_dev//2, nb*ns:(nm_dev-nb*ns) ] )
          
-         print('E=',eps_en[iop],'epsilon_2=', np.abs( np.imag(eps_M_sinv[iop]) ),'reference=', np.abs( np.imag(eps_M[iop]) ) )
+         print('E=',eps_en[iop],'epsilon_2=', np.abs( np.imag(eps_M_sinv2[iop]) ),'reference=', np.abs( np.imag(eps_M[iop]) ) )
                   
       except:
          print("! SINV fails") 
@@ -215,6 +252,7 @@ if __name__=='__main__':
                         ndos=ndos,
                         eps_M=eps_M,
                         eps_en=eps_en,
-                        eps_M_sinv=eps_M_sinv
+                        eps_M_sinv=eps_M_sinv,
+                        eps_M_sinv2=eps_M_sinv2
             )
 
