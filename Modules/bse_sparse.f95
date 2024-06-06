@@ -7,6 +7,28 @@ module bse_sparse
     implicit none
     contains
 
+    subroutine reshape_BTA_block2stack(num_blocks,blocksize,nm_dev,&
+        Adiag, Aupper, Alower, Alowerarrow, Aupperarrow,&
+        out_Adiag, out_Aupper, out_Alower, out_Alowerarrow, out_Aupperarrow)
+        ! input
+        integer,intent(in)::num_blocks,blocksize,nm_dev
+        complex(dp),intent(in),dimension(:,:):: Adiag
+        complex(dp),intent(in),dimension(:,:):: Aupper,Alower 
+        complex(dp),intent(in),dimension(:,:):: Alowerarrow
+        complex(dp),intent(in),dimension(:,:):: Aupperarrow 
+        ! output
+        complex(dp),intent(out),dimension(num_blocks,blocksize,blocksize):: out_Adiag
+        complex(dp),intent(out),dimension(num_blocks-1,blocksize,blocksize):: out_Aupper,out_Alower 
+        complex(dp),intent(out),dimension(num_blocks,nm_dev,blocksize):: out_Alowerarrow
+        complex(dp),intent(out),dimension(num_blocks,blocksize,nm_dev):: out_Aupperarrow 
+        !
+        out_Adiag = reshape(Adiag, [num_blocks,blocksize,blocksize], order=[3,1,2])
+        out_Aupper = reshape(Aupper, [num_blocks-1,blocksize,blocksize], order=[3,1,2])
+        out_Alower = reshape(Alower, [num_blocks-1,blocksize,blocksize], order=[3,1,2])
+        out_Aupperarrow = reshape(Aupperarrow, [num_blocks,blocksize,nm_dev], order=[2,1,3])
+        out_Alowerarrow = reshape(Alowerarrow, [num_blocks,nm_dev,blocksize], order=[3,1,2])
+    end subroutine reshape_BTA_block2stack
+
     ! preprocessing the sparsity pattern and decide the block_size and num_blocks in the BTA matrix
     subroutine bse_sparse_pre(nm_dev,ndiag,N,nnz,table,blocksize,num_blocks)
         ! input
