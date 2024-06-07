@@ -160,7 +160,7 @@ if __name__=='__main__':
    start_t = time.time()
 
    P_r = bse_sparse.bse_sparse_solve(
-                  method='single',alpha=0.99,spindeg=2.0,
+                  method='sum',alpha=0.99,spindeg=2.0,
                   nm_dev=nm_dev,ndiag=ndiag,nen=nen,nsub=1,
                   en=energies,nops=nops,nnop=nnop,nk=1,
                   g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,
@@ -196,6 +196,7 @@ if __name__=='__main__':
    table=table[:,:N]
 
    Ldiag,Lupper,Llower,Lupperarrow,Llowerarrow,Ltip,Ktip,Kdiag = bse_sparse.bse_sparse_build(
+               method='sum',
                alpha=0.99,spindeg=2.0,nm_dev=nm_dev,ndiag=ndiag,nen=nen,en=energies,nop=nops,nnop=nnop,
                g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,w=W0_r,v=v,
                blocksize=blocksize,num_blocks=num_blocks,n=N,table=table)
@@ -248,10 +249,18 @@ if __name__=='__main__':
 
          print("! Fails with error: ", error ) 
 
-      P_r = - 1j* X_arrow_tip_block @ Ltip[:,:,iop]
-
+      tmp = - 1j* X_arrow_tip_block @ Ltip[:,:,iop]
       for i in range(num_blocks):
-         P_r += - 1j* X_arrow_bottom_blocks[i,:,:] @ Lupperarrow[i*blocksize:(i+1)*blocksize,:,iop] 
+         tmp += - 1j* X_arrow_bottom_blocks[i,:,:] @ Lupperarrow[i*blocksize:(i+1)*blocksize,:,iop]
+
+      P_r = np.zeros((nm_dev,nm_dev),dtype='complex')
+      for row in range(nm_dev):
+         for col in range(nm_dev):
+            fliped_row = nm_dev - col - 1
+            fliped_col = nm_dev - row - 1 
+            i=table[0,row] - 1
+            k=table[0,col] - 1
+            P_r[i,k] =  tmp[fliped_row,fliped_col]                
       
       epsilon_M = np.eye(nm_dev) -  v[:,:,0] @ P_r
 

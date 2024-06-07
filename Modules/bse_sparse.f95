@@ -148,7 +148,7 @@ module bse_sparse
         call bse_sparse_pre(nm_dev,ndiag,N,nnz,table,blocksize,num_blocks)
         ! prepare the memory
         NT = blocksize * num_blocks
-        if (trim(method) == 'batched') then 
+        if (trim(method) == 'fft') then 
             local_nnop = nnop
         else 
             local_nnop = 1 ! compute one optical energy at a time
@@ -173,7 +173,7 @@ module bse_sparse
         !
         if (local_nnop > 1) then  
             ! build BTA blocks of RPA polarization L0 and 2-body interaction kernal K                     
-            call bse_sparse_build(alpha,spindeg,nm_dev,ndiag,nen,En,nops,local_nnop,blocksize,num_blocks,N,table,&
+            call bse_sparse_build(method,alpha,spindeg,nm_dev,ndiag,nen,En,nops,local_nnop,blocksize,num_blocks,N,table,&
                                     G_lesser,G_greater,G_retarded,W,V,&
                                     Ldiag,Lupper,Llower,Lupperarrow,Llowerarrow,Ltip,Ktip,Kdiag)       
             print *, " start selected inversion " 
@@ -219,7 +219,7 @@ module bse_sparse
         else 
             do iop = 1,nnop
                 ! build BTA blocks of RPA polarization L0 and 2-body interaction kernal K         
-                call bse_sparse_build(alpha,spindeg,nm_dev,ndiag,nen,En,nops(iop),1,blocksize,num_blocks,N,table,&
+                call bse_sparse_build(method,alpha,spindeg,nm_dev,ndiag,nen,En,nops(iop),1,blocksize,num_blocks,N,table,&
                                     G_lesser,G_greater,G_retarded,W,V,&
                                     Ldiag,Lupper,Llower,Lupperarrow,Llowerarrow,Ltip,Ktip,Kdiag)                   
                 ! build system matrix blocks (I - L0 @ K)
@@ -543,10 +543,11 @@ module bse_sparse
 
 
     ! build the Bethe-Salpeter Equation L0 and Kernel matrices
-    subroutine bse_sparse_build(alpha,spindeg,nm_dev,ndiag,nen,En,nop,nnop,blocksize,num_blocks,N,table,&
+    subroutine bse_sparse_build(method,alpha,spindeg,nm_dev,ndiag,nen,En,nop,nnop,blocksize,num_blocks,N,table,&
         G_lesser,G_greater,G_retarded,W,V,&
         Ldiag,Lupper,Llower,Lupperarrow,Llowerarrow,Ltip,Ktip,Kdiag)        
         ! input
+        character(len=*),intent(in)::method
         integer,intent(in)::nm_dev,nen,nnop,nop(nnop),ndiag,N,table(2,N)
         integer,intent(in)::blocksize, num_blocks ! arrow block size and number of blocks (excluding tip block)
         real(dp),intent(in)::en(nen),spindeg,alpha                
@@ -594,7 +595,7 @@ module bse_sparse
                     if (fliped_col > NT) then 
                         if (fliped_row > NT) then 
                             ! tip block
-                            if (nnop>10) then
+                            if (trim(method)=='fft') then
                                 call four_polarization_fft(alpha,nm_dev,nen,en,nop,nnop,ndiag,&
                                             G_lesser,G_greater,G_retarded,i,j,k,l,L0ijkl)
                             else    
@@ -606,7 +607,7 @@ module bse_sparse
                             Ltip(fliped_row - NT,fliped_col - NT,1:nnop) = L0ijkl * spindeg
                         else
                             ! upper arrow block 
-                            if (nnop>10) then
+                            if (trim(method)=='fft') then
                                 call four_polarization_fft(alpha,nm_dev,nen,en,nop,nnop,ndiag,&
                                             G_lesser,G_greater,G_retarded,i,j,k,l,L0ijkl)
                             else    
@@ -620,7 +621,7 @@ module bse_sparse
                     else 
                         if (fliped_row > NT) then 
                             ! lower arrow block 
-                            if (nnop>10) then
+                            if (trim(method)=='fft') then
                                 call four_polarization_fft(alpha,nm_dev,nen,en,nop,nnop,ndiag,&
                                             G_lesser,G_greater,G_retarded,i,j,k,l,L0ijkl)
                             else    
@@ -636,7 +637,7 @@ module bse_sparse
                             q = p + blocksize
                             if ((fliped_col > p).and.(fliped_col <= q)) then 
                                 ! diag block 
-                                if (nnop>10) then
+                                if (trim(method)=='fft') then
                                     call four_polarization_fft(alpha,nm_dev,nen,en,nop,nnop,ndiag,&
                                                 G_lesser,G_greater,G_retarded,i,j,k,l,L0ijkl)
                                 else    
@@ -649,7 +650,7 @@ module bse_sparse
                             else
                                 if ((fliped_col > q).and.(fliped_col <= (q+blocksize))) then                             
                                     ! upper diag block 
-                                    if (nnop>10) then
+                                    if (trim(method)=='fft') then
                                         call four_polarization_fft(alpha,nm_dev,nen,en,nop,nnop,ndiag,&
                                                     G_lesser,G_greater,G_retarded,i,j,k,l,L0ijkl)
                                     else    
@@ -662,7 +663,7 @@ module bse_sparse
                                 endif
                                 if ((fliped_col > (p-blocksize)).and.(fliped_col <= p)) then                             
                                     ! lower diag block
-                                    if (nnop>10) then
+                                    if (trim(method)=='fft') then
                                         call four_polarization_fft(alpha,nm_dev,nen,en,nop,nnop,ndiag,&
                                                     G_lesser,G_greater,G_retarded,i,j,k,l,L0ijkl)
                                     else    
