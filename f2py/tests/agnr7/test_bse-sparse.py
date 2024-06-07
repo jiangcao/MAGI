@@ -119,7 +119,7 @@ if __name__=='__main__':
 
    nm_dev=nb*length
 
-
+   print("")
    print("--- Start full BSE solver ---")
    start_t = time.time()
 
@@ -155,27 +155,29 @@ if __name__=='__main__':
                         eps_en=eps_en)
    
    print("")
-   print("--- Start sparse BSE solver with LU ---")
+   print("--- Start sparse BSE solver ---")
       
    start_t = time.time()
 
    P_r = bse_sparse.bse_sparse_solve(
-                  method='batched',alpha=0.99,spindeg=2.0,
+                  method='single',alpha=0.99,spindeg=2.0,
                   nm_dev=nm_dev,ndiag=ndiag,nen=nen,nsub=1,
                   en=energies,nops=nops,nnop=nnop,nk=1,
                   g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,
                   w=W0_r,v=v)        
    
-   finish_t = time.time()
-   print("! sparse BSE solver takes %s second for all optical energies " % (finish_t - start_t))
+   finish_t = time.time()   
 
    for iop in range(nnop):
       epsilon_M = np.eye(nm_dev) -  v[:,:,0] @ P_r[:,:,iop]
       eps_M_sinv[iop] = np.sum( epsilon_M[ nm_dev//2, nb*ns:(nm_dev-nb*ns) ] )
       eps_en[iop]=nops[iop]*dE
-      print('- E=',eps_en[iop],np.abs( np.imag(eps_M_sinv[iop]) ),'reference=', np.abs( np.imag(eps_M[iop]) ) )      
-      
+      print('- E=',eps_en[iop],np.abs( np.imag(eps_M_sinv[iop]) ),'reference=', np.abs( np.imag(eps_M[iop]) ) )   
+
+   print("")
+   print("! sparse BSE solver takes %s second for %s optical energies " % ((finish_t - start_t) , nnop))            
    print("save checkpoint.")
+
    np.savez('data_ndiag'+str(ndiag)+'.npz', 
                         ID_list=ID_list,
                         tr=tr,
@@ -187,7 +189,7 @@ if __name__=='__main__':
                         eps_M_sinv=eps_M_sinv,
                         eps_en=eps_en)
 
-   print("--- Start pre-processing for SINV solver ---")
+   print("--- Start pre-processing for solver ---")
 
    N,nnz,table,blocksize,num_blocks = bse_sparse.bse_sparse_pre(nm_dev=nm_dev,ndiag=ndiag)
    # resize
@@ -199,7 +201,8 @@ if __name__=='__main__':
                blocksize=blocksize,num_blocks=num_blocks,n=N,table=table)
 
    print("")
-   print("--- Start SINV solver with Schur ---")
+   print("--- Start solver with SerinV ---")
+   
    start_t = time.time()
 
    for iop in range(nnop): 
@@ -208,8 +211,6 @@ if __name__=='__main__':
             ldiag=Ldiag, lupper=Lupper, llower=Llower, llowerarrow=Llowerarrow, 
             lupperarrow=Lupperarrow, ltip=Ltip, kdiag=Kdiag, ktip=Ktip )
       
-      print("reshaping ...")      
-
       newAdiag,newAupper,newAlower,newAlowerarrow,newAupperarrow = bse_sparse.reshape_bta_block2stack(
          num_blocks=num_blocks,blocksize=blocksize,nm_dev=nm_dev,
          adiag=Adiag, aupper=Aupper, alower=Alower, alowerarrow=Alowerarrow, aupperarrow=Aupperarrow)      
@@ -224,6 +225,7 @@ if __name__=='__main__':
 
 
       try:
+         start_t2 = time.time()
          (
             X_diagonal_blocks,
             X_lower_diagonal_blocks,
@@ -239,10 +241,12 @@ if __name__=='__main__':
             A_upper_diagonal_blocks=newAupper,
             A_arrow_right_blocks=newAupperarrow,
          )
+         finish_t2 = time.time()
+         print(" SerinV takes %s second for one SINV " % (finish_t2 - start_t2))
 
       except Exception as error:
 
-         print("! SINV fails with error: ", error ) 
+         print("! Fails with error: ", error ) 
 
       P_r = - 1j* X_arrow_tip_block @ Ltip[:,:,iop]
 
@@ -253,11 +257,11 @@ if __name__=='__main__':
 
       eps_M_sinv2[iop] = np.sum( epsilon_M[ nm_dev//2, nb*ns:(nm_dev-nb*ns) ] )
       
-      print('E=',eps_en[iop],'epsilon_2=', np.abs( np.imag(eps_M_sinv2[iop]) ),'reference=', np.abs( np.imag(eps_M[iop]) ) )
+      print('- E=',eps_en[iop],'epsilon_2=', np.abs( np.imag(eps_M_sinv2[iop]) ),'reference=', np.abs( np.imag(eps_M[iop]) ) )
                   
-
    finish_t = time.time()
-   print("! SINV takes %s second in total " % (finish_t - start_t))
+
+   print("! Takes %s second in total " % (finish_t - start_t))
    
    print("save checkpoint.")
    np.savez('data_ndiag'+str(ndiag)+'.npz', 

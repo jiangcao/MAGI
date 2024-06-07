@@ -183,15 +183,13 @@ module bse_sparse
                 ! build system matrix blocks (I - L0 @ K)
                 ! print *, "  build system "
                 call bse_sparse_build_system(blocksize,num_blocks,nm_dev,local_nnop,iop,&
-                                Ldiag, Lupper, Llower, Llowerarrow, Lupperarrow, Ltip, &
+                                Ldiag, Lupper, Llower, Llowerarrow, Lupperarrow, Ltip,&
                                 Kdiag, Ktip,&
                                 Adiag, Aupper, Alower, Alowerarrow, Aupperarrow, Atip)
                 ! selected inversion of the system matrix
-                ! print *, "  factorize "
                 call zbtatrf( blocksize, nm_dev, num_blocks, &
                             Adiag,Alower,Aupper,Alowerarrow,Aupperarrow,Atip, &
                             ipiv_diagonal,ipiv_arrow_tip)
-                ! print *, "  invert "
                 call zbtatri( blocksize, nm_dev, num_blocks, &
                             Adiag,Alower,Aupper,Alowerarrow,Aupperarrow,Atip, &
                             ipiv_diagonal,ipiv_arrow_tip)

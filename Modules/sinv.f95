@@ -337,14 +337,17 @@ module sinv
         call invert_inplace( ANN , arrow_blocksize )
         !
         ! backward pass
-        ! X00 = X00 + X00 @ A0N @ XNN @ AN0 @ X00
-        tmp1 = matmul(X00,A0N)
-        tmp2 = matmul(AN0,X00)
-        X00 = X00 + matmul(matmul( tmp1 , ANN) , tmp2)  
-        ! XN0 = - XNN @ AN0 @ X00
-        AN0 = - matmul(ANN, tmp2)        
-        ! X0N = - X00 @ A0N @ XNN
-        A0N = - matmul(tmp1, ANN)
+        ! XN1 = - XNN @ AN1 @ X11
+        tmp2 = matmul(AN1,A11) 
+        AN1 = - matmul(ANN, tmp2)               
+        ! X1N = - X11 @ A1N @ XNN
+        tmp1 = matmul(A11,A1N)
+        A1N = - matmul(tmp1, ANN)
+        ! X11 = X11 + X11 @ A1N @ XNN @ AN1 @ X11
+        tmp1 = matmul(A11,A1N)
+        tmp2 = matmul(AN1,A11)
+        A11 = A11 + matmul(matmul( tmp1 , ANN) , tmp2)  
+        
         !
         deallocate(tmp1,tmp2)
         allocate(tmp1(nn,nn))
@@ -353,8 +356,8 @@ module sinv
         allocate(tmp4(arrow_blocksize,nn))
         allocate(tmp5(nn,nn))
         do i = n_diag_blocks - 1 , 1 , -1 
-            h = i * diag_blocksize
-            l = (i-1) * diag_blocksize + 1
+            h = h - diag_blocksize 
+            l = l - diag_blocksize 
             X00 => A_diagonal_blocks(:, l : h)
             A11 => A_diagonal_blocks(:, l+diag_blocksize : h+diag_blocksize)
             A10 => A_lower_diagonal_blocks(:, l : h)
