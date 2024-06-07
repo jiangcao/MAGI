@@ -5,6 +5,11 @@ module sinv
     use omp_lib
     !
     implicit none
+    !
+    public :: zbtasinv
+    public :: zbtatrf
+    public :: zbtatri
+    !
     contains
     !
     ! computes an LU factorization of a complex block-tridiag-arrowhead (BTA) 
@@ -293,25 +298,28 @@ module sinv
         complex(dp),intent(inout),dimension(:,:),target :: A_arrow_bottom_blocks,A_arrow_right_blocks,A_arrow_tip_block
         ! ---- local
         integer :: i,h,l,j
-        complex(dp),allocatable,dimension(:,:) :: tmp1, tmp2, tmp3, tmp4, tmp5
+        complex(dp),allocatable,dimension(:,:) :: tmp1, tmp2, tmp3, tmp4, tmp5, tmp6
         integer :: info, nn
-        complex(dp),dimension(:,:),pointer :: X00,A01,A10,A11,A0N,AN0,A1N,AN1,ANN
+        complex(dp),dimension(:,:),pointer :: A00,A01,A10,A11,A0N,AN0,A1N,AN1,ANN
         !
         nn = diag_blocksize        
-        allocate(tmp1(nn,nn))
-        allocate(tmp2(nn,arrow_blocksize))
         !
+        ! forward pass
         h = diag_blocksize
         l = 1
-        X00 => A_diagonal_blocks(:, l : h)
-        call invert_inplace( X00, nn )
-        !        
-        ! forward pass
+        A00 => A_diagonal_blocks(:, l : h)
+        call invert_inplace( A00, nn )
         ANN => A_arrow_tip_block
+        allocate(tmp1(nn,nn))
+        allocate(tmp2(nn,nn))
+        allocate(tmp3(arrow_blocksize,nn))
+        allocate(tmp4(arrow_blocksize,arrow_blocksize))
+        allocate(tmp5(arrow_blocksize,nn))
+        allocate(tmp6(nn,arrow_blocksize))
         do i = 2, n_diag_blocks            
             h = h + diag_blocksize
             l = l + diag_blocksize
-            X00 => A_diagonal_blocks(:, l-diag_blocksize : h-diag_blocksize)
+            A00 => A_diagonal_blocks(:, l-diag_blocksize : h-diag_blocksize)
             A11 => A_diagonal_blocks(:, l : h)
             A10 => A_lower_diagonal_blocks(:, l-diag_blocksize : h-diag_blocksize)
             A01 => A_upper_diagonal_blocks(:, l-diag_blocksize : h-diag_blocksize)
@@ -319,46 +327,39 @@ module sinv
             A1N => A_arrow_right_blocks(l : h , :)
             AN0 => A_arrow_bottom_blocks(: , l-diag_blocksize : h-diag_blocksize)
             A0N => A_arrow_right_blocks(l-diag_blocksize : h-diag_blocksize , :)
-            ! X11 = ( A11 - A10 @ X00 @ A01 )^{-1}
-            tmp1 = matmul(X00 , A01)
-            A11 = A11 - matmul(A10 , tmp1)
+            tmp1 = matmul(A10, A00)
+            tmp2 = matmul(tmp1, A01)
+            A11 = A11 - tmp2
             call invert_inplace(A11, nn)
-            ! AN1 = AN1 - AN0 @ X00 @ A01            
-            AN1 = AN1 - matmul(AN0, tmp1)
-            ! A1N = A1N - A10 @ X00 @ A0N
-            tmp2 = matmul(X00 , A0N)
-            A1N = A1N - matmul(A10, tmp2)
-            ! ANN = ANN - AN0 @ X00 @ A0N 
-            ANN = ANN - matmul(AN0, tmp2)            
+            tmp3 = matmul(AN0,A00)
+            tmp5 = matmul(tmp3, A01)
+            AN1 = AN1 - tmp5
+            tmp6 = matmul(tmp1, A0N)
+            A1N = A1N - tmp6
+            tmp4 = matmul(tmp3, A0N)
+            ANN = ANN - tmp4           
         enddo 
-        ! XNN = (ANN - AN1 @ X11 @ A1N)^{-1}          
-        tmp2 = matmul(A11 , A1N)
-        ANN = ANN - matmul( AN1 , tmp2)
+        tmp3 = matmul(AN1, A11)
+        tmp4 = matmul(tmp3, A1N)
+        ANN = ANN - tmp4
         call invert_inplace( ANN , arrow_blocksize )
         !
-        ! backward pass
-        ! XN1 = - XNN @ AN1 @ X11
-        tmp2 = matmul(AN1,A11) 
-        AN1 = - matmul(ANN, tmp2)               
-        ! X1N = - X11 @ A1N @ XNN
-        tmp1 = matmul(A11,A1N)
-        A1N = - matmul(tmp1, ANN)
-        ! X11 = X11 + X11 @ A1N @ XNN @ AN1 @ X11
-        tmp1 = matmul(A11,A1N)
-        tmp2 = matmul(AN1,A11)
-        A11 = A11 + matmul(matmul( tmp1 , ANN) , tmp2)  
-        
-        !
-        deallocate(tmp1,tmp2)
-        allocate(tmp1(nn,nn))
-        allocate(tmp2(nn,arrow_blocksize))
-        allocate(tmp3(nn,nn))
-        allocate(tmp4(arrow_blocksize,nn))
+        ! backward pass        
+        tmp6 = matmul(A11 , A1N)
+        tmp3 = matmul(ANN , AN1)
+        tmp2 = matmul(tmp6,tmp3)
+        tmp1 = matmul(tmp2, A11) ! A11 A1N ANN AN1 A11        
+        AN1 = - matmul(tmp3, A11) 
+        A1N = - matmul(tmp6, ANN)
+        A11 = A11 + tmp1   
+        !           
+        deallocate(tmp5)
         allocate(tmp5(nn,nn))
+        !
         do i = n_diag_blocks - 1 , 1 , -1 
             h = h - diag_blocksize 
             l = l - diag_blocksize 
-            X00 => A_diagonal_blocks(:, l : h)
+            A00 => A_diagonal_blocks(:, l : h)
             A11 => A_diagonal_blocks(:, l+diag_blocksize : h+diag_blocksize)
             A10 => A_lower_diagonal_blocks(:, l : h)
             A01 => A_upper_diagonal_blocks(:, l : h)
@@ -366,29 +367,23 @@ module sinv
             AN1 => A_arrow_bottom_blocks(: , l+diag_blocksize : h+diag_blocksize)
             A0N => A_arrow_right_blocks(l : h , :)
             A1N => A_arrow_right_blocks(l+diag_blocksize : h+diag_blocksize , :)
-            ! B1 = (A01 @ X11 + A0N @ XN1)
-            tmp1 = matmul( A01 , A11 ) + matmul( A0N, AN1 )
-            ! B2 = (A01 @ X1N + A0N @ XNN )
-            tmp2 = matmul( A01 , A1N ) + matmul( A0N, ANN )
-            ! X01 = - X00 @ (A01 @ X11 + A0N @ XN1)
-            ! X01 = - X00 @ B1
-            A01 = - matmul( X00 , tmp1 )
-            ! X0N = - X00 @ (A01 @ X1N + A0N @ XNN )
-            ! X0N = - X00 @ B2
-            A0N = - matmul( X00 , tmp2 )
-            ! X10 = - (X11 @ A10 + X1N @ AN0) @ X00
-            ! C1 = (X11 @ A10 + X1N @ AN0)
-            tmp3 = matmul( A11 , A10 ) + matmul( A1N , AN0 )
-            ! X10 = - C1 @ X00
-            A10 = - matmul( tmp3 , X00)
-            ! XN0 = - (XN1 @ A10 + XNN @ AN0) @ X00
-            ! C2 = (XN1 @ A10 + XNN @ AN0)
-            tmp4 = matmul( AN1 , A10 ) + matmul( ANN , AN0 )
-            ! XN0 = - C2 @ X00
-            AN0 = - matmul( tmp4 , X00)
-            ! X00 = X00 + X00 @ (B1 @ C1 + B2 @ C2) @ X00
-            tmp5 = matmul( tmp1 , tmp3 ) + matmul(tmp2 , tmp4)
-            X00 = X00 + matmul(matmul( X00 , tmp5) , X00)
+            !
+            tmp1 = matmul(A01,A11)  + matmul(A0N,AN1)
+            tmp6 = matmul(A01,A1N)  + matmul(A0N,ANN)
+            tmp5 = matmul(tmp1,A10) + matmul(tmp6,AN0)
+            tmp3 = matmul(AN1,A10) + matmul(ANN,AN0)
+            tmp2 = matmul(A11,A10) + matmul(A1N,AN0)
+            !
+            A01 = - matmul(A00,tmp1)                !!! <- A01 replaced by X01
+            A0N = - matmul(A00,tmp6)                !!! <- A0N replaced by X0N
+            !            
+            A10 = - matmul(tmp2,A00)                 !!! <- A10 replaced by X10
+            AN0 = - matmul(tmp3,A00)                 !!! <- AN0 replaced by XN0
+            !
+            tmp1 = matmul(A00,tmp5)
+            tmp2 = matmul(tmp1,A00)
+            !
+            A00 = A00 + tmp2
         enddo 
     end subroutine zbtasinv
 

@@ -135,7 +135,7 @@ module bse_sparse
         complex(dp),allocatable,dimension(:,:):: Ktip 
         complex(dp),allocatable,dimension(:)  :: Kdiag
         complex(dp),allocatable,dimension(:,:,:):: Ldiag,Lupper,Llower,Llowerarrow,Lupperarrow,Ltip 
-        integer::N,blocksize,num_blocks, NT, local_nnop, iop, row, col, fliped_col, fliped_row, i, k
+        integer::N,blocksize,num_blocks, NT, local_nnop, iop, row, col, fliped_col, fliped_row, i, k,local_nops(1)
         integer(8):: nnz
         integer,allocatable,dimension(:,:)::table
         integer,allocatable,dimension(:,:)::ipiv_diagonal
@@ -187,14 +187,14 @@ module bse_sparse
                                 Kdiag, Ktip,&
                                 Adiag, Aupper, Alower, Alowerarrow, Aupperarrow, Atip)
                 ! selected inversion of the system matrix
-                call zbtatrf( blocksize, nm_dev, num_blocks, &
-                            Adiag,Alower,Aupper,Alowerarrow,Aupperarrow,Atip, &
-                            ipiv_diagonal,ipiv_arrow_tip)
-                call zbtatri( blocksize, nm_dev, num_blocks, &
-                            Adiag,Alower,Aupper,Alowerarrow,Aupperarrow,Atip, &
-                            ipiv_diagonal,ipiv_arrow_tip)
-                ! call zbtasinv(blocksize, nm_dev, num_blocks, &
-                !             Adiag,Alower,Aupper,Alowerarrow,Aupperarrow,Atip)
+                ! call zbtatrf( blocksize, nm_dev, num_blocks, &
+                !             Adiag,Alower,Aupper,Alowerarrow,Aupperarrow,Atip, &
+                !             ipiv_diagonal,ipiv_arrow_tip)
+                ! call zbtatri( blocksize, nm_dev, num_blocks, &
+                !             Adiag,Alower,Aupper,Alowerarrow,Aupperarrow,Atip, &
+                !             ipiv_diagonal,ipiv_arrow_tip)
+                call zbtasinv(blocksize, nm_dev, num_blocks, &
+                            Adiag,Alower,Aupper,Alowerarrow,Aupperarrow,Atip)
                 ! compute P_retarded
                 ! 
                 Atip = matmul( Atip , Ltip(:,:,iop) )
@@ -218,8 +218,9 @@ module bse_sparse
             print '("  computation time = ", F0.3 ," seconds.")', finish-start
         else 
             do iop = 1,nnop
-                ! build BTA blocks of RPA polarization L0 and 2-body interaction kernal K         
-                call bse_sparse_build(method,alpha,spindeg,nm_dev,ndiag,nen,En,nops(iop),1,blocksize,num_blocks,N,table,&
+                ! build BTA blocks of RPA polarization L0 and 2-body interaction kernal K  
+                local_nops = nops(iop)       
+                call bse_sparse_build(method,alpha,spindeg,nm_dev,ndiag,nen,En,local_nops,1,blocksize,num_blocks,N,table,&
                                     G_lesser,G_greater,G_retarded,W,V,&
                                     Ldiag,Lupper,Llower,Lupperarrow,Llowerarrow,Ltip,Ktip,Kdiag)                   
                 ! build system matrix blocks (I - L0 @ K)
@@ -228,14 +229,14 @@ module bse_sparse
                                 Kdiag, Ktip,&
                                 Adiag, Aupper, Alower, Alowerarrow, Aupperarrow, Atip)
                 ! selected inversion of the system matrix
-                call zbtatrf( blocksize, nm_dev, num_blocks, &
-                            Adiag,Alower,Aupper,Alowerarrow,Aupperarrow,Atip, &
-                            ipiv_diagonal,ipiv_arrow_tip)
-                call zbtatri( blocksize, nm_dev, num_blocks, &
-                            Adiag,Alower,Aupper,Alowerarrow,Aupperarrow,Atip, &
-                            ipiv_diagonal,ipiv_arrow_tip)
-                ! call zbtasinv(blocksize, nm_dev, num_blocks, &
-                !             Adiag,Alower,Aupper,Alowerarrow,Aupperarrow,Atip)
+                ! call zbtatrf( blocksize, nm_dev, num_blocks, &
+                !             Adiag,Alower,Aupper,Alowerarrow,Aupperarrow,Atip, &
+                !             ipiv_diagonal,ipiv_arrow_tip)
+                ! call zbtatri( blocksize, nm_dev, num_blocks, &
+                !             Adiag,Alower,Aupper,Alowerarrow,Aupperarrow,Atip, &
+                !             ipiv_diagonal,ipiv_arrow_tip)
+                call zbtasinv(blocksize, nm_dev, num_blocks, &
+                            Adiag,Alower,Aupper,Alowerarrow,Aupperarrow,Atip)
                 ! compute P_retarded
                 ! 
                 Atip = matmul( Atip , Ltip(:,:,1) )
