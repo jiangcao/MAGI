@@ -1,5 +1,5 @@
 module sinv
-    ! selected inversion of a structured sparse matrices
+    ! selected inversion of structured sparse matrices
     ! The algorithm is based on the python library (SerinV)[https://github.com/vincent-maillou/serinv] 
     use parameters_mod,only:dp,c1i,czero,cone        
     use omp_lib
@@ -374,8 +374,8 @@ module sinv
             tmp3 = matmul(AN1,A10) + matmul(ANN,AN0)
             tmp2 = matmul(A11,A10) + matmul(A1N,AN0)
             !
-            A01 = - matmul(A00,tmp1)                !!! <- A01 replaced by X01
-            A0N = - matmul(A00,tmp6)                !!! <- A0N replaced by X0N
+            A01 = - matmul(A00,tmp1)                 !!! <- A01 replaced by X01
+            A0N = - matmul(A00,tmp6)                 !!! <- A0N replaced by X0N
             !            
             A10 = - matmul(tmp2,A00)                 !!! <- A10 replaced by X10
             AN0 = - matmul(tmp3,A00)                 !!! <- AN0 replaced by XN0

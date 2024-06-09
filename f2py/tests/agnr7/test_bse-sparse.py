@@ -12,7 +12,7 @@ from negf import gw_dense,bse_dense,bse_sparse
 from wannier import wannierham
 import matplotlib.pyplot as plt
 import os
-os.environ["OMP_NUM_THREADS"] = "20"
+os.environ["OMP_NUM_THREADS"] = "128"
 # from sinv import sinv_tridiagonal_arrowhead
 from serinv.sequential import ddbtasinv
 import time
@@ -31,7 +31,7 @@ if __name__=='__main__':
    Lx=L[0]
 
    ns = 2
-   length = 10
+   length = 50
    nen = 3200
    nsub = 1
    nky=1
@@ -45,7 +45,7 @@ if __name__=='__main__':
    temp =  np.ones(2)* 300.0
    mu = np.array( [-2.25,-2.25 ] )
 
-   ndiag=nb
+   ndiag=nb*2
 
    if (ndiag==0):
        ldiag=True
@@ -96,7 +96,7 @@ if __name__=='__main__':
    ndos = np.imag(Gn_diag)
 
    print("save checkpoint.")
-   np.savez('data_ndiag'+str(ndiag)+'.npz', 
+   np.savez('data_len'+str(length)+'_ndiag'+str(ndiag)+'.npz', 
                         ID_list=ID_list,
                         tr=tr,
                         te=te,
@@ -115,44 +115,45 @@ if __name__=='__main__':
    nnop= int( (4.0-Ephmin)/dE/nstep )
    # nnop = 5
    nops=np.arange(nnop)*nstep + int(Ephmin / dE)
+   print('Num Eph = ' , nnop)
    print('Ephoton = ' , nops * dE)
 
    nm_dev=nb*length
 
-   print("")
-   print("--- Start full BSE solver ---")
-   start_t = time.time()
-
-   for iop in range(nnop):
-      print("iop=",iop,"Ephoton=",nops[iop]*dE)      
-      
-      P_r,nn = bse_dense.bse_fullsolve(
-               alpha=0.99,spindeg=2.0,nm_dev=nm_dev,ndiag=ndiag,nen=nen,
-               en=energies,nop=nops[iop],
-               g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,
-               w=W0_r,v=v)      
-
-      epsilon_M = np.eye(nm_dev) -  v[:,:,0] @ P_r
-
-      eps_M[iop] = np.sum( epsilon_M[ nm_dev//2, nb*ns:(nm_dev-nb*ns) ] )
-      eps_en[iop]=nops[iop]*dE
-      print('- E=',eps_en[iop],'epsilon_2=', np.abs( np.imag(eps_M[iop]) ) )
-      print(" ")      
-
-   finish_t = time.time()
-   print("! dense BSE solver takes %s second for all optical energies " % (finish_t - start_t))
-      
-
-   print("save checkpoint.")
-   np.savez('data_ndiag'+str(ndiag)+'.npz', 
-                        ID_list=ID_list,
-                        tr=tr,
-                        te=te,
-                        energies=energies,
-                        ldos=ldos,
-                        ndos=ndos,
-                        eps_M=eps_M,
-                        eps_en=eps_en)
+#   print("")
+#   print("--- Start full BSE solver ---")
+#   start_t = time.time()
+#
+#   for iop in range(nnop):
+#      print("iop=",iop,"Ephoton=",nops[iop]*dE)      
+#      
+#      P_r,nn = bse_dense.bse_fullsolve(
+#               alpha=0.99,spindeg=2.0,nm_dev=nm_dev,ndiag=ndiag,nen=nen,
+#               en=energies,nop=nops[iop],
+#               g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,
+#               w=W0_r,v=v)      
+#
+#      epsilon_M = np.eye(nm_dev) -  v[:,:,0] @ P_r
+#
+#      eps_M[iop] = np.sum( epsilon_M[ nm_dev//2, nb*ns:(nm_dev-nb*ns) ] )
+#      eps_en[iop]=nops[iop]*dE
+#      print('- E=',eps_en[iop],'epsilon_2=', np.abs( np.imag(eps_M[iop]) ) )
+#      print(" ")      
+#
+#   finish_t = time.time()
+#   print("! dense BSE solver takes %s second for all optical energies " % (finish_t - start_t))
+#      
+#
+#   print("save checkpoint.")
+#   np.savez('data_len'+str(length)+'_ndiag'+str(ndiag)+'.npz', 
+#                        ID_list=ID_list,
+#                        tr=tr,
+#                        te=te,
+#                        energies=energies,
+#                        ldos=ldos,
+#                        ndos=ndos,
+#                        eps_M=eps_M,
+#                        eps_en=eps_en)
    
    print("")
    print("--- Start sparse BSE solver ---")
@@ -178,7 +179,7 @@ if __name__=='__main__':
    print("! sparse BSE solver takes %s second for %s optical energies " % ((finish_t - start_t) , nnop))            
    print("save checkpoint.")
 
-   np.savez('data_ndiag'+str(ndiag)+'.npz', 
+   np.savez('data_len'+str(length)+'_ndiag'+str(ndiag)+'.npz', 
                         ID_list=ID_list,
                         tr=tr,
                         te=te,
@@ -273,7 +274,7 @@ if __name__=='__main__':
    print("! Takes %s second in total " % (finish_t - start_t))
    
    print("save checkpoint.")
-   np.savez('data_ndiag'+str(ndiag)+'.npz', 
+   np.savez('data_len'+str(length)+'_ndiag'+str(ndiag)+'.npz', 
                         ID_list=ID_list,
                         tr=tr,
                         te=te,
@@ -287,64 +288,4 @@ if __name__=='__main__':
             )
 
 
-   # print("--- Start SINV solver ---")
-
-   # for iop in range(nnop): 
-   #    Adiag,Aupper,Alower,Alowerarrow,Aupperarrow,Atip = bse_sparse.bse_sparse_build_system(
-   #          blocksize=blocksize, num_blocks=num_blocks, nnop=nnop, iop=iop+1, nm_dev=nm_dev,
-   #          ldiag=Ldiag, lupper=Lupper, llower=Llower, llowerarrow=Llowerarrow, 
-   #          lupperarrow=Lupperarrow, ltip=Ltip, kdiag=Kdiag, ktip=Ktip )
-      
-   #    # bse_sparse.bse_sparse_check_system( tol=1e-6, 
-   #    #   alpha=0.99,spindeg=2.0,nm_dev=nm_dev,ndiag=ndiag,nen=nen,en=energies,
-   #    #   nop=nops,nnop=nnop,iop=iop+1,
-   #    #   blocksize=blocksize,num_blocks=num_blocks,n=N,table=table,
-   #    #   g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,w=W0_r,v=v, 
-   #    #   adiag=Adiag, aupper=Aupper, alower=Alower, alowerarrow=Alowerarrow, aupperarrow=Aupperarrow, atip=Atip,
-   #    #   ldiag=Ldiag, lupper=Lupper, llower=Llower, llowerarrow=Llowerarrow, lupperarrow=Lupperarrow, ltip=Ltip )
-
-
-   #    start_t = time.time()
-   #    try:
-   #       (
-   #        X_diagonal_blocks,
-   #        X_lower_diagonal_blocks,
-   #        X_upper_diagonal_blocks,
-   #        X_arrow_bottom_blocks,
-   #        X_arrow_right_blocks,
-   #        X_arrow_tip_block,
-   #       ) = sinv_tridiagonal_arrowhead(
-   #       A_diagonal_blocks=Adiag,
-   #       A_lower_diagonal_blocks=Alower,
-   #       A_arrow_bottom_blocks=Alowerarrow,
-   #       A_arrow_tip_block=Atip,
-   #       A_upper_diagonal_blocks=Aupper,
-   #       A_arrow_right_blocks=Aupperarrow,
-   #       )
-   #       finish_t = time.time()
-   #       print("! SINV takes %s second " % (finish_t - start_t))
-   #       P_r = - 1j* X_arrow_bottom_blocks @ Lupperarrow[:,:,iop] - 1j* X_arrow_tip_block @ Ltip[:,:,iop]
-   #       epsilon_M = np.eye(nm_dev) -  v[:,:,0] @ P_r
-
-   #       eps_M_sinv2[iop] = np.sum( epsilon_M[ nm_dev//2, nb*ns:(nm_dev-nb*ns) ] )
-         
-   #       print('E=',eps_en[iop],'epsilon_2=', np.abs( np.imag(eps_M_sinv2[iop]) ),'reference=', np.abs( np.imag(eps_M[iop]) ) )
-                  
-   #    except:
-   #       print("! SINV fails") 
-
-      
-   # print("save checkpoint.")
-   # np.savez('data_ndiag'+str(ndiag)+'.npz', 
-   #                      ID_list=ID_list,
-   #                      tr=tr,
-   #                      te=te,
-   #                      energies=energies,
-   #                      ldos=ldos,
-   #                      ndos=ndos,
-   #                      eps_M=eps_M,
-   #                      eps_en=eps_en,
-   #                      eps_M_sinv=eps_M_sinv,
-   #                      eps_M_sinv2=eps_M_sinv2
-   #          )
-
+   
