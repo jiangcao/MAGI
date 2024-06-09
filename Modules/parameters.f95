@@ -13,7 +13,11 @@ module parameters_mod
     REAL(kind=dp), PARAMETER :: hbar_eV=6.582295486E-16 ! eV s    
     COMPLEX(kind=dp), PARAMETER :: cone = dcmplx(1.0d0,0.0d0)
     COMPLEX(kind=dp), PARAMETER :: czero  = dcmplx(0.0d0,0.0d0)
-    COMPLEX(kind=dp), PARAMETER :: c1i  = dcmplx(0.0d0,1.0d0)     
+    COMPLEX(kind=dp), PARAMETER :: c1i  = dcmplx(0.0d0,1.0d0)    
+    real(dp), parameter :: zero= 0.0_dp
+    real(dp), parameter :: one= 1.0_dp
+    real(dp), parameter :: tol6= 0.000001_dp
+    real(dp), parameter :: tol12=0.000000000001_dp 
     REAL(kind=dp), PARAMETER  :: BOLTZ = 8.617333262d-05 !eV K-1 
 end module parameters_mod
 

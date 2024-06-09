@@ -221,10 +221,27 @@ module fft_mod
       Z_out(:) = Z_out(:) / dble(n)
     end subroutine do_mkl_dfti_conv
 
-    ! calculates the Hilbert transformation 
-    subroutine hilbert_transformation(method,) 
-      ! following Shishkin & Kresse [PRB 74, 035101]
-    end subroutine hilbert_transformation
+    subroutine do_mkl_dfti_fft(n,x_in,x_out,forward)
+    ! 1D complex to complex
+      Use MKL_DFTI
+      integer :: n
+      Complex(dp),intent(in) :: X_in(n)
+      Complex(dp),intent(out) :: x_out(n)
+      logical,intent(in) :: forward
+      type(DFTI_DESCRIPTOR), POINTER :: My_Desc1_Handle, My_Desc2_Handle
+      Integer :: Status
+      ! Perform a complex to complex transform
+      Status = DftiCreateDescriptor( My_Desc1_Handle, DFTI_DOUBLE, DFTI_COMPLEX, 1, n )
+      Status = DftiSetValue( My_Desc1_Handle, DFTI_PLACEMENT, DFTI_NOT_INPLACE)
+      Status = DftiCommitDescriptor( My_Desc1_Handle )
+      if ( forward ) then 
+        Status = DftiComputeForward( My_Desc1_Handle, x_in, x_out )
+      else 
+        Status = DftiComputeBackward( My_Desc1_Handle, x_in, x_out )
+      endif 
+      Status = DftiFreeDescriptor(My_Desc1_Handle)
+      x_out(:) = x_out(:) / dble(n)
+    end subroutine do_mkl_dfti_fft
     
 end module fft_mod
     

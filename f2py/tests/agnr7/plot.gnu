@@ -1,0 +1,1 @@
+../../examples/agnr7/plot.gnu
