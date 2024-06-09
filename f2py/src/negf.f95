@@ -4,6 +4,8 @@ include "../../Modules/parameters.f95"
 
 include "../../Modules/fft.f95"
 
+include "../../Modules/hilbert.f95"
+
 include "../../Modules/matrix_c.f95"
 
 include "../../Modules/block_sparse.f95"
