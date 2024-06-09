@@ -43,9 +43,9 @@ module bse_sparse
             print *, '  ERROR!'
             call abort
         endif        
-        print '("  nm_dev=             ", I20)', nm_dev
-        print '("  ndiag =             ", I20)', ndiag
-        print '("  resized system size=", I20)', N 
+        print '("  nm_dev=                ", I10)', nm_dev
+        print '("  ndiag =                ", I10)', ndiag
+        print '("  resized system size=   ", I10)', N 
         ! determine coordinates of nnz
         nnz=0
         bandwidth=0
@@ -64,12 +64,12 @@ module bse_sparse
                 endif
             enddo 
         enddo
-        blocksize = bandwidth
+        blocksize = bandwidth 
         num_blocks = ceiling( dble(N - nm_dev) / blocksize )  
         NT = blocksize * num_blocks         
-        print '("  total arrow size=      ", I20)', NT
-        print '("  arrow block size=      ", I20)', blocksize
-        print '("  arrow number of blocks=", I20)', num_blocks
+        print '("  total arrow size=      ", I10)', NT
+        print '("  arrow block size=      ", I10)', blocksize
+        print '("  arrow number of blocks=", I10)', num_blocks
         print '("  nonzero elements=      ", F0.3, " Million")', dble(nnz)/1e6
         print '("  nonzero ratio =        ", F0.3 ," %")', dble(nnz)/(dble(NT+nm_dev)**2)*100
     end subroutine bse_sparse_pre
@@ -128,27 +128,32 @@ module bse_sparse
         allocate(ipiv_diagonal(blocksize,num_blocks), source=0)
         allocate(ipiv_arrow_tip(nm_dev), source=0)
         !
-        print *, " start computation ... "
         if (local_nnop > 1) then  
             ! build BTA blocks of RPA polarization L0 and 2-body interaction kernal K                     
             call bse_sparse_build(alpha,spindeg,nm_dev,ndiag,nen,En,nops,local_nnop,blocksize,num_blocks,N,table,&
                                     G_lesser,G_greater,G_retarded,W,V,&
                                     Ldiag,Lupper,Llower,Lupperarrow,Llowerarrow,Ltip,Ktip,Kdiag)       
-            print *, " start sinv ... " 
+            print *, " start selected inversion " 
             start = omp_get_wtime()                                     
             do iop = 1,local_nnop
+                write(*, '(A)', advance="no") '.'
                 ! build system matrix blocks (I - L0 @ K)
+                print *, "  build system "
                 call bse_sparse_build_system(blocksize,num_blocks,nm_dev,local_nnop,iop,&
                                 Ldiag, Lupper, Llower, Llowerarrow, Lupperarrow, Ltip, &
                                 Kdiag, Ktip,&
                                 Adiag, Aupper, Alower, Alowerarrow, Aupperarrow, Atip)
                 ! selected inversion of the system matrix
+                print *, "  factorize "
                 call zbtatrf( blocksize, nm_dev, num_blocks, &
                             Adiag,Alower,Aupper,Alowerarrow,Aupperarrow,Atip, &
                             ipiv_diagonal,ipiv_arrow_tip)
+                print *, "  invert "
                 call zbtatri( blocksize, nm_dev, num_blocks, &
                             Adiag,Alower,Aupper,Alowerarrow,Aupperarrow,Atip, &
                             ipiv_diagonal,ipiv_arrow_tip)
+                ! call zbtatrsinv(blocksize, nm_dev, num_blocks, &
+                !             Adiag,Alower,Aupper,Alowerarrow,Aupperarrow,Atip)
                 ! compute P_retarded
                 ! 
                 Atip = matmul( Atip , Ltip(:,:,iop) )
@@ -188,6 +193,8 @@ module bse_sparse
                 call zbtatri( blocksize, nm_dev, num_blocks, &
                             Adiag,Alower,Aupper,Alowerarrow,Aupperarrow,Atip, &
                             ipiv_diagonal,ipiv_arrow_tip)
+                ! call zbtatrsinv(blocksize, nm_dev, num_blocks, &
+                !             Adiag,Alower,Aupper,Alowerarrow,Aupperarrow,Atip)
                 ! compute P_retarded
                 ! 
                 Atip = matmul( Atip , Ltip(:,:,1) )
@@ -236,36 +243,56 @@ module bse_sparse
             N = blocksize*num_blocks
             ! A_xx
             call zgemm('n','n',nm_dev,nm_dev,nm_dev,-cone,Ltip(:,:,iop),nm_dev,Ktip,nm_dev,czero,Atip,nm_dev)  
-            do concurrent (i=1:nm_dev)
+            !$omp parallel default(shared) private(i)
+            !$omp do
+            do i=1,nm_dev
                 Atip(i,i) = Atip(i,i) + cone 
             enddo 
+            !$omp end do
+            !$omp end parallel  
             ! A_xd = - L_xd * K_dd
-            do concurrent (i = 1:nm_dev)
+            !$omp parallel default(shared) private(i,j)
+            !$omp do   
+            do i = 1,nm_dev
                 do concurrent (j = 1:N) 
                     Alowerarrow(i,j) = - Llowerarrow(i,j,iop) * Kdiag(j)
                 enddo
-            enddo        
+            enddo                   
+            !$omp end do
+            !$omp end parallel  
             ! A_dx = - L_dx * K_xx            
             call zgemm('n','n',N,nm_dev,nm_dev,-cone,Lupperarrow(:,:,iop),N,Ktip,nm_dev,czero,Aupperarrow,N)
             ! A_dd
             ! diagonal blocks         
-            do concurrent (i=1:blocksize)
+            !$omp parallel default(shared) private(i,j)
+            !$omp do  
+            do i=1,blocksize
                 do concurrent (j=1:blocksize*num_blocks)
                     Adiag(i,j) = - Ldiag(i,j,iop) * Kdiag(j)
                 enddo               
-            enddo 
-            do concurrent (ib=1:num_blocks)
+            enddo                        
+            !$omp end do
+            !$omp end parallel  
+            !$omp parallel default(shared) private(ib,i)
+            !$omp do  
+            do ib=1,num_blocks
                 do concurrent (i=1:blocksize)
                     Adiag(i,i+(ib-1)*blocksize) = Adiag(i,i+(ib-1)*blocksize) + cone
                 enddo 
-            enddo
+            enddo                      
+            !$omp end do
+            !$omp end parallel 
             ! upper and lower diagonal blocks
-            do concurrent (i=1:blocksize)
+            !$omp parallel default(shared) private(i,j)
+            !$omp do  
+            do i=1,blocksize
                 do concurrent (j=1:blocksize*(num_blocks-1))
                     Aupper(i,j) = - Lupper(i,j,iop) * Kdiag(j+blocksize)
                     Alower(i,j) = - Llower(i,j,iop) * Kdiag(j)
                 enddo 
-            enddo 
+            enddo                       
+            !$omp end do
+            !$omp end parallel 
             !
         else 
             print *,"iop not correct!"
@@ -498,7 +525,6 @@ module bse_sparse
         real(dp) :: start, finish
         integer :: i,j,k,l,p,q,ie,row,col,it,iop,ib,NT,nepoch,fliped_row,fliped_col                
         !
-        print *,'  init memory ...'
         Ltip = czero
         Ldiag = czero
         Lupper = czero
