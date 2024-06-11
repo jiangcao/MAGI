@@ -33,19 +33,19 @@ if __name__ == "__main__":
     Lx = L[0]
 
     ns = 2
-    length = 10
-    nen = 32
-    nsub = 1
-    nky = 1
-    nkz = 1
-    nk = nky * nkz
-    niter = -1
-    eps_screen = 1.0
-    r0 = 3.0
-    emin = -10.0
-    emax = 4.0
-    temp = np.ones(2) * 300.0
-    mu = np.array([-2.25, -2.25])
+    length = 10  # number of cells in the device
+    nen = 3200  # number of energy points
+    nsub = 1  #
+    nky = 1  #
+    nkz = 1  #
+    nk = nky * nkz  #
+    niter = -1  # number of GW iterations
+    eps_screen = 1.0  #
+    r0 = 3.0  #
+    emin = -10.0  #
+    emax = 4.0  #
+    temp = np.ones(2) * 300.0  #
+    mu = np.array([-2.25, -2.25])  #
 
     ndiag = nb * 1
 
@@ -152,7 +152,7 @@ if __name__ == "__main__":
     nstep = 4 # ratio/discretizqtion for photon energies
     eps_M = np.zeros(nen // nstep, dtype="complex")
 
-    # 
+    #
     for iop in range(int(0.8 / dE) // nstep, nen // nstep):
 
         print(iop * 4, "Ephot=", iop * nstep * dE)
