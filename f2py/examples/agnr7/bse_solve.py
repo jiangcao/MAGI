@@ -193,11 +193,11 @@ def bse_fullsolve(
 
     # Slice LIL into blocks
 
-
     print(f"Finished polarization", flush=True)
 
     # Construct Mmat
-    # -- Construct BTA arry representation
+    # -> bse_sparse_build()
+    # -- Construct BTA array representation
     for row in range(N):
         for col in range(N):
             i, j = table[:, row]
@@ -209,6 +209,7 @@ def bse_fullsolve(
     toc = time.perf_counter()
     print(f"L0_ijkl = G_jl * G_ki: {toc - tic} seconds", flush=True)
 
+    # -> bse_sparse_build_system()
     # Compute (I - L0 K) -> A
     # -- Modified to block-operations
     tic = time.perf_counter()
