@@ -437,7 +437,7 @@ CONTAINS
     END SUBROUTINE mat_def_periodic
     
 
-    SUBROUTINE calc_momentum_operator(method,nb,nx,ny,nz,hr,cell,n_range,wannier_center,rmn,pmn)
+    SUBROUTINE calc_momentum_operator(pmn,method,nb,nx,ny,nz,hr,cell,n_range,wannier_center,rmn)
         implicit none
         character(len=*),intent(in)::method
         integer, intent(in) :: n_range(:),nb,nx,ny,nz ! [nb,xmin,xmax,ymin,ymax,zmin,zmax,nvb,nspin]

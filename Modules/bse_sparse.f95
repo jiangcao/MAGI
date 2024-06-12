@@ -3,8 +3,52 @@ module bse_sparse
     use parameters_mod,only:dp,twopi,pi,e_charge,epsilon0,m0_charge,hbar,c1i,czero,cone    
     use omp_lib
     use polarization
+    use sinv
     implicit none
     contains
+
+    subroutine reshape_BTA_block2stack(num_blocks,blocksize,nm_dev,&
+        Adiag, Aupper, Alower, Alowerarrow, Aupperarrow,&
+        out_Adiag, out_Aupper, out_Alower, out_Alowerarrow, out_Aupperarrow)
+        ! input
+        integer,intent(in)::num_blocks,blocksize,nm_dev
+        complex(dp),intent(in),dimension(:,:):: Adiag
+        complex(dp),intent(in),dimension(:,:):: Aupper,Alower 
+        complex(dp),intent(in),dimension(:,:):: Alowerarrow
+        complex(dp),intent(in),dimension(:,:):: Aupperarrow 
+        ! output
+        complex(dp),intent(out),dimension(num_blocks,blocksize,blocksize):: out_Adiag
+        complex(dp),intent(out),dimension(num_blocks-1,blocksize,blocksize):: out_Aupper,out_Alower 
+        complex(dp),intent(out),dimension(num_blocks,nm_dev,blocksize):: out_Alowerarrow
+        complex(dp),intent(out),dimension(num_blocks,blocksize,nm_dev):: out_Aupperarrow 
+        !
+        integer::ib,i,j 
+        ! !$omp parallel default(shared) private(ib,i,j)
+        ! !$omp do
+        ! do ib=1,num_blocks            
+        !     do i=1,blocksize
+        !         do j=1,blocksize
+        !             out_Adiag(ib,i,j) = Adiag(i,j+(ib-1)*blocksize)
+        !             if (ib<num_blocks) then 
+        !                 out_Aupper(ib,i,j) = Aupper(i,j+(ib-1)*blocksize)
+        !                 out_Alower(ib,i,j) = Alower(i,j+(ib-1)*blocksize)
+        !             endif                     
+        !         enddo 
+        !         do j=1,nm_dev
+        !             out_Alowerarrow(ib,j,i) = Alowerarrow(j,i+(ib-1)*blocksize)
+        !             out_Aupperarrow(ib,i,j) = Aupperarrow(i+(ib-1)*blocksize,j)
+        !         enddo 
+        !     enddo 
+        ! enddo            
+        ! !$omp end do
+        ! !$omp end parallel  
+
+        out_Adiag = reshape(Adiag, [num_blocks,blocksize,blocksize], order=[2,3,1])
+        out_Aupper = reshape(Aupper, [num_blocks-1,blocksize,blocksize], order=[2,3,1])
+        out_Alower = reshape(Alower, [num_blocks-1,blocksize,blocksize], order=[2,3,1])
+        out_Aupperarrow = reshape(Aupperarrow, [num_blocks,blocksize,nm_dev], order=[2,1,3])
+        out_Alowerarrow = reshape(Alowerarrow, [num_blocks,nm_dev,blocksize], order=[2,3,1])
+    end subroutine reshape_BTA_block2stack
 
     ! preprocessing the sparsity pattern and decide the block_size and num_blocks in the BTA matrix
     subroutine bse_sparse_pre(nm_dev,ndiag,N,nnz,table,blocksize,num_blocks)
@@ -39,12 +83,12 @@ module bse_sparse
             it=it + k-i
         enddo
         if ((it-1)/=N) then 
-            print *, 'ERROR!'
+            print *, '  ERROR!'
             call abort
         endif        
-        print *, 'nm_dev=', nm_dev
-        print *, 'ndiag =', ndiag
-        print *, 'resized system size=', N 
+        print '("  nm_dev=                ", I10)', nm_dev
+        print '("  ndiag =                ", I10)', ndiag
+        print '("  resized system size=   ", I10)', N 
         ! determine coordinates of nnz
         nnz=0
         bandwidth=0
@@ -63,29 +107,155 @@ module bse_sparse
                 endif
             enddo 
         enddo
-        blocksize = bandwidth
+        blocksize = bandwidth 
         num_blocks = ceiling( dble(N - nm_dev) / blocksize )  
         NT = blocksize * num_blocks         
-        print '("  total arrow size=", I20)', NT
-        print '("  arrow block size=", I20)', blocksize
-        print '("  arrow number of blocks=", I20)', num_blocks
-        print '("  nonzero elements=", F0.3, " Million")', dble(nnz)/1e6
-        print '("  nonzero ratio = ", F0.3 ," %")', dble(nnz)/(dble(NT+nm_dev)**2)*100
+        print '("  total arrow size=      ", I10)', NT
+        print '("  arrow block size=      ", I10)', blocksize
+        print '("  arrow number of blocks=", I10)', num_blocks
+        print '("  nonzero elements=      ", F0.3, " Million")', dble(nnz)/1e6
+        print '("  nonzero ratio =        ", F0.3 ," %")', dble(nnz)/(dble(NT+nm_dev)**2)*100
     end subroutine bse_sparse_pre
 
     ! solve the Bethe-Salpeter Equation with selected inversion 
-    subroutine bse_sparse_solve(blocksize,num_blocks,nm_dev,&
-        Adiag, Aupper, Alower, Alowerarrow, Aupperarrow, Atip)
-        ! input
-        integer,intent(in)::blocksize,num_blocks,nm_dev
-        ! input/output 
-        complex(dp),intent(inout),dimension(:,:):: Adiag
-        complex(dp),intent(inout),dimension(:,:):: Aupper,Alower 
-        complex(dp),intent(inout),dimension(:,:):: Alowerarrow
-        complex(dp),intent(inout),dimension(:,:):: Aupperarrow 
-        complex(dp),intent(inout),dimension(:,:):: Atip 
-        ! --- local
-
+    subroutine bse_sparse_solve(method,alpha,spindeg,nm_dev,ndiag,nen,nsub,En,nops,nnop,nk,G_lesser,G_greater,G_retarded,W,V,P_retarded)        
+        ! in
+        character(len=*),intent(in)::method
+        integer,intent(in)::nm_dev,nen ! device dimension, number of energies
+        integer,intent(in)::nnop,nops(nnop) ! number of optical energies, optical energies in unit of energy interval
+        integer,intent(in)::nsub,nk,ndiag ! number of legendre sub-energy nodes, number of k points, number of offdiagonals
+        real(dp),intent(in)::en(nen),spindeg,alpha ! energy grid, spin degeneracy, empirical parameter
+        complex(dp),intent(in),dimension(nm_dev,nm_dev,nen,nsub,nk):: G_lesser,G_greater,G_retarded ! electron Green Functions
+        complex(dp),intent(in),dimension(nm_dev,nm_dev) :: W ! W_0 static screened Coulomb operator
+        complex(dp),intent(in),dimension(nm_dev,nm_dev) :: V ! bare Coulomb operator
+        ! out 
+        complex(dp),intent(out),dimension(nm_dev,nm_dev,nnop):: P_retarded ! 2-point polarization function with interacting electron-hole
+        !---- local
+        complex(dp),allocatable,dimension(:,:):: Adiag,Aupper,Alower,Alowerarrow,Aupperarrow,Atip 
+        complex(dp),allocatable,dimension(:,:):: Ktip 
+        complex(dp),allocatable,dimension(:)  :: Kdiag
+        complex(dp),allocatable,dimension(:,:,:):: Ldiag,Lupper,Llower,Llowerarrow,Lupperarrow,Ltip 
+        integer::N,blocksize,num_blocks, NT, local_nnop, iop, row, col, fliped_col, fliped_row, i, k,local_nops(1)
+        integer(8):: nnz
+        integer,allocatable,dimension(:,:)::table
+        integer,allocatable,dimension(:,:)::ipiv_diagonal
+        integer,allocatable,dimension(:)::ipiv_arrow_tip
+        real(dp) :: start, finish
+        !
+        ! pre-process the sparsity pattern of system
+        print *, " pre-process ... "
+        allocate(table(2,nm_dev*nm_dev))
+        call bse_sparse_pre(nm_dev,ndiag,N,nnz,table,blocksize,num_blocks)
+        ! prepare the memory
+        NT = blocksize * num_blocks
+        if (trim(method) == 'fft') then 
+            local_nnop = nnop
+        else 
+            local_nnop = 1 ! compute one optical energy at a time
+        endif 
+        print *, " init memory ... "
+        allocate(Ldiag(blocksize,NT,local_nnop), source=czero) 
+        allocate(Lupper(blocksize,NT-blocksize,local_nnop), source=czero)
+        allocate(Llower(blocksize,NT-blocksize,local_nnop), source=czero) 
+        allocate(Llowerarrow(nm_dev,NT,local_nnop), source=czero) 
+        allocate(Lupperarrow(NT,nm_dev,local_nnop), source=czero)              
+        allocate(Ltip(nm_dev,nm_dev,local_nnop), source=czero)  
+        allocate(Kdiag(NT), source=czero)  ! diagonal of Kernel
+        allocate(Ktip(nm_dev,nm_dev), source=czero)  ! dense tip block of Kernel
+        allocate(Adiag(blocksize,NT), source=czero) 
+        allocate(Aupper(blocksize,NT-blocksize), source=czero)
+        allocate(Alower(blocksize,NT-blocksize), source=czero) 
+        allocate(Alowerarrow(nm_dev,NT), source=czero) 
+        allocate(Aupperarrow(NT,nm_dev), source=czero)              
+        allocate(Atip(nm_dev,nm_dev), source=czero)  
+        allocate(ipiv_diagonal(blocksize,num_blocks), source=0)
+        allocate(ipiv_arrow_tip(nm_dev), source=0)
+        !
+        if (local_nnop > 1) then  
+            ! build BTA blocks of RPA polarization L0 and 2-body interaction kernal K                     
+            call bse_sparse_build(method,alpha,spindeg,nm_dev,ndiag,nen,En,nops,local_nnop,blocksize,num_blocks,N,table,&
+                                    G_lesser,G_greater,G_retarded,W,V,&
+                                    Ldiag,Lupper,Llower,Lupperarrow,Llowerarrow,Ltip,Ktip,Kdiag)       
+            print *, " start selected inversion " 
+            start = omp_get_wtime()                                     
+            do iop = 1,local_nnop
+                write(*, '(A)', advance="no") '.'
+                ! build system matrix blocks (I - L0 @ K)
+                ! print *, "  build system "
+                call bse_sparse_build_system(blocksize,num_blocks,nm_dev,local_nnop,iop,&
+                                Ldiag, Lupper, Llower, Llowerarrow, Lupperarrow, Ltip,&
+                                Kdiag, Ktip,&
+                                Adiag, Aupper, Alower, Alowerarrow, Aupperarrow, Atip)
+                ! selected inversion of the system matrix
+                ! call zbtatrf( blocksize, nm_dev, num_blocks, &
+                !             Adiag,Alower,Aupper,Alowerarrow,Aupperarrow,Atip, &
+                !             ipiv_diagonal,ipiv_arrow_tip)
+                ! call zbtatri( blocksize, nm_dev, num_blocks, &
+                !             Adiag,Alower,Aupper,Alowerarrow,Aupperarrow,Atip, &
+                !             ipiv_diagonal,ipiv_arrow_tip)
+                call zbtasinv(blocksize, nm_dev, num_blocks, &
+                            Adiag,Alower,Aupper,Alowerarrow,Aupperarrow,Atip)
+                ! compute P_retarded
+                ! 
+                Atip = matmul( Atip , Ltip(:,:,iop) )
+                Atip = Atip + matmul( Alowerarrow, Lupperarrow(:,:,iop) ) 
+                !$omp parallel default(shared) private(row,col,fliped_row,fliped_col,i,k)
+                !$omp do
+                do row=1,nm_dev
+                    do col=1,nm_dev
+                        fliped_row = nm_dev - col + 1
+                        fliped_col = nm_dev - row + 1 
+                        i=table(1,row)
+                        k=table(1,col)
+                        P_retarded(i,k,iop) =  - c1i * Atip(fliped_row,fliped_col)                
+                    enddo
+                enddo                          
+                !$omp end do
+                !$omp end parallel  
+            enddo
+            finish = omp_get_wtime()
+            print *
+            print '("  computation time = ", F0.3 ," seconds.")', finish-start
+        else 
+            do iop = 1,nnop
+                ! build BTA blocks of RPA polarization L0 and 2-body interaction kernal K  
+                local_nops = nops(iop)       
+                call bse_sparse_build(method,alpha,spindeg,nm_dev,ndiag,nen,En,local_nops,1,blocksize,num_blocks,N,table,&
+                                    G_lesser,G_greater,G_retarded,W,V,&
+                                    Ldiag,Lupper,Llower,Lupperarrow,Llowerarrow,Ltip,Ktip,Kdiag)                   
+                ! build system matrix blocks (I - L0 @ K)
+                call bse_sparse_build_system(blocksize,num_blocks,nm_dev,1,1,&
+                                Ldiag, Lupper, Llower, Llowerarrow, Lupperarrow, Ltip, &
+                                Kdiag, Ktip,&
+                                Adiag, Aupper, Alower, Alowerarrow, Aupperarrow, Atip)
+                ! selected inversion of the system matrix
+                ! call zbtatrf( blocksize, nm_dev, num_blocks, &
+                !             Adiag,Alower,Aupper,Alowerarrow,Aupperarrow,Atip, &
+                !             ipiv_diagonal,ipiv_arrow_tip)
+                ! call zbtatri( blocksize, nm_dev, num_blocks, &
+                !             Adiag,Alower,Aupper,Alowerarrow,Aupperarrow,Atip, &
+                !             ipiv_diagonal,ipiv_arrow_tip)
+                call zbtasinv(blocksize, nm_dev, num_blocks, &
+                            Adiag,Alower,Aupper,Alowerarrow,Aupperarrow,Atip)
+                ! compute P_retarded
+                ! 
+                Atip = matmul( Atip , Ltip(:,:,1) )
+                Atip = Atip + matmul( Alowerarrow, Lupperarrow(:,:,1) ) 
+                !$omp parallel default(shared) private(row,col,fliped_row,fliped_col,i,k)
+                !$omp do
+                do row=1,nm_dev
+                    do col=1,nm_dev
+                        fliped_row = nm_dev - col + 1
+                        fliped_col = nm_dev - row + 1 
+                        i=table(1,row)
+                        k=table(1,col)
+                        P_retarded(i,k,iop) =  - c1i * Atip(fliped_row,fliped_col)                
+                    enddo
+                enddo                          
+                !$omp end do
+                !$omp end parallel  
+            enddo
+        endif 
     end subroutine bse_sparse_solve
 
   
@@ -115,36 +285,56 @@ module bse_sparse
             N = blocksize*num_blocks
             ! A_xx
             call zgemm('n','n',nm_dev,nm_dev,nm_dev,-cone,Ltip(:,:,iop),nm_dev,Ktip,nm_dev,czero,Atip,nm_dev)  
-            do concurrent (i=1:nm_dev)
+            !$omp parallel default(shared) private(i)
+            !$omp do
+            do i=1,nm_dev
                 Atip(i,i) = Atip(i,i) + cone 
             enddo 
+            !$omp end do
+            !$omp end parallel  
             ! A_xd = - L_xd * K_dd
-            do concurrent (i = 1:nm_dev)
+            !$omp parallel default(shared) private(i,j)
+            !$omp do   
+            do i = 1,nm_dev
                 do concurrent (j = 1:N) 
                     Alowerarrow(i,j) = - Llowerarrow(i,j,iop) * Kdiag(j)
                 enddo
-            enddo        
+            enddo                   
+            !$omp end do
+            !$omp end parallel  
             ! A_dx = - L_dx * K_xx            
             call zgemm('n','n',N,nm_dev,nm_dev,-cone,Lupperarrow(:,:,iop),N,Ktip,nm_dev,czero,Aupperarrow,N)
             ! A_dd
             ! diagonal blocks         
-            do concurrent (i=1:blocksize)
+            !$omp parallel default(shared) private(i,j)
+            !$omp do  
+            do i=1,blocksize
                 do concurrent (j=1:blocksize*num_blocks)
                     Adiag(i,j) = - Ldiag(i,j,iop) * Kdiag(j)
                 enddo               
-            enddo 
-            do concurrent (ib=1:num_blocks)
+            enddo                        
+            !$omp end do
+            !$omp end parallel  
+            !$omp parallel default(shared) private(ib,i)
+            !$omp do  
+            do ib=1,num_blocks
                 do concurrent (i=1:blocksize)
                     Adiag(i,i+(ib-1)*blocksize) = Adiag(i,i+(ib-1)*blocksize) + cone
                 enddo 
-            enddo
+            enddo                      
+            !$omp end do
+            !$omp end parallel 
             ! upper and lower diagonal blocks
-            do concurrent (i=1:blocksize)
+            !$omp parallel default(shared) private(i,j)
+            !$omp do  
+            do i=1,blocksize
                 do concurrent (j=1:blocksize*(num_blocks-1))
                     Aupper(i,j) = - Lupper(i,j,iop) * Kdiag(j+blocksize)
                     Alower(i,j) = - Llower(i,j,iop) * Kdiag(j)
                 enddo 
-            enddo 
+            enddo                       
+            !$omp end do
+            !$omp end parallel 
             !
         else 
             print *,"iop not correct!"
@@ -354,10 +544,11 @@ module bse_sparse
 
 
     ! build the Bethe-Salpeter Equation L0 and Kernel matrices
-    subroutine bse_sparse_build(alpha,spindeg,nm_dev,ndiag,nen,En,nop,nnop,blocksize,num_blocks,N,table,&
+    subroutine bse_sparse_build(method,alpha,spindeg,nm_dev,ndiag,nen,En,nop,nnop,blocksize,num_blocks,N,table,&
         G_lesser,G_greater,G_retarded,W,V,&
         Ldiag,Lupper,Llower,Lupperarrow,Llowerarrow,Ltip,Ktip,Kdiag)        
         ! input
+        character(len=*),intent(in)::method
         integer,intent(in)::nm_dev,nen,nnop,nop(nnop),ndiag,N,table(2,N)
         integer,intent(in)::blocksize, num_blocks ! arrow block size and number of blocks (excluding tip block)
         real(dp),intent(in)::en(nen),spindeg,alpha                
@@ -377,7 +568,6 @@ module bse_sparse
         real(dp) :: start, finish
         integer :: i,j,k,l,p,q,ie,row,col,it,iop,ib,NT,nepoch,fliped_row,fliped_col                
         !
-        print *,'  init memory ...'
         Ltip = czero
         Ldiag = czero
         Lupper = czero
@@ -406,7 +596,7 @@ module bse_sparse
                     if (fliped_col > NT) then 
                         if (fliped_row > NT) then 
                             ! tip block
-                            if (nnop>10) then
+                            if (trim(method)=='fft') then
                                 call four_polarization_fft(alpha,nm_dev,nen,en,nop,nnop,ndiag,&
                                             G_lesser,G_greater,G_retarded,i,j,k,l,L0ijkl)
                             else    
@@ -418,7 +608,7 @@ module bse_sparse
                             Ltip(fliped_row - NT,fliped_col - NT,1:nnop) = L0ijkl * spindeg
                         else
                             ! upper arrow block 
-                            if (nnop>10) then
+                            if (trim(method)=='fft') then
                                 call four_polarization_fft(alpha,nm_dev,nen,en,nop,nnop,ndiag,&
                                             G_lesser,G_greater,G_retarded,i,j,k,l,L0ijkl)
                             else    
@@ -432,7 +622,7 @@ module bse_sparse
                     else 
                         if (fliped_row > NT) then 
                             ! lower arrow block 
-                            if (nnop>10) then
+                            if (trim(method)=='fft') then
                                 call four_polarization_fft(alpha,nm_dev,nen,en,nop,nnop,ndiag,&
                                             G_lesser,G_greater,G_retarded,i,j,k,l,L0ijkl)
                             else    
@@ -448,7 +638,7 @@ module bse_sparse
                             q = p + blocksize
                             if ((fliped_col > p).and.(fliped_col <= q)) then 
                                 ! diag block 
-                                if (nnop>10) then
+                                if (trim(method)=='fft') then
                                     call four_polarization_fft(alpha,nm_dev,nen,en,nop,nnop,ndiag,&
                                                 G_lesser,G_greater,G_retarded,i,j,k,l,L0ijkl)
                                 else    
@@ -461,7 +651,7 @@ module bse_sparse
                             else
                                 if ((fliped_col > q).and.(fliped_col <= (q+blocksize))) then                             
                                     ! upper diag block 
-                                    if (nnop>10) then
+                                    if (trim(method)=='fft') then
                                         call four_polarization_fft(alpha,nm_dev,nen,en,nop,nnop,ndiag,&
                                                     G_lesser,G_greater,G_retarded,i,j,k,l,L0ijkl)
                                     else    
@@ -474,7 +664,7 @@ module bse_sparse
                                 endif
                                 if ((fliped_col > (p-blocksize)).and.(fliped_col <= p)) then                             
                                     ! lower diag block
-                                    if (nnop>10) then
+                                    if (trim(method)=='fft') then
                                         call four_polarization_fft(alpha,nm_dev,nen,en,nop,nnop,ndiag,&
                                                     G_lesser,G_greater,G_retarded,i,j,k,l,L0ijkl)
                                     else    

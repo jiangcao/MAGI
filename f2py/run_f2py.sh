@@ -1,10 +1,11 @@
 
 F90FLAGS="-g -march=native -O2 -ffree-line-length-none -fbounds-check -fbacktrace -ffast-math -fopenmp "
+MKLROOT="/usr/pack/intel_compiler-2020-af/x64/mkl/"
 
 rm src/*.mod
 rm src/*.o
 rm *.mod *.o
-gfortran -c mkl_dfti.f90
+gfortran -c $MKLROOT/include/mkl_dfti.f90
 
 python -m numpy.f2py  -c ../Modules/parameters.f95 --backend meson --fcompiler=gnu95 -m solver ../Modules/sinv.f95 --f90flags="${F90FLAGS}" --dep lapack  
 python -m numpy.f2py  -c ../Modules/parameters.f95 --backend meson --fcompiler=gnu95 -m util src/util.f95 --f90flags="${F90FLAGS}" --dep lapack  

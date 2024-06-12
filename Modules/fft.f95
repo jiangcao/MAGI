@@ -21,7 +21,7 @@ module fft_mod
               Z(i+n)=Z(i+n) + X(ie)*Y(ie-i)
             enddo
           enddo
-        case('simple')
+        case('sum')
           do i=-n+1,n-1
             Z(i+n)=sum(X(max(1,1+i):min(n+i,n))*Y(max(1-i,1):min(n,n-i)))
           enddo
@@ -56,7 +56,7 @@ module fft_mod
               Z(i+n/2)=Z(i+n/2) + X(ie)*Y(ie-i)
             enddo
           enddo
-        case('simple')
+        case('sum')
           do i=-n/2+1,n/2-1
             Z(i+n/2)=sum(X(max(1,1+i):min(n+i,n))*Y(max(1-i,1):min(n,n-i)))
           enddo
@@ -94,7 +94,7 @@ module fft_mod
               endif
             enddo
           enddo
-        case('simple')
+        case('sum')
           do i=1,n
             Z(i)=sum(X(n:1:-1)*Y(i:i+n-1))
           enddo
@@ -134,7 +134,7 @@ module fft_mod
               iop = i+n/2
               Z((max(i,1)+1):min(n,(n+i)))=Z(max(i,1)+1:min(n,(n+i))) + X((max(i,1)+1-i):(min(n,(n+i))-i))*Y(iop)
             enddo    
-          case('simple')
+          case('sum')
             allocate(Y_in(n*2-1))    
             Y_in=czero
             Y_in(n/2+1:n/2+n-1)=Y(1:n-1)    
@@ -174,7 +174,7 @@ module fft_mod
             iop = i+n/2
             Z((max(i,1)+1):min(n,(n+i)))=Z(max(i,1)+1:min(n,(n+i))) + X((max(i,1)+1-i):(min(n,(n+i))-i))*Y(iop)
           enddo    
-        case('simple')
+        case('sum')
           allocate(Y_in(n*2-1))    
           Y_in=czero
           Y_in(n/2+1:n/2+n-1)=Y(1:n-1)    
@@ -220,6 +220,28 @@ module fft_mod
       Status = DftiFreeDescriptor(My_Desc1_Handle)
       Z_out(:) = Z_out(:) / dble(n)
     end subroutine do_mkl_dfti_conv
+
+    subroutine do_mkl_dfti_fft(n,x_in,x_out,forward)
+    ! 1D complex to complex
+      Use MKL_DFTI
+      integer :: n
+      Complex(dp),intent(in) :: X_in(n)
+      Complex(dp),intent(out) :: x_out(n)
+      logical,intent(in) :: forward
+      type(DFTI_DESCRIPTOR), POINTER :: My_Desc1_Handle, My_Desc2_Handle
+      Integer :: Status
+      ! Perform a complex to complex transform
+      Status = DftiCreateDescriptor( My_Desc1_Handle, DFTI_DOUBLE, DFTI_COMPLEX, 1, n )
+      Status = DftiSetValue( My_Desc1_Handle, DFTI_PLACEMENT, DFTI_NOT_INPLACE)
+      Status = DftiCommitDescriptor( My_Desc1_Handle )
+      if ( forward ) then 
+        Status = DftiComputeForward( My_Desc1_Handle, x_in, x_out )
+      else 
+        Status = DftiComputeBackward( My_Desc1_Handle, x_in, x_out )
+      endif 
+      Status = DftiFreeDescriptor(My_Desc1_Handle)
+      x_out(:) = x_out(:) / dble(n)
+    end subroutine do_mkl_dfti_fft
     
 end module fft_mod
     
