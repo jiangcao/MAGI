@@ -72,7 +72,18 @@ module block_sparse
             enddo
         endif
     end subroutine put_block_to_bcsr
-    
+    !    
+    !
+    !
+    ! Modified Blocked Sparse Vector format (bmsv) 
+    ! --------------------------------------------
+    !
+    ! The first N elements in the data array `v` are the diagonal elements in the matrix.
+    ! Then, the remaining elements in the matrix is arranged by blocks. Each block is 
+    ! stored in contiguous memory with the modified Sparse Vector format. The data is flattened
+    ! into a vector. The integer array `IA` registers the number of zeros between consecutive 
+    ! non-zero elements. The lookup table `block_ptr[1:2,i,j]` saves the pointer to the begining position of the
+    ! block and the ending position of the block [i,j].
     
 end module block_sparse
 

@@ -35,7 +35,7 @@ module hilbert
       call ZGEMM('N','N',nse,nomega,nomegasf,cone,sf_chi0,nse,kkweight,nomegasf,czero,chi0,nse)
     end subroutine hilbert_transform_mmm
 
-    !   This subroutine is copied from Abinit 'm_chi0tk.F90'
+    !   This subroutine is copied and adapted from Abinit 'm_chi0tk.F90'
     !!  Calculate frequency dependent weights needed to perform the Hilbert transform
     !!  Subroutine needed to implement the calculation
     !!  of the polarizability using the spectral representation as proposed in:
