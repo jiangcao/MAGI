@@ -6,7 +6,7 @@ module bse_sparse
     use sinv
     use observ
     use output
-    use gw_dense, only : calc_w,solve_gw => solve_gw_1D_memsaving
+    use gw_dense, only : calc_w,solve_gw => solve_gw_1D_memsaving,calc_gf
     implicit none
     contains
 

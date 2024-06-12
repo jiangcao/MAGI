@@ -12,7 +12,7 @@ from negf import gw_dense,bse_dense,bse_sparse
 from wannier import wannierham
 import matplotlib.pyplot as plt
 import os
-os.environ["OMP_NUM_THREADS"] = "128"
+os.environ["OMP_NUM_THREADS"] = "20"
 # from sinv import sinv_tridiagonal_arrowhead
 from serinv.sequential import ddbtasinv
 import time
@@ -31,8 +31,8 @@ if __name__=='__main__':
    Lx=L[0]
 
    ns = 2
-   length = 50
-   nen = 3200
+   length = 10
+   nen = 320
    nsub = 1
    nky=1
    nkz=1
@@ -45,7 +45,7 @@ if __name__=='__main__':
    temp =  np.ones(2)* 300.0
    mu = np.array( [-2.25,-2.25 ] )
 
-   ndiag=nb*2
+   ndiag=nb
 
    if (ndiag==0):
        ldiag=True
@@ -79,30 +79,32 @@ if __name__=='__main__':
 
    energies = np.linspace(emin,emax,nen)
    print(nen,nsub)
-   G_retarded,G_lesser,G_greater,Sig_r,Sig_l,Sig_g,tr,te,W0_r,W0_l,W0_g = gw_dense.solve_gw_1d_memsaving(
-                 niter=niter,nm_dev=nb*length,lx=Lx,length=length,spindeg=2.0,
-                 temp=temp,mu=mu,alpha_mix=0.5,
-                 nen=nen,en=energies,nb=nb,ns=ns,
-                 ham=ham,h00lead=lead_h00,h10lead=lead_h10,t=lead_coupling,v=v,
-                 ndiag=ndiag,encut=encut,egap=egap,flatband=False,vertex=False,bse=False,output_files=True)
-   print('done')                                                       
-   print('current=', -np.sum(tr[:,0]) , np.sum(tr[:,1]))                                                       
+   nm_dev=nb*length
+   
+   # G_retarded,G_lesser,G_greater,Sig_r,Sig_l,Sig_g,tr,te,W0_r,W0_l,W0_g = gw_dense.solve_gw_1d_memsaving(
+   #               niter=niter,nm_dev=nb*length,lx=Lx,length=length,spindeg=2.0,
+   #               temp=temp,mu=mu,alpha_mix=0.5,
+   #               nen=nen,en=energies,nb=nb,ns=ns,
+   #               ham=ham,h00lead=lead_h00,h10lead=lead_h10,t=lead_coupling,v=v,
+   #               ndiag=ndiag,encut=encut,egap=egap,flatband=False,vertex=False,bse=False,output_files=True)
+   # print('done')                                                       
+   # print('current=', -np.sum(tr[:,0]) , np.sum(tr[:,1]))                                                       
 
-   ID_list = [-np.sum(tr[:,0]) , np.sum(tr[:,1]) ]    
+   # ID_list = [-np.sum(tr[:,0]) , np.sum(tr[:,1]) ]    
 
-   Gr_diag = G_retarded.diagonal()
-   Gn_diag = G_lesser.diagonal()
-   ldos = np.imag(Gr_diag)
-   ndos = np.imag(Gn_diag)
+   # Gr_diag = G_retarded.diagonal()
+   # Gn_diag = G_lesser.diagonal()
+   # ldos = np.imag(Gr_diag)
+   # ndos = np.imag(Gn_diag)
 
-   print("save checkpoint.")
-   np.savez('data_len'+str(length)+'_ndiag'+str(ndiag)+'.npz', 
-                        ID_list=ID_list,
-                        tr=tr,
-                        te=te,
-                        energies=energies,
-                        ldos=ldos,
-                        ndos=ndos)
+   # print("save checkpoint.")
+   # np.savez('data_len'+str(length)+'_ndiag'+str(ndiag)+'.npz', 
+   #                      ID_list=ID_list,
+   #                      tr=tr,
+   #                      te=te,
+   #                      energies=energies,
+   #                      ldos=ldos,
+   #                      ndos=ndos)
             
    dE=energies[1]-energies[0]
    nstep=4
@@ -155,29 +157,50 @@ if __name__=='__main__':
 #                        eps_M=eps_M,
 #                        eps_en=eps_en)
    
-   print("")
-   print("--- Start sparse BSE solver ---")
-      
-   start_t = time.time()
+   # print("")
+   # print("--- Start sparse BSE solver ---")
 
-   P_r = bse_sparse.bse_sparse_solve(
-                  method='sum',alpha=0.99,spindeg=2.0,
-                  nm_dev=nm_dev,ndiag=ndiag,nen=nen,nsub=1,
-                  en=energies,nops=nops,nnop=nnop,nk=1,
-                  g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,
-                  w=W0_r,v=v)        
+      
+   # start_t = time.time()
+
+   # P_r,Sig_r,Sig_l,Sig_g = bse_sparse.bse_sparse_solve(
+   #                method='sum',alpha=0.99,spindeg=2.0,
+   #                nm_dev=nm_dev,ndiag=ndiag,nen=nen,nsub=1,
+   #                en=energies,nops=nops,nnop=nnop,nk=1,
+   #                g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,
+   #                w=W0_r,v=v,solve_sigma=True,nb=nb,ns=ns)        
    
-   finish_t = time.time()   
+   # finish_t = time.time()   
+
+   # for iop in range(nnop):
+   #    epsilon_M = np.eye(nm_dev) -  v[:,:,0] @ P_r[:,:,iop]
+   #    eps_M_sinv[iop] = np.sum( epsilon_M[ nm_dev//2, nb*ns:(nm_dev-nb*ns) ] )
+   #    eps_en[iop]=nops[iop]*dE
+   #    print('- E=',eps_en[iop],np.abs( np.imag(eps_M_sinv[iop]) ),'reference=', np.abs( np.imag(eps_M[iop]) ) )   
+
+   # print("")
+   # print("! sparse BSE solver takes %s second for %s optical energies " % ((finish_t - start_t) , nnop))            
+   # print("save checkpoint.")
+
+   ( G_retarded,G_lesser,G_greater,
+        tr,te,P_r )= bse_sparse.bse_sparse_solve_scba(method='sum',niter=0,nm_dev=nm_dev,lx=Lx,length=length,spindeg=2.0,temp=temp,mu=mu,
+        alpha_mix=0.5,nen=nen,en=energies,nops=nops,nnop=nnop,nb=nb,ns=ns,ham=ham,h00lead=lead_h00,h10lead=lead_h10,t=lead_coupling,v=v,
+        ndiag=ndiag,encut=encut,egap=egap,vertex=False,bse=False,flatband=False,output_files=True) 
+   print('done')                                                       
+   print('current=', -np.sum(tr[:,0]) , np.sum(tr[:,1]))                                                       
+
+   ID_list = [-np.sum(tr[:,0]) , np.sum(tr[:,1]) ]    
+
+   Gr_diag = G_retarded.diagonal()
+   Gn_diag = G_lesser.diagonal()
+   ldos = np.imag(Gr_diag)
+   ndos = np.imag(Gn_diag)
 
    for iop in range(nnop):
       epsilon_M = np.eye(nm_dev) -  v[:,:,0] @ P_r[:,:,iop]
       eps_M_sinv[iop] = np.sum( epsilon_M[ nm_dev//2, nb*ns:(nm_dev-nb*ns) ] )
       eps_en[iop]=nops[iop]*dE
       print('- E=',eps_en[iop],np.abs( np.imag(eps_M_sinv[iop]) ),'reference=', np.abs( np.imag(eps_M[iop]) ) )   
-
-   print("")
-   print("! sparse BSE solver takes %s second for %s optical energies " % ((finish_t - start_t) , nnop))            
-   print("save checkpoint.")
 
    np.savez('data_len'+str(length)+'_ndiag'+str(ndiag)+'.npz', 
                         ID_list=ID_list,
@@ -190,102 +213,102 @@ if __name__=='__main__':
                         eps_M_sinv=eps_M_sinv,
                         eps_en=eps_en)
 
-   print("--- Start pre-processing for solver ---")
+   # print("--- Start pre-processing for solver ---")
 
-   N,nnz,table,blocksize,num_blocks = bse_sparse.bse_sparse_pre(nm_dev=nm_dev,ndiag=ndiag)
-   # resize
-   table=table[:,:N]
+   # N,nnz,table,blocksize,num_blocks = bse_sparse.bse_sparse_pre(nm_dev=nm_dev,ndiag=ndiag)
+   # # resize
+   # table=table[:,:N]
 
-   Ldiag,Lupper,Llower,Lupperarrow,Llowerarrow,Ltip,Ktip,Kdiag = bse_sparse.bse_sparse_build(
-               method='sum',
-               alpha=0.99,spindeg=2.0,nm_dev=nm_dev,ndiag=ndiag,nen=nen,en=energies,nop=nops,nnop=nnop,
-               g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,w=W0_r,v=v,
-               blocksize=blocksize,num_blocks=num_blocks,n=N,table=table)
+   # Ldiag,Lupper,Llower,Lupperarrow,Llowerarrow,Ltip,Ktip,Kdiag = bse_sparse.bse_sparse_build(
+   #             method='sum',
+   #             alpha=0.99,spindeg=2.0,nm_dev=nm_dev,ndiag=ndiag,nen=nen,en=energies,nop=nops,nnop=nnop,
+   #             g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,w=W0_r,v=v,
+   #             blocksize=blocksize,num_blocks=num_blocks,n=N,table=table)
 
-   print("")
-   print("--- Start solver with SerinV ---")
+   # print("")
+   # print("--- Start solver with SerinV ---")
    
-   start_t = time.time()
+   # start_t = time.time()
 
-   for iop in range(nnop): 
-      Adiag,Aupper,Alower,Alowerarrow,Aupperarrow,Atip = bse_sparse.bse_sparse_build_system(
-            blocksize=blocksize, num_blocks=num_blocks, nnop=nnop, iop=iop+1, nm_dev=nm_dev,
-            ldiag=Ldiag, lupper=Lupper, llower=Llower, llowerarrow=Llowerarrow, 
-            lupperarrow=Lupperarrow, ltip=Ltip, kdiag=Kdiag, ktip=Ktip )
+   # for iop in range(nnop): 
+   #    Adiag,Aupper,Alower,Alowerarrow,Aupperarrow,Atip = bse_sparse.bse_sparse_build_system(
+   #          blocksize=blocksize, num_blocks=num_blocks, nnop=nnop, iop=iop+1, nm_dev=nm_dev,
+   #          ldiag=Ldiag, lupper=Lupper, llower=Llower, llowerarrow=Llowerarrow, 
+   #          lupperarrow=Lupperarrow, ltip=Ltip, kdiag=Kdiag, ktip=Ktip )
       
-      newAdiag,newAupper,newAlower,newAlowerarrow,newAupperarrow = bse_sparse.reshape_bta_block2stack(
-         num_blocks=num_blocks,blocksize=blocksize,nm_dev=nm_dev,
-         adiag=Adiag, aupper=Aupper, alower=Alower, alowerarrow=Alowerarrow, aupperarrow=Aupperarrow)      
+   #    newAdiag,newAupper,newAlower,newAlowerarrow,newAupperarrow = bse_sparse.reshape_bta_block2stack(
+   #       num_blocks=num_blocks,blocksize=blocksize,nm_dev=nm_dev,
+   #       adiag=Adiag, aupper=Aupper, alower=Alower, alowerarrow=Alowerarrow, aupperarrow=Aupperarrow)      
 
-      # bse_sparse.bse_sparse_check_system( tol=1e-6, 
-      #   alpha=0.99,spindeg=2.0,nm_dev=nm_dev,ndiag=ndiag,nen=nen,en=energies,
-      #   nop=nops,nnop=nnop,iop=iop+1,
-      #   blocksize=blocksize,num_blocks=num_blocks,n=N,table=table,
-      #   g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,w=W0_r,v=v, 
-      #   adiag=Adiag, aupper=Aupper, alower=Alower, alowerarrow=Alowerarrow, aupperarrow=Aupperarrow, atip=Atip,
-      #   ldiag=Ldiag, lupper=Lupper, llower=Llower, llowerarrow=Llowerarrow, lupperarrow=Lupperarrow, ltip=Ltip )
+   #    # bse_sparse.bse_sparse_check_system( tol=1e-6, 
+   #    #   alpha=0.99,spindeg=2.0,nm_dev=nm_dev,ndiag=ndiag,nen=nen,en=energies,
+   #    #   nop=nops,nnop=nnop,iop=iop+1,
+   #    #   blocksize=blocksize,num_blocks=num_blocks,n=N,table=table,
+   #    #   g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,w=W0_r,v=v, 
+   #    #   adiag=Adiag, aupper=Aupper, alower=Alower, alowerarrow=Alowerarrow, aupperarrow=Aupperarrow, atip=Atip,
+   #    #   ldiag=Ldiag, lupper=Lupper, llower=Llower, llowerarrow=Llowerarrow, lupperarrow=Lupperarrow, ltip=Ltip )
 
 
-      try:
-         start_t2 = time.time()
-         (
-            X_diagonal_blocks,
-            X_lower_diagonal_blocks,
-            X_upper_diagonal_blocks,
-            X_arrow_bottom_blocks,
-            X_arrow_right_blocks,
-            X_arrow_tip_block,
-         ) = ddbtasinv(
-            A_diagonal_blocks=newAdiag,
-            A_lower_diagonal_blocks=newAlower,
-            A_arrow_bottom_blocks=newAlowerarrow,
-            A_arrow_tip_block=Atip,
-            A_upper_diagonal_blocks=newAupper,
-            A_arrow_right_blocks=newAupperarrow,
-         )
-         finish_t2 = time.time()
-         print(" SerinV takes %s second for one SINV " % (finish_t2 - start_t2))
+   #    try:
+   #       start_t2 = time.time()
+   #       (
+   #          X_diagonal_blocks,
+   #          X_lower_diagonal_blocks,
+   #          X_upper_diagonal_blocks,
+   #          X_arrow_bottom_blocks,
+   #          X_arrow_right_blocks,
+   #          X_arrow_tip_block,
+   #       ) = ddbtasinv(
+   #          A_diagonal_blocks=newAdiag,
+   #          A_lower_diagonal_blocks=newAlower,
+   #          A_arrow_bottom_blocks=newAlowerarrow,
+   #          A_arrow_tip_block=Atip,
+   #          A_upper_diagonal_blocks=newAupper,
+   #          A_arrow_right_blocks=newAupperarrow,
+   #       )
+   #       finish_t2 = time.time()
+   #       print(" SerinV takes %s second for one SINV " % (finish_t2 - start_t2))
 
-      except Exception as error:
+   #    except Exception as error:
 
-         print("! Fails with error: ", error ) 
+   #       print("! Fails with error: ", error ) 
 
-      tmp = - 1j* X_arrow_tip_block @ Ltip[:,:,iop]
-      for i in range(num_blocks):
-         tmp += - 1j* X_arrow_bottom_blocks[i,:,:] @ Lupperarrow[i*blocksize:(i+1)*blocksize,:,iop]
+   #    tmp = - 1j* X_arrow_tip_block @ Ltip[:,:,iop]
+   #    for i in range(num_blocks):
+   #       tmp += - 1j* X_arrow_bottom_blocks[i,:,:] @ Lupperarrow[i*blocksize:(i+1)*blocksize,:,iop]
 
-      P_r = np.zeros((nm_dev,nm_dev),dtype='complex')
-      for row in range(nm_dev):
-         for col in range(nm_dev):
-            fliped_row = nm_dev - col - 1
-            fliped_col = nm_dev - row - 1 
-            i=table[0,row] - 1
-            k=table[0,col] - 1
-            P_r[i,k] =  tmp[fliped_row,fliped_col]                
+   #    P_r = np.zeros((nm_dev,nm_dev),dtype='complex')
+   #    for row in range(nm_dev):
+   #       for col in range(nm_dev):
+   #          fliped_row = nm_dev - col - 1
+   #          fliped_col = nm_dev - row - 1 
+   #          i=table[0,row] - 1
+   #          k=table[0,col] - 1
+   #          P_r[i,k] =  tmp[fliped_row,fliped_col]                
       
-      epsilon_M = np.eye(nm_dev) -  v[:,:,0] @ P_r
+   #    epsilon_M = np.eye(nm_dev) -  v[:,:,0] @ P_r
 
-      eps_M_sinv2[iop] = np.sum( epsilon_M[ nm_dev//2, nb*ns:(nm_dev-nb*ns) ] )
+   #    eps_M_sinv2[iop] = np.sum( epsilon_M[ nm_dev//2, nb*ns:(nm_dev-nb*ns) ] )
       
-      print('- E=',eps_en[iop],'epsilon_2=', np.abs( np.imag(eps_M_sinv2[iop]) ),'reference=', np.abs( np.imag(eps_M[iop]) ) )
+   #    print('- E=',eps_en[iop],'epsilon_2=', np.abs( np.imag(eps_M_sinv2[iop]) ),'reference=', np.abs( np.imag(eps_M[iop]) ) )
                   
-   finish_t = time.time()
+   # finish_t = time.time()
 
-   print("! Takes %s second in total " % (finish_t - start_t))
+   # print("! Takes %s second in total " % (finish_t - start_t))
    
-   print("save checkpoint.")
-   np.savez('data_len'+str(length)+'_ndiag'+str(ndiag)+'.npz', 
-                        ID_list=ID_list,
-                        tr=tr,
-                        te=te,
-                        energies=energies,
-                        ldos=ldos,
-                        ndos=ndos,
-                        eps_M=eps_M,
-                        eps_en=eps_en,
-                        eps_M_sinv=eps_M_sinv,
-                        eps_M_sinv2=eps_M_sinv2
-            )
+   # print("save checkpoint.")
+   # np.savez('data_len'+str(length)+'_ndiag'+str(ndiag)+'.npz', 
+   #                      ID_list=ID_list,
+   #                      tr=tr,
+   #                      te=te,
+   #                      energies=energies,
+   #                      ldos=ldos,
+   #                      ndos=ndos,
+   #                      eps_M=eps_M,
+   #                      eps_en=eps_en,
+   #                      eps_M_sinv=eps_M_sinv,
+   #                      eps_M_sinv2=eps_M_sinv2
+   #          )
 
 
    
