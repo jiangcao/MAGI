@@ -353,10 +353,11 @@ module bse_sparse
         real(dp),intent(out)::current(nen,2) ! current spectrum on leads
         real(dp),intent(out)::transmission(nen,2) ! transmission matrix
         complex(dp),intent(out),dimension(nm_dev,nm_dev,nen) ::  G_retarded,G_lesser,G_greater
-        complex(dp),intent(out),dimension(nm_dev,nm_dev,nops) ::  P_retarded
+        complex(dp),intent(out),dimension(nm_dev,nm_dev,nnop) ::  P_retarded
            
         
         ! --- local 
+        real(dp),allocatable::cur(:,:,:),tot_cur(:,:),tot_ecur(:,:)
         complex(dp),allocatable,dimension(:,:) ::  W0_retarded,W0_lesser,W0_greater
         complex(dp),allocatable,dimension(:,:,:,:)::siglead
         complex(dp),allocatable,dimension(:,:,:)::Sig_r,Sig_l,Sig_g
@@ -371,18 +372,25 @@ module bse_sparse
         allocate(Sig_l(nm_dev,nm_dev,nen))
         allocate(Sig_g(nm_dev,nm_dev,nen))
         allocate(siglead(NB*NS,NB*NS,nen,2))
+        allocate(tot_cur(nm_dev,nm_dev))
+        allocate(tot_ecur(nm_dev,nm_dev))
+        allocate(cur(nm_dev,nm_dev,nen))
         ! solve G0W0 
-        call solve_gw(
+        call solve_gw(&
                 niter=0,nm_dev=nm_dev,lx=Lx,length=length,spindeg=spindeg,&
                 temp=temp,mu=mu,alpha_mix=alpha_mix,&
-                nen=nen,en=energies,nb=nb,ns=ns,&
-                ham=ham,h00lead=lead_h00,h10lead=lead_h10,t=lead_coupling,v=v,&
-                ndiag=ndiag,encut=encut,egap=egap,flatband=.False.,vertex=.False.,bse=.False.,output_files=True,&
-                G_retarded=G_retarded,G_lesser=G_lesser,G_greater=G_greater,Sig_r=,Sig_l,Sig_g,current,transmission,W0_retarded,W0_lesser,W0_greater )
-        call bse_sparse_solve(
-                method=method,alpha=0.99,spindeg=spindeg,&
+                nen=nen,en=en,nb=nb,ns=ns,&
+                ham=ham,h00lead=h00lead,h10lead=h10lead,t=t,v=v,&
+                ndiag=ndiag,encut=encut,egap=egap,flatband=.False.,vertex=.False.,bse=.False.,output_files=.True.,&
+                G_retarded=G_retarded,G_lesser=G_lesser,G_greater=G_greater,&
+                Sig_retarded_new=Sig_r,sig_lesser_new=Sig_l,sig_greater_new=Sig_g,&
+                current=current,transmission=transmission,&
+                W0_retarded=W0_retarded,W0_lesser=W0_lesser,W0_greater=W0_greater )
+        ! solve BSE
+        call bse_sparse_solve(&
+                method=method,alpha=0.99_dp,spindeg=spindeg,&
                 nm_dev=nm_dev,ndiag=ndiag,nen=nen,nsub=1,&
-                en=energies,nops=nops,nnop=nnop,nk=1,&
+                en=en,nops=nops,nnop=nnop,nk=1,&
                 g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,&
                 w=W0_retarded,v=v,solve_sigma=.True.,nb=nb,ns=ns,&
                 P_retarded=P_retarded,sig_retarded=Sig_r,sig_lesser=sig_l,sig_greater=sig_g)  
@@ -397,7 +405,6 @@ module bse_sparse
                             G_retarded(:,:,:),G_lesser(:,:,:),&
                             G_greater(:,:,:),current,Te,mu,temp,flatband)                        
         !   
-        current=tr
         transmission(:,1)=te(:,1,2)
         transmission(:,2)=te(:,2,1)     
         iter=niter
