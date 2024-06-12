@@ -4,6 +4,7 @@ module bse_sparse
     use omp_lib
     use polarization
     use sinv
+    use gw_dense, only : calc_w
     implicit none
     contains
 
@@ -118,18 +119,23 @@ module bse_sparse
     end subroutine bse_sparse_pre
 
     ! solve the Bethe-Salpeter Equation with selected inversion 
-    subroutine bse_sparse_solve(method,alpha,spindeg,nm_dev,ndiag,nen,nsub,En,nops,nnop,nk,G_lesser,G_greater,G_retarded,W,V,P_retarded)        
+    subroutine bse_sparse_solve(method,alpha,spindeg,nm_dev,ndiag,nen,nsub,En,nops,nnop,nk,&
+        G_lesser,G_greater,G_retarded,W,V,solve_sigma,nb,ns,&
+        P_retarded,sig_retarded,sig_lesser,sig_greater)        
         ! in
         character(len=*),intent(in)::method
-        integer,intent(in)::nm_dev,nen ! device dimension, number of energies
+        integer,intent(in)::nm_dev,nen ! device dimension, number of energies        
         integer,intent(in)::nnop,nops(nnop) ! number of optical energies, optical energies in unit of energy interval
         integer,intent(in)::nsub,nk,ndiag ! number of legendre sub-energy nodes, number of k points, number of offdiagonals
         real(dp),intent(in)::en(nen),spindeg,alpha ! energy grid, spin degeneracy, empirical parameter
         complex(dp),intent(in),dimension(nm_dev,nm_dev,nen,nsub,nk):: G_lesser,G_greater,G_retarded ! electron Green Functions
         complex(dp),intent(in),dimension(nm_dev,nm_dev) :: W ! W_0 static screened Coulomb operator
         complex(dp),intent(in),dimension(nm_dev,nm_dev) :: V ! bare Coulomb operator
+        logical,intent(in),optional::solve_sigma 
+        integer,intent(in),optional::ns,nb ! NEEDED if solve_sigma, number of cells inside lead supercell, number of WF basis
         ! out 
         complex(dp),intent(out),dimension(nm_dev,nm_dev,nnop):: P_retarded ! 2-point polarization function with interacting electron-hole
+        complex(dp),dimension(nm_dev,nm_dev,nen) ::  Sig_retarded,Sig_lesser,Sig_greater
         !---- local
         complex(dp),allocatable,dimension(:,:):: Adiag,Aupper,Alower,Alowerarrow,Aupperarrow,Atip 
         complex(dp),allocatable,dimension(:,:):: Ktip 
@@ -141,7 +147,16 @@ module bse_sparse
         integer,allocatable,dimension(:,:)::ipiv_diagonal
         integer,allocatable,dimension(:)::ipiv_arrow_tip
         real(dp) :: start, finish
+        integer::l,h,ie
+        complex(dp),allocatable,dimension(:,:) ::  P_lesser,P_greater,W_retarded,W_lesser,W_greater,tmp 
+        logical::lsolve_sigma
+        complex::dE
         !
+        if (present(solve_sigma)) then 
+            lsolve_sigma = solve_sigma 
+        else
+            lsolve_sigma = .false. 
+        endif
         ! pre-process the sparsity pattern of system
         print *, " pre-process ... "
         allocate(table(2,nm_dev*nm_dev))
@@ -170,6 +185,17 @@ module bse_sparse
         allocate(Atip(nm_dev,nm_dev), source=czero)  
         allocate(ipiv_diagonal(blocksize,num_blocks), source=0)
         allocate(ipiv_arrow_tip(nm_dev), source=0)
+        if (lsolve_sigma) then 
+            sig_retarded = czero 
+            sig_lesser = czero 
+            sig_greater = czero            
+            allocate(P_lesser(nm_dev,nm_dev))
+            allocate(P_greater(nm_dev,nm_dev))
+            allocate(W_lesser(nm_dev,nm_dev))
+            allocate(W_greater(nm_dev,nm_dev))
+            allocate(W_retarded(nm_dev,nm_dev)) 
+            allocate(tmp(nm_dev,nm_dev))
+        endif 
         !
         if (local_nnop > 1) then  
             ! build BTA blocks of RPA polarization L0 and 2-body interaction kernal K                     
@@ -254,7 +280,51 @@ module bse_sparse
                 enddo                          
                 !$omp end do
                 !$omp end parallel  
+                !
+                if (lsolve_sigma) then 
+                    ! solve W
+                    P_lesser = czero 
+                    P_greater = 2.0_dp * P_retarded
+                    call calc_w(1,NB,NS,nm_dev,P_retarded,P_lesser,P_greater,V,W_retarded,W_lesser,W_greater)
+                    !
+                    ! Accumulate the GW to Sigma
+                    ! hw from -inf to +inf: Sig^<>_ij(E) = (i/2pi) \int_dhw G^<>_ij(E-hw) W^<>_ij(hw)  
+                    !$omp parallel default(shared) private(l,h,i,ie) 
+                    !$omp do
+                    do i=1,nm_dev
+                        l=max(i-ndiag,1)
+                        h=min(nm_dev,i+ndiag)           
+                        do ie=1,nen
+                            if ((ie .gt. max(nops(iop),1)).and.(ie .lt. (nen+nops(iop)))) then 
+                                Sig_lesser_new(i,l:h,ie)=Sig_lesser_new(i,l:h,ie) + G_lesser(i,l:h,ie-nops(iop))*W_lesser(i,l:h)
+                                Sig_greater_new(i,l:h,ie)=Sig_greater_new(i,l:h,ie) + G_greater(i,l:h,ie-nops(iop))*W_greater(i,l:h)
+                                Sig_retarded_new(i,l:h,ie)=Sig_retarded_new(i,l:h,ie) + G_lesser(i,l:h,ie-nops(iop))*W_retarded(i,l:h) + &                                      
+                                                        G_retarded(i,l:h,ie-nops(iop))*W_lesser(i,l:h) + &
+                                                        G_retarded(i,l:h,ie-nops(iop))*W_retarded(i,l:h)                                               
+                            endif     
+                        enddo   
+                    enddo
+                    !$omp end do
+                    !$omp end parallel              
+                endif
             enddo
+            if (lsolve_sigma) then 
+                dE = dcmplx(0.0_dp, (En(2)-En(1))/twopi)                
+                Sig_lesser_new = Sig_lesser_new  * dE
+                Sig_greater_new= Sig_greater_new * dE
+                Sig_retarded_new=Sig_retarded_new* dE
+                !
+                Sig_retarded_new = dcmplx( dble(Sig_retarded_new), aimag(Sig_greater_new-Sig_lesser_new)/2.0d0 )
+                ! symmetrize the selfenergies
+                do ie=1,nen
+                    tmp(:,:)=transpose(Sig_retarded_new(:,:,ie))
+                    Sig_retarded_new(:,:,ie) = (Sig_retarded_new(:,:,ie) + tmp(:,:))/2.0_dp  
+                    tmp(:,:)=transpose(Sig_lesser_new(:,:,ie))
+                    Sig_lesser_new(:,:,ie) = (Sig_lesser_new(:,:,ie) + tmp(:,:))/2.0_dp
+                    tmp(:,:)=transpose(Sig_greater_new(:,:,ie))
+                    Sig_greater_new(:,:,ie) = (Sig_greater_new(:,:,ie) + tmp(:,:))/2.0_dp
+                enddo
+            endif
         endif 
     end subroutine bse_sparse_solve
 
