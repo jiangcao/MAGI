@@ -4,7 +4,9 @@ module bse_sparse
     use omp_lib
     use polarization
     use sinv
-    use gw_dense, only : calc_w
+    use observ
+    use output
+    use gw_dense, only : calc_w,solve_gw => solve_gw_1D_memsaving
     implicit none
     contains
 
@@ -135,7 +137,7 @@ module bse_sparse
         integer,intent(in),optional::ns,nb ! NEEDED if solve_sigma, number of cells inside lead supercell, number of WF basis
         ! out 
         complex(dp),intent(out),dimension(nm_dev,nm_dev,nnop):: P_retarded ! 2-point polarization function with interacting electron-hole
-        complex(dp),dimension(nm_dev,nm_dev,nen) ::  Sig_retarded,Sig_lesser,Sig_greater
+        complex(dp),dimension(nm_dev,nm_dev,nen),intent(out) ::  Sig_retarded,Sig_lesser,Sig_greater
         !---- local
         complex(dp),allocatable,dimension(:,:):: Adiag,Aupper,Alower,Alowerarrow,Aupperarrow,Atip 
         complex(dp),allocatable,dimension(:,:):: Ktip 
@@ -147,7 +149,7 @@ module bse_sparse
         integer,allocatable,dimension(:,:)::ipiv_diagonal
         integer,allocatable,dimension(:)::ipiv_arrow_tip
         real(dp) :: start, finish
-        integer::l,h,ie
+        integer::l,h,ie,isub,ik
         complex(dp),allocatable,dimension(:,:) ::  P_lesser,P_greater,W_retarded,W_lesser,W_greater,tmp 
         logical::lsolve_sigma
         complex::dE
@@ -283,9 +285,11 @@ module bse_sparse
                 !
                 if (lsolve_sigma) then 
                     ! solve W
+                    isub=1
+                    ik=1
                     P_lesser = czero 
-                    P_greater = 2.0_dp * P_retarded
-                    call calc_w(1,NB,NS,nm_dev,P_retarded,P_lesser,P_greater,V,W_retarded,W_lesser,W_greater)
+                    P_greater = 2.0_dp * P_retarded(:,:,iop)
+                    call calc_w(1,NB,NS,nm_dev,P_retarded(:,:,iop),P_lesser,P_greater,V,W_retarded,W_lesser,W_greater)
                     !
                     ! Accumulate the GW to Sigma
                     ! hw from -inf to +inf: Sig^<>_ij(E) = (i/2pi) \int_dhw G^<>_ij(E-hw) W^<>_ij(hw)  
@@ -296,11 +300,12 @@ module bse_sparse
                         h=min(nm_dev,i+ndiag)           
                         do ie=1,nen
                             if ((ie .gt. max(nops(iop),1)).and.(ie .lt. (nen+nops(iop)))) then 
-                                Sig_lesser_new(i,l:h,ie)=Sig_lesser_new(i,l:h,ie) + G_lesser(i,l:h,ie-nops(iop))*W_lesser(i,l:h)
-                                Sig_greater_new(i,l:h,ie)=Sig_greater_new(i,l:h,ie) + G_greater(i,l:h,ie-nops(iop))*W_greater(i,l:h)
-                                Sig_retarded_new(i,l:h,ie)=Sig_retarded_new(i,l:h,ie) + G_lesser(i,l:h,ie-nops(iop))*W_retarded(i,l:h) + &                                      
-                                                        G_retarded(i,l:h,ie-nops(iop))*W_lesser(i,l:h) + &
-                                                        G_retarded(i,l:h,ie-nops(iop))*W_retarded(i,l:h)                                               
+                                Sig_lesser(i,l:h,ie)=Sig_lesser(i,l:h,ie) + G_lesser(i,l:h,ie-nops(iop),isub,ik)*W_lesser(i,l:h)
+                                Sig_greater(i,l:h,ie)=Sig_greater(i,l:h,ie) + G_greater(i,l:h,ie-nops(iop),isub,ik)*W_greater(i,l:h)
+                                Sig_retarded(i,l:h,ie)=Sig_retarded(i,l:h,ie) + &
+                                                        G_lesser(i,l:h,ie-nops(iop),isub,ik)*W_retarded(i,l:h) + &                                      
+                                                        G_retarded(i,l:h,ie-nops(iop),isub,ik)*W_lesser(i,l:h) + &
+                                                        G_retarded(i,l:h,ie-nops(iop),isub,ik)*W_retarded(i,l:h)                                               
                             endif     
                         enddo   
                     enddo
@@ -310,23 +315,104 @@ module bse_sparse
             enddo
             if (lsolve_sigma) then 
                 dE = dcmplx(0.0_dp, (En(2)-En(1))/twopi)                
-                Sig_lesser_new = Sig_lesser_new  * dE
-                Sig_greater_new= Sig_greater_new * dE
-                Sig_retarded_new=Sig_retarded_new* dE
+                Sig_lesser = Sig_lesser  * dE
+                Sig_greater= Sig_greater * dE
+                Sig_retarded=Sig_retarded* dE
                 !
-                Sig_retarded_new = dcmplx( dble(Sig_retarded_new), aimag(Sig_greater_new-Sig_lesser_new)/2.0d0 )
+                Sig_retarded = dcmplx( dble(Sig_retarded), aimag(Sig_greater-Sig_lesser)/2.0d0 )
                 ! symmetrize the selfenergies
                 do ie=1,nen
-                    tmp(:,:)=transpose(Sig_retarded_new(:,:,ie))
-                    Sig_retarded_new(:,:,ie) = (Sig_retarded_new(:,:,ie) + tmp(:,:))/2.0_dp  
-                    tmp(:,:)=transpose(Sig_lesser_new(:,:,ie))
-                    Sig_lesser_new(:,:,ie) = (Sig_lesser_new(:,:,ie) + tmp(:,:))/2.0_dp
-                    tmp(:,:)=transpose(Sig_greater_new(:,:,ie))
-                    Sig_greater_new(:,:,ie) = (Sig_greater_new(:,:,ie) + tmp(:,:))/2.0_dp
-                enddo
+                    tmp(:,:)=transpose(Sig_retarded(:,:,ie))
+                    Sig_retarded(:,:,ie) = (Sig_retarded(:,:,ie) + tmp(:,:))/2.0_dp  
+                    tmp(:,:)=transpose(Sig_lesser(:,:,ie))
+                    Sig_lesser(:,:,ie) = (Sig_lesser(:,:,ie) + tmp(:,:))/2.0_dp
+                    tmp(:,:)=transpose(Sig_greater(:,:,ie))
+                    Sig_greater(:,:,ie) = (Sig_greater(:,:,ie) + tmp(:,:))/2.0_dp
+                enddo                
             endif
         endif 
     end subroutine bse_sparse_solve
+
+    ! driver function for solving BSE with SCBA iteration
+    subroutine bse_sparse_solve_scba(method,niter,nm_dev,Lx,length,spindeg,temp,mu,&
+        alpha_mix,nen,En,nops,nnop,nb,ns,Ham,H00lead,H10lead,T,V,&
+        ndiag,encut,egap,vertex,bse,flatband,output_files,&
+        G_retarded,G_lesser,G_greater,&
+        current,transmission,P_retarded) 
+        ! in 
+        character(len=*),intent(in)::method
+        integer, intent(in) :: nen, nb, ns,niter,nm_dev,length
+        integer, intent(in) :: ndiag
+        integer,intent(in)::nnop,nops(nnop) ! number of optical energies, optical energies in unit of energy interval
+        real(dp), intent(in) :: En(nen), temp(2), mu(2), alpha_mix, Lx, spindeg, egap
+        complex(dp),intent(in) :: Ham(nm_dev,nm_dev),H00lead(NB*NS,NB*NS,2),H10lead(NB*NS,NB*NS,2),T(NB*NS,nm_dev,2)
+        complex(dp), intent(in):: V(nm_dev,nm_dev)    
+        real(dp),intent(in)::encut(2) ! intraband and interband cutoff for P
+        logical, intent(in) :: vertex, bse, flatband, output_files
+        ! out 
+        real(dp),intent(out)::current(nen,2) ! current spectrum on leads
+        real(dp),intent(out)::transmission(nen,2) ! transmission matrix
+        complex(dp),intent(out),dimension(nm_dev,nm_dev,nen) ::  G_retarded,G_lesser,G_greater
+        complex(dp),intent(out),dimension(nm_dev,nm_dev,nops) ::  P_retarded
+           
+        
+        ! --- local 
+        complex(dp),allocatable,dimension(:,:) ::  W0_retarded,W0_lesser,W0_greater
+        complex(dp),allocatable,dimension(:,:,:,:)::siglead
+        complex(dp),allocatable,dimension(:,:,:)::Sig_r,Sig_l,Sig_g
+        real(dp),dimension(nen,2,2)::te
+        integer::iter
+        !
+        print *, " init memory ... "
+        allocate(W0_greater(nm_dev,nm_dev))
+        allocate(W0_lesser(nm_dev,nm_dev))
+        allocate(W0_retarded(nm_dev,nm_dev))
+        allocate(Sig_r(nm_dev,nm_dev,nen))
+        allocate(Sig_l(nm_dev,nm_dev,nen))
+        allocate(Sig_g(nm_dev,nm_dev,nen))
+        allocate(siglead(NB*NS,NB*NS,nen,2))
+        ! solve G0W0 
+        call solve_gw(
+                niter=0,nm_dev=nm_dev,lx=Lx,length=length,spindeg=spindeg,&
+                temp=temp,mu=mu,alpha_mix=alpha_mix,&
+                nen=nen,en=energies,nb=nb,ns=ns,&
+                ham=ham,h00lead=lead_h00,h10lead=lead_h10,t=lead_coupling,v=v,&
+                ndiag=ndiag,encut=encut,egap=egap,flatband=.False.,vertex=.False.,bse=.False.,output_files=True,&
+                G_retarded=G_retarded,G_lesser=G_lesser,G_greater=G_greater,Sig_r=,Sig_l,Sig_g,current,transmission,W0_retarded,W0_lesser,W0_greater )
+        call bse_sparse_solve(
+                method=method,alpha=0.99,spindeg=spindeg,&
+                nm_dev=nm_dev,ndiag=ndiag,nen=nen,nsub=1,&
+                en=energies,nops=nops,nnop=nnop,nk=1,&
+                g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,&
+                w=W0_retarded,v=v,solve_sigma=.True.,nb=nb,ns=ns,&
+                P_retarded=P_retarded,sig_retarded=Sig_r,sig_lesser=sig_l,sig_greater=sig_g)  
+        ! get leads sigma
+        siglead(:,:,:,1) = Sig_r(1:NB*NS,1:NB*NS,:)
+        siglead(:,:,:,2) = Sig_r(nm_dev-NB*NS+1:nm_dev,nm_dev-NB*NS+1:nm_dev,:)    
+        print *, 'calc G last time ...'  
+        !
+        call calc_gf(nen,En,2,nm_dev,[nb*ns,nb*ns],nb*ns,&
+                            Ham(:,:),H00lead(:,:,:),H10lead(:,:,:),Siglead(:,:,:,:),&
+                            T(:,:,:),Sig_r(:,:,:),Sig_l(:,:,:),Sig_g(:,:,:),&
+                            G_retarded(:,:,:),G_lesser(:,:,:),&
+                            G_greater(:,:,:),current,Te,mu,temp,flatband)                        
+        !   
+        current=tr
+        transmission(:,1)=te(:,1,2)
+        transmission(:,2)=te(:,2,1)     
+        iter=niter
+        if (output_files) then
+            call calc_bond_current(Ham,G_lesser,nen,en,spindeg,nm_dev,tot_cur,tot_ecur,cur)
+            call write_current_spectrum('bse_Jdens',iter,cur,nen,en,length,NB,Lx)
+            call write_current('bse_I',iter,tot_cur,length,NB,NS,Lx)
+            call write_current('bse_EI',iter,tot_ecur,length,NB,NS,Lx)
+            call write_spectrum_nosub('bse_ldos',iter,G_retarded,nen,En,length,NB,Lx,(/1.0d0,-2.0d0/))
+            call write_spectrum_nosub('bse_ndos',iter,G_lesser,nen,En,length,NB,Lx,(/1.0d0,1.0d0/))
+            call write_spectrum_nosub('bse_pdos',iter,G_greater,nen,En,length,NB,Lx,(/1.0d0,-1.0d0/))                    
+        endif
+
+    end subroutine bse_sparse_solve_scba
+
 
   
     ! build the Bethe-Salpeter Equation system matrix to invert from L0 and Kernel matrices
