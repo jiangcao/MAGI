@@ -311,8 +311,8 @@ module bse_sparse
                                 Sig_lesser(i,l:h,ie)=Sig_lesser(i,l:h,ie) + G_lesser(i,l:h,ie+nops(iop),isub,ik)*W_greater(i,l:h)
                                 Sig_greater(i,l:h,ie)=Sig_greater(i,l:h,ie) + G_greater(i,l:h,ie+nops(iop),isub,ik)*W_lesser(i,l:h)
                                 Sig_retarded(i,l:h,ie)=Sig_retarded(i,l:h,ie) + &
-                                                        G_lesser(i,l:h,ie+nops(iop),isub,ik) * W_retarded(i,l:h) - &                                      
-                                                        G_retarded(i,l:h,ie+nops(iop),isub,ik) * conjg(W_greater(i,l:h)) + &
+                                                        G_lesser(i,l:h,ie+nops(iop),isub,ik) * W_retarded(i,l:h) + &                                      
+                                                        G_retarded(i,l:h,ie+nops(iop),isub,ik) * W_greater(i,l:h) + &
                                                         G_retarded(i,l:h,ie+nops(iop),isub,ik) * W_retarded(i,l:h)  
                             endif 
                         enddo   
