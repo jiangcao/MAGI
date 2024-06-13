@@ -149,7 +149,7 @@ module bse_sparse
         integer,allocatable,dimension(:,:)::ipiv_diagonal
         integer,allocatable,dimension(:)::ipiv_arrow_tip
         real(dp) :: start, finish
-        integer::l,h,ie,isub,ik
+        integer::l,h,ie,isub,ik,nop
         complex(dp),allocatable,dimension(:,:) ::  P_lesser,P_greater,W_retarded,W_lesser,W_greater,tmp 
         logical::lsolve_sigma
         complex::dE
@@ -287,6 +287,7 @@ module bse_sparse
                     ! solve W
                     isub=1
                     ik=1
+                    nop=nops(iop)
                     P_lesser = czero 
                     P_greater = dcmplx( 0.0_dp, 2.0_dp * aimag( P_retarded(:,:,iop) ) )
                     call calc_w(1,NB,NS,nm_dev,P_retarded(:,:,iop),P_lesser,P_greater,V,W_retarded,W_lesser,W_greater)
@@ -299,21 +300,21 @@ module bse_sparse
                         l=max(i-ndiag,1)
                         h=min(nm_dev,i+ndiag)           
                         do ie=1,nen
-                            if ((ie > max(nops(iop),1)).and.(ie <= min(nen+nops(iop),nen))) then 
-                                Sig_lesser(i,l:h,ie)=Sig_lesser(i,l:h,ie) + G_lesser(i,l:h,ie-nops(iop),isub,ik)*W_lesser(i,l:h)                                
-                                Sig_greater(i,l:h,ie)=Sig_greater(i,l:h,ie) + G_greater(i,l:h,ie-nops(iop),isub,ik)*W_greater(i,l:h)
+                            if ((ie > max(nop,1)) .and. (ie <= min(nen+nop,nen))) then 
+                                Sig_lesser(i,l:h,ie)=Sig_lesser(i,l:h,ie) + G_lesser(i,l:h,ie-nop,isub,ik)*W_lesser(i,l:h)                                
+                                Sig_greater(i,l:h,ie)=Sig_greater(i,l:h,ie) + G_greater(i,l:h,ie-nop,isub,ik)*W_greater(i,l:h)
                                 Sig_retarded(i,l:h,ie)=Sig_retarded(i,l:h,ie) + &
-                                                        G_lesser(i,l:h,ie-nops(iop),isub,ik)*W_retarded(i,l:h) + &                                      
-                                                        G_retarded(i,l:h,ie-nops(iop),isub,ik)*W_lesser(i,l:h) + &
-                                                        G_retarded(i,l:h,ie-nops(iop),isub,ik)*W_retarded(i,l:h)                                               
+                                                        G_lesser(i,l:h,ie-nop,isub,ik)*W_retarded(i,l:h) + &                                      
+                                                        G_retarded(i,l:h,ie-nop,isub,ik)*W_lesser(i,l:h) + &
+                                                        G_retarded(i,l:h,ie-nop,isub,ik)*W_retarded(i,l:h)                                               
                             endif     
-                            if ((ie > max(-nops(iop),1)).and.(ie <= min(nen-nops(iop),nen))) then 
-                                Sig_lesser(i,l:h,ie)=Sig_lesser(i,l:h,ie) + G_lesser(i,l:h,ie+nops(iop),isub,ik)*W_greater(i,l:h)
-                                Sig_greater(i,l:h,ie)=Sig_greater(i,l:h,ie) + G_greater(i,l:h,ie+nops(iop),isub,ik)*W_lesser(i,l:h)
+                            if ((ie > max(-nop,1)) .and. (ie <= min(nen-nop,nen))) then 
+                                Sig_lesser(i,l:h,ie)=Sig_lesser(i,l:h,ie) + G_lesser(i,l:h,ie+nop,isub,ik)*W_greater(i,l:h)
+                                Sig_greater(i,l:h,ie)=Sig_greater(i,l:h,ie) + G_greater(i,l:h,ie+nop,isub,ik)*W_lesser(i,l:h)
                                 Sig_retarded(i,l:h,ie)=Sig_retarded(i,l:h,ie) + &
-                                                        G_lesser(i,l:h,ie+nops(iop),isub,ik) * W_retarded(i,l:h) + &                                      
-                                                        G_retarded(i,l:h,ie+nops(iop),isub,ik) * W_greater(i,l:h) + &
-                                                        G_retarded(i,l:h,ie+nops(iop),isub,ik) * W_retarded(i,l:h)  
+                                                        G_lesser(i,l:h,ie+nop,isub,ik) * W_retarded(i,l:h) + &                                      
+                                                        G_retarded(i,l:h,ie+nop,isub,ik) * W_greater(i,l:h) + &
+                                                        G_retarded(i,l:h,ie+nop,isub,ik) * W_retarded(i,l:h)  
                             endif 
                         enddo   
                     enddo
@@ -322,10 +323,10 @@ module bse_sparse
                 endif
             enddo
             if (lsolve_sigma) then 
-                dE = dcmplx(0.0_dp, (En(2)-En(1))/twopi*((nops(2)-nops(1))))                
-                Sig_lesser = Sig_lesser  * dE
-                Sig_greater= Sig_greater * dE
-                Sig_retarded=Sig_retarded* dE
+                dE = dcmplx( 0.0_dp, (En(2)-En(1))/twopi )               
+                Sig_lesser = Sig_lesser   * dE
+                Sig_greater= Sig_greater  * dE
+                Sig_retarded=Sig_retarded * dE
                 !
                 Sig_retarded = dcmplx( dble(Sig_retarded), aimag(Sig_greater-Sig_lesser)/2.0_dp )
                 ! symmetrize the selfenergies
