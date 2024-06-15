@@ -32,7 +32,7 @@ if __name__=='__main__':
 
    ns = 2
    length = 10
-   nen = 3200
+   nen = 320
    nsub = 1
    nky=1
    nkz=1
@@ -113,7 +113,7 @@ if __name__=='__main__':
    eps_M_sinv2=np.zeros(nen//nstep,dtype='complex')
    eps_en=np.zeros(nen//nstep)
 
-   Ephmin = 0.8
+   Ephmin = 0.5
    nnop= int( (4.0-Ephmin)/dE/nstep )
    # nnop = 5
    nops=np.arange(nnop)*nstep + int(Ephmin / dE)
@@ -201,6 +201,9 @@ if __name__=='__main__':
       eps_M_sinv[iop] = np.sum( epsilon_M[ nm_dev//2, nb*ns:(nm_dev-nb*ns) ] )
       eps_en[iop]=nops[iop]*dE
       print('- E=',eps_en[iop],np.abs( np.imag(eps_M_sinv[iop]) ),'reference=', np.abs( np.imag(eps_M[iop]) ) )   
+
+   plt.plot(eps_en,np.abs(np.imag(eps_M_sinv)))
+   plt.savefig('fig_epsilon2.png')
 
    np.savez('data_len'+str(length)+'_ndiag'+str(ndiag)+'.npz', 
                         ID_list=ID_list,
