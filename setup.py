@@ -32,8 +32,8 @@ class f2py_Build(build_ext):
 
 setup(
     name="magi",
-    ext_modules=[f2py_Extension('fortran_external',['magi/core/interface/util.f95',
-                                                    'magi/core/interface/wannier.f95',
-                                                    'magi/core/interface/negf.f95'])],
+    ext_modules=[f2py_Extension('fortran_external',['src/magi/core/interface/util.f95',
+                                                    'src/magi/core/interface/wannier.f95',
+                                                    'src/magi/core/interface/negf.f95'])],
     cmdclass=dict(build_ext=f2py_Build),
 )
