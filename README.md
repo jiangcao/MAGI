@@ -13,9 +13,8 @@ This project is supported by the Swiss National Science Foundation (SNSF) QuaTrE
 
 ## Building 
 
-    cd f2py
     conda activate 
-    sh run_f2py.sh
+    make
     
 ## How to cite
 
