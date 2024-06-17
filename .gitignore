@@ -7,3 +7,5 @@
 *.swp 
 *.npz
 *.pyc
+
+*.png

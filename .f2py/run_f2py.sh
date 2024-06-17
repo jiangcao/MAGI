@@ -1,5 +1,5 @@
 
-F90FLAGS="-g -march=native -O2 -ffree-line-length-none -fbounds-check -fbacktrace -ffast-math -fopenmp "
+F90FLAGS="-g -march=native -ffree-line-length-none -fbounds-check -fbacktrace -ffast-math -fopenmp -fexternal-blas"
 MKLROOT="/usr/pack/intel_compiler-2020-af/x64/mkl/"
 
 rm src/*.mod
