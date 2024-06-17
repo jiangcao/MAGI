@@ -1,4 +1,4 @@
-F90FLAGS=-march=native -ffree-line-length-none -fbounds-check -fbacktrace -ffast-math -fopenmp -fexternal-blas
+F90FLAGS=-march=native -ftree-parallelize-loops=28 -ffree-line-length-none -fbounds-check -fbacktrace -ffast-math -fopenmp -fexternal-blas
 MKLROOT="/usr/pack/intel_compiler-2020-af/x64/mkl/"
 FC=gfortran
 F2PY=f2py
