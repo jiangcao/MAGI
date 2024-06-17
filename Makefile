@@ -30,7 +30,6 @@ mkl_dfti.mod:
 
 clean_compile:
 	rm -f *.mod
-
 	rm -f src/magi/core/interface/*.mod
 
 clean:

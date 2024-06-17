@@ -1,12 +1,12 @@
 
 module bse_sparse    
-    use parameters_mod,only:dp,twopi,pi,e_charge,epsilon0,m0_charge,hbar,c1i,czero,cone    
+    use parameters_mod,only:dp,twopi,pi,e_charge,epsilon0,m0_charge,hbar,c1i,czero,cone,light_speed    
     use omp_lib
     use polarization
     use sinv
     use observ
     use output
-    use gw_dense, only : calc_w,solve_gw => solve_gw_1D_memsaving,calc_gf
+    use gw_dense, only : calc_w,solve_gw => solve_gw_1D_memsaving,calc_gf,selfenergy_eph_mono
     implicit none
     contains
 
@@ -150,9 +150,9 @@ module bse_sparse
         integer(8):: nnz
         integer,allocatable,dimension(:,:)::table
         integer,allocatable,dimension(:,:)::ipiv_diagonal
-        integer,allocatable,dimension(:)::ipiv_arrow_tip
+        integer,allocatable,dimension(:)::ipiv_arrow_tip        
         real(dp) :: start, finish
-        integer::l,h,ie,isub,ik,nop,ib
+        integer::l,h,ie,isub,ik,nop,ib,nepoch
         complex(dp),allocatable,dimension(:,:) ::  P_lesser,P_greater,W_retarded,W_lesser,W_greater,tmp 
         logical::lsolve_sigma
         complex::dE
@@ -294,6 +294,7 @@ module bse_sparse
                 !
                 if (lsolve_sigma) then 
                     start = omp_get_wtime()
+                    print '("  Start vertex computation ... ")'
                     ! compute vertex Gamma_ijk = L_ijkk , hence the upper-arrow block of L
                     Llowerarrow(:,:,1) = matmul( Atip , Llowerarrow(:,:,1) )
                     do ib = 1,num_blocks 
@@ -341,16 +342,20 @@ module bse_sparse
                     P_retarded(:,:,iop) = dcmplx( 0.0_dp, -abs(aimag(P_retarded(:,:,iop))) )
                     P_greater = 2.0_dp * P_retarded(:,:,iop) 
                     !
+                    print '("  Start W computation ... ")'
                     call calc_w(1,NB,NS,nm_dev,P_retarded(:,:,iop),P_lesser,P_greater,V,W_retarded,W_lesser,W_greater)
                     finish = omp_get_wtime()
                     print '("  W computation time = ", F0.3 ," seconds.")', finish-start 
                     !
                     start = finish
+                    nepoch = nm_dev/10
+                    write(*, '(A)', advance="no") "  Start Sigma computation "
                     ! Accumulate the GW to Sigma
                     ! hw from -inf to +inf: Sig^<>_ij(E) = (i/2pi) \int_dhw G^<>_ij(E-hw) W^<>_ij(hw)  
                     !$omp parallel default(shared) private(i1,i2,l,i,j,k,ie) 
                     !$omp do
                     do i=1,nm_dev
+                        if (mod(i-1,nepoch)==0) write(*, '(A)', advance="no") '.'
                         i1=max(i-ndiag,1)
                         i2=min(nm_dev,i+ndiag)   
                         do concurrent (j=i1:i2, l=i1:i2, k=i1:i2)        
@@ -377,6 +382,7 @@ module bse_sparse
                     !$omp end do
                     !$omp end parallel       
                     finish = omp_get_wtime()
+                    print *,""
                     print '("  Sigma computation time = ", F0.3 ," seconds.")', finish-start        
                 endif
             enddo
@@ -403,19 +409,24 @@ module bse_sparse
     ! driver function for solving BSE with SCBA iteration
     subroutine bse_sparse_solve_scba(method,niter,nm_dev,Lx,length,spindeg,temp,mu,&
         alpha_mix,nen,En,nops,nnop,nb,ns,Ham,H00lead,H10lead,T,V,&
-        ndiag,encut,egap,vertex,bse,flatband,output_files,&
+        ndiag,encut,egap,vertex,bse,flatband,output_files,inj_photon,nphot,m_phot,n_bose_phot,&
         G_retarded,G_lesser,G_greater,&
         current,transmission,P_retarded) 
         ! in 
         character(len=*),intent(in)::method
         integer, intent(in) :: nen, nb, ns,niter,nm_dev,length
         integer, intent(in) :: ndiag
-        integer,intent(in) :: nnop,nops(nnop) ! number of optical energies, optical energies in unit of energy interval
+        integer,intent(in) :: nnop,nops(nnop) ! number of optical energies, optical energies in unit of energy interval        
         real(dp), intent(in) :: En(nen), temp(2), mu(2), alpha_mix, Lx, spindeg, egap
         complex(dp),intent(in) :: Ham(nm_dev,nm_dev),H00lead(NB*NS,NB*NS,2),H10lead(NB*NS,NB*NS,2),T(NB*NS,nm_dev,2)
         complex(dp), intent(in):: V(nm_dev,nm_dev)    
         real(dp),intent(in) :: encut(2) ! intraband and interband cutoff for P
         logical, intent(in) :: vertex, bse, flatband, output_files
+        !
+        logical, intent(in) :: inj_photon !! photon injection
+        complex(dp), intent(in),optional :: m_phot(nm_dev,nm_dev,1,1) !! e-photon interaction H of size (N,N,nk,nq)
+        integer,intent(in),optional :: nphot ! photon energy in unit of energy interval 
+        real(dp), intent(in),optional :: n_bose_phot ! Bose number of photon mode
         ! out 
         real(dp),intent(out)::current(nen,2) ! current spectrum on leads
         real(dp),intent(out)::transmission(nen,2) ! transmission matrix
@@ -470,13 +481,29 @@ module bse_sparse
         ! get leads sigma        
         siglead(:,:,:,1) = Sig_r(1:NB*NS,1:NB*NS,:)
         siglead(:,:,:,2) = Sig_r(nm_dev-NB*NS+1:nm_dev,nm_dev-NB*NS+1:nm_dev,:)    
-        print *, 'calc G last time ...'  
+        print *, 'calc G ...'  
         !
         call calc_gf(nen,En,2,nm_dev,[nb*ns,nb*ns],nb*ns,&
                     Ham(:,:),H00lead(:,:,:),H10lead(:,:,:),Siglead(:,:,:,:),&
                     T(:,:,:),Sig_r(:,:,:),Sig_l(:,:,:),Sig_g(:,:,:),&
                     G_retarded(:,:,:),G_lesser(:,:,:),&
-                    G_greater(:,:,:),current,Te,mu,temp,flatband)                        
+                    G_greater(:,:,:),current,Te,mu,temp,flatband)    
+        ! 
+        if (inj_photon) then 
+            print *, 'calc Photon self-energy ...'      
+            !
+            call selfenergy_eph_mono(nm_dev,nen,En,nphot,1,1,1,1,1,1,1,M_phot,G_lesser,G_greater,&
+                        Sig_l,Sig_g,n_bose=n_bose_phot,gamma_q=.True.)  
+            !
+            Sig_r = aimag(Sig_g - Sig_l) / 2.0_dp * c1i
+            print *, 'calc G last time ...'  
+            !
+            call calc_gf(nen,En,2,nm_dev,[nb*ns,nb*ns],nb*ns,&
+                        Ham(:,:),H00lead(:,:,:),H10lead(:,:,:),Siglead(:,:,:,:),&
+                        T(:,:,:),Sig_r(:,:,:),Sig_l(:,:,:),Sig_g(:,:,:),&
+                        G_retarded(:,:,:),G_lesser(:,:,:),&
+                        G_greater(:,:,:),current,Te,mu,temp,flatband)    
+        endif                                      
         !   
         transmission(:,1)=te(:,1,2)
         transmission(:,2)=te(:,2,1)     
@@ -809,9 +836,9 @@ module bse_sparse
         Llowerarrow = czero
         NT = blocksize * num_blocks   
         !
-        nepoch = N / 100
+        nepoch = N / 10
         start = omp_get_wtime()              
-        print *,'  start computation L0_ijkl = G_jl G_ki ...'                 
+        write(*, '(A)', advance="no") '  start computation L0_ijkl = G_jl G_ki '                 
         !$omp parallel default(shared) private(row,col,i,j,k,l,L0ijkl,ib,p,q,fliped_row,fliped_col)
         !$omp do        
         do row = 1,N 
