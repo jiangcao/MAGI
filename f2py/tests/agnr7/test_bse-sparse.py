@@ -46,6 +46,7 @@ if __name__=='__main__':
    mu = np.array( [-2.25,-2.25 ] )
 
    ndiag=nb*2
+   ndiag=nb*2
 
    if (ndiag==0):
        ldiag=True
@@ -113,15 +114,50 @@ if __name__=='__main__':
    eps_M_sinv2=np.zeros(nen//nstep,dtype='complex')
    eps_en=np.zeros(nen//nstep)
 
-   Ephmin = 0.5
+   Ephmin = 0.8
    nnop= int( (4.0-Ephmin)/dE/nstep )
    # nnop = 5
    nops=np.arange(nnop)*nstep + int(Ephmin / dE)
+   print('Num Eph = ' , nnop)
    print('Num Eph = ' , nnop)
    print('Ephoton = ' , nops * dE)
 
    nm_dev=nb*length
 
+#   print("")
+#   print("--- Start full BSE solver ---")
+#   start_t = time.time()
+#
+#   for iop in range(nnop):
+#      print("iop=",iop,"Ephoton=",nops[iop]*dE)      
+#      
+#      P_r,nn = bse_dense.bse_fullsolve(
+#               alpha=0.99,spindeg=2.0,nm_dev=nm_dev,ndiag=ndiag,nen=nen,
+#               en=energies,nop=nops[iop],
+#               g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,
+#               w=W0_r,v=v)      
+#
+#      epsilon_M = np.eye(nm_dev) -  v[:,:,0] @ P_r
+#
+#      eps_M[iop] = np.sum( epsilon_M[ nm_dev//2, nb*ns:(nm_dev-nb*ns) ] )
+#      eps_en[iop]=nops[iop]*dE
+#      print('- E=',eps_en[iop],'epsilon_2=', np.abs( np.imag(eps_M[iop]) ) )
+#      print(" ")      
+#
+#   finish_t = time.time()
+#   print("! dense BSE solver takes %s second for all optical energies " % (finish_t - start_t))
+#      
+#
+#   print("save checkpoint.")
+#   np.savez('data_len'+str(length)+'_ndiag'+str(ndiag)+'.npz', 
+#                        ID_list=ID_list,
+#                        tr=tr,
+#                        te=te,
+#                        energies=energies,
+#                        ldos=ldos,
+#                        ndos=ndos,
+#                        eps_M=eps_M,
+#                        eps_en=eps_en)
 #   print("")
 #   print("--- Start full BSE solver ---")
 #   start_t = time.time()

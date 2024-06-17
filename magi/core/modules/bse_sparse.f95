@@ -53,6 +53,49 @@ module bse_sparse
         out_Alowerarrow = reshape(Alowerarrow, [num_blocks,nm_dev,blocksize], order=[2,3,1])
     end subroutine reshape_BTA_block2stack
 
+    subroutine reshape_BTA_block2stack(num_blocks,blocksize,nm_dev,&
+        Adiag, Aupper, Alower, Alowerarrow, Aupperarrow,&
+        out_Adiag, out_Aupper, out_Alower, out_Alowerarrow, out_Aupperarrow)
+        ! input
+        integer,intent(in)::num_blocks,blocksize,nm_dev
+        complex(dp),intent(in),dimension(:,:):: Adiag
+        complex(dp),intent(in),dimension(:,:):: Aupper,Alower 
+        complex(dp),intent(in),dimension(:,:):: Alowerarrow
+        complex(dp),intent(in),dimension(:,:):: Aupperarrow 
+        ! output
+        complex(dp),intent(out),dimension(num_blocks,blocksize,blocksize):: out_Adiag
+        complex(dp),intent(out),dimension(num_blocks-1,blocksize,blocksize):: out_Aupper,out_Alower 
+        complex(dp),intent(out),dimension(num_blocks,nm_dev,blocksize):: out_Alowerarrow
+        complex(dp),intent(out),dimension(num_blocks,blocksize,nm_dev):: out_Aupperarrow 
+        !
+        integer::ib,i,j 
+        ! !$omp parallel default(shared) private(ib,i,j)
+        ! !$omp do
+        ! do ib=1,num_blocks            
+        !     do i=1,blocksize
+        !         do j=1,blocksize
+        !             out_Adiag(ib,i,j) = Adiag(i,j+(ib-1)*blocksize)
+        !             if (ib<num_blocks) then 
+        !                 out_Aupper(ib,i,j) = Aupper(i,j+(ib-1)*blocksize)
+        !                 out_Alower(ib,i,j) = Alower(i,j+(ib-1)*blocksize)
+        !             endif                     
+        !         enddo 
+        !         do j=1,nm_dev
+        !             out_Alowerarrow(ib,j,i) = Alowerarrow(j,i+(ib-1)*blocksize)
+        !             out_Aupperarrow(ib,i,j) = Aupperarrow(i+(ib-1)*blocksize,j)
+        !         enddo 
+        !     enddo 
+        ! enddo            
+        ! !$omp end do
+        ! !$omp end parallel  
+
+        out_Adiag = reshape(Adiag, [num_blocks,blocksize,blocksize], order=[2,3,1])
+        out_Aupper = reshape(Aupper, [num_blocks-1,blocksize,blocksize], order=[2,3,1])
+        out_Alower = reshape(Alower, [num_blocks-1,blocksize,blocksize], order=[2,3,1])
+        out_Aupperarrow = reshape(Aupperarrow, [num_blocks,blocksize,nm_dev], order=[2,1,3])
+        out_Alowerarrow = reshape(Alowerarrow, [num_blocks,nm_dev,blocksize], order=[2,3,1])
+    end subroutine reshape_BTA_block2stack
+
     ! preprocessing the sparsity pattern and decide the block_size and num_blocks in the BTA matrix
     subroutine bse_sparse_pre(nm_dev,ndiag,N,nnz,table,blocksize,num_blocks)
         ! input
@@ -168,6 +211,7 @@ module bse_sparse
         ! prepare the memory
         NT = blocksize * num_blocks
         if (trim(method) == 'fft') then 
+        if (trim(method) == 'fft') then 
             local_nnop = nnop
         else 
             local_nnop = 1 ! compute one optical energy at a time
@@ -205,6 +249,7 @@ module bse_sparse
         if (local_nnop > 1) then  
             ! build BTA blocks of RPA polarization L0 and 2-body interaction kernal K                     
             call bse_sparse_build(method,alpha,spindeg,nm_dev,ndiag,nen,En,nops,local_nnop,blocksize,num_blocks,N,table,&
+            call bse_sparse_build(method,alpha,spindeg,nm_dev,ndiag,nen,En,nops,local_nnop,blocksize,num_blocks,N,table,&
                                     G_lesser,G_greater,G_retarded,W,V,&
                                     Ldiag,Lupper,Llower,Lupperarrow,Llowerarrow,Ltip,Ktip,Kdiag)       
             print *, " start selected inversion " 
@@ -213,11 +258,21 @@ module bse_sparse
                 write(*, '(A)', advance="no") '.'
                 ! build system matrix blocks (I - L0 @ K)
                 ! print *, "  build system "
+                ! print *, "  build system "
                 call bse_sparse_build_system(blocksize,num_blocks,nm_dev,local_nnop,iop,&
+                                Ldiag, Lupper, Llower, Llowerarrow, Lupperarrow, Ltip,&
                                 Ldiag, Lupper, Llower, Llowerarrow, Lupperarrow, Ltip,&
                                 Kdiag, Ktip,&
                                 Adiag, Aupper, Alower, Alowerarrow, Aupperarrow, Atip)
                 ! selected inversion of the system matrix
+                ! call zbtatrf( blocksize, nm_dev, num_blocks, &
+                !             Adiag,Alower,Aupper,Alowerarrow,Aupperarrow,Atip, &
+                !             ipiv_diagonal,ipiv_arrow_tip)
+                ! call zbtatri( blocksize, nm_dev, num_blocks, &
+                !             Adiag,Alower,Aupper,Alowerarrow,Aupperarrow,Atip, &
+                !             ipiv_diagonal,ipiv_arrow_tip)
+                call zbtasinv(blocksize, nm_dev, num_blocks, &
+                            Adiag,Alower,Aupper,Alowerarrow,Aupperarrow,Atip)
                 ! call zbtatrf( blocksize, nm_dev, num_blocks, &
                 !             Adiag,Alower,Aupper,Alowerarrow,Aupperarrow,Atip, &
                 !             ipiv_diagonal,ipiv_arrow_tip)
@@ -249,6 +304,9 @@ module bse_sparse
             print '("  computation time = ", F0.3 ," seconds.")', finish-start
         else 
             do iop = 1,nnop
+                ! build BTA blocks of RPA polarization L0 and 2-body interaction kernal K  
+                local_nops = nops(iop)       
+                call bse_sparse_build(method,alpha,spindeg,nm_dev,ndiag,nen,En,local_nops,1,blocksize,num_blocks,N,table,&
                 ! build BTA blocks of RPA polarization L0 and 2-body interaction kernal K  
                 local_nops = nops(iop)       
                 call bse_sparse_build(method,alpha,spindeg,nm_dev,ndiag,nen,En,local_nops,1,blocksize,num_blocks,N,table,&
@@ -777,9 +835,11 @@ module bse_sparse
 
     ! build the Bethe-Salpeter Equation L0 and Kernel matrices
     subroutine bse_sparse_build(method,alpha,spindeg,nm_dev,ndiag,nen,En,nop,nnop,blocksize,num_blocks,N,table,&
+    subroutine bse_sparse_build(method,alpha,spindeg,nm_dev,ndiag,nen,En,nop,nnop,blocksize,num_blocks,N,table,&
         G_lesser,G_greater,G_retarded,W,V,&
         Ldiag,Lupper,Llower,Lupperarrow,Llowerarrow,Ltip,Ktip,Kdiag)        
         ! input
+        character(len=*),intent(in)::method
         character(len=*),intent(in)::method
         integer,intent(in)::nm_dev,nen,nnop,nop(nnop),ndiag,N,table(2,N)
         integer,intent(in)::blocksize, num_blocks ! arrow block size and number of blocks (excluding tip block)
@@ -829,6 +889,7 @@ module bse_sparse
                         if (fliped_row > NT) then 
                             ! tip block
                             if (trim(method)=='fft') then
+                            if (trim(method)=='fft') then
                                 call four_polarization_fft(alpha,nm_dev,nen,en,nop,nnop,ndiag,&
                                             G_lesser,G_greater,G_retarded,i,j,k,l,L0ijkl)
                             else    
@@ -840,6 +901,7 @@ module bse_sparse
                             Ltip(fliped_row - NT,fliped_col - NT,1:nnop) = L0ijkl * spindeg
                         else
                             ! upper arrow block 
+                            if (trim(method)=='fft') then
                             if (trim(method)=='fft') then
                                 call four_polarization_fft(alpha,nm_dev,nen,en,nop,nnop,ndiag,&
                                             G_lesser,G_greater,G_retarded,i,j,k,l,L0ijkl)
@@ -854,6 +916,7 @@ module bse_sparse
                     else 
                         if (fliped_row > NT) then 
                             ! lower arrow block 
+                            if (trim(method)=='fft') then
                             if (trim(method)=='fft') then
                                 call four_polarization_fft(alpha,nm_dev,nen,en,nop,nnop,ndiag,&
                                             G_lesser,G_greater,G_retarded,i,j,k,l,L0ijkl)
@@ -871,6 +934,7 @@ module bse_sparse
                             if ((fliped_col > p).and.(fliped_col <= q)) then 
                                 ! diag block 
                                 if (trim(method)=='fft') then
+                                if (trim(method)=='fft') then
                                     call four_polarization_fft(alpha,nm_dev,nen,en,nop,nnop,ndiag,&
                                                 G_lesser,G_greater,G_retarded,i,j,k,l,L0ijkl)
                                 else    
@@ -884,6 +948,7 @@ module bse_sparse
                                 if ((fliped_col > q).and.(fliped_col <= (q+blocksize))) then                             
                                     ! upper diag block 
                                     if (trim(method)=='fft') then
+                                    if (trim(method)=='fft') then
                                         call four_polarization_fft(alpha,nm_dev,nen,en,nop,nnop,ndiag,&
                                                     G_lesser,G_greater,G_retarded,i,j,k,l,L0ijkl)
                                     else    
@@ -896,6 +961,7 @@ module bse_sparse
                                 endif
                                 if ((fliped_col > (p-blocksize)).and.(fliped_col <= p)) then                             
                                     ! lower diag block
+                                    if (trim(method)=='fft') then
                                     if (trim(method)=='fft') then
                                         call four_polarization_fft(alpha,nm_dev,nen,en,nop,nnop,ndiag,&
                                                     G_lesser,G_greater,G_retarded,i,j,k,l,L0ijkl)
