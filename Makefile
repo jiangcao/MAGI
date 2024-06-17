@@ -13,15 +13,16 @@ directories:
 	mkdir -p ${OUTDIR}
 
 util:
-	${F2PY} ${F2PYFLAGS} -m util src/core/interface/util.f95
+
+	${F2PY} ${F2PYFLAGS} -m util src/magi/core/interface/util.f95
 	mv util*.so ${OUTDIR}
 
 wannier:
-	${F2PY} ${F2PYFLAGS} -m wannier src/core/interface/wannier.f95
+	${F2PY} ${F2PYFLAGS} -m wannier src/magi/core/interface/wannier.f95
 	mv wannier*.so ${OUTDIR}
 
 negf: mkl_dfti.mod
-	${F2PY} ${F2PYFLAGS} -m negf src/core/interface/negf.f95 skip: trimul_c mul_c :
+	${F2PY} ${F2PYFLAGS} -m negf src/magi/core/interface/negf.f95 skip: trimul_c mul_c :
 	mv negf*.so ${OUTDIR}
 
 mkl_dfti.mod: 
@@ -29,7 +30,8 @@ mkl_dfti.mod:
 
 clean_compile:
 	rm -f *.mod
-	rm -f src/core/interface/*.mod
+
+	rm -f src/magi/core/interface/*.mod
 
 clean:
 	rm -f ${OUTDIR}/*
