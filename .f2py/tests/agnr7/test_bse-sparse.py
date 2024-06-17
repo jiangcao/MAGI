@@ -31,7 +31,7 @@ if __name__=='__main__':
    Lx=L[0]
 
    ns = 2
-   length = 20
+   length = 10
    nen = 1600
    nsub = 1
    nky=1
@@ -118,7 +118,6 @@ if __name__=='__main__':
    nnop= int( (4.0-Ephmin)/dE/nstep )
    # nnop = 5
    nops=np.arange(nnop)*nstep + int(Ephmin / dE)
-   print('Num Eph = ' , nnop)
    print('Num Eph = ' , nnop)
    print('Ephoton = ' , nops * dE)
 

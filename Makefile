@@ -1,4 +1,4 @@
-F90FLAGS=-g -march=native -O2 -ffree-line-length-none -fbounds-check -fbacktrace -ffast-math -fopenmp
+F90FLAGS=-march=native -ffree-line-length-none -fbounds-check -fbacktrace -ffast-math -fopenmp -fexternal-blas
 MKLROOT="/usr/pack/intel_compiler-2020-af/x64/mkl/"
 FC=gfortran
 F2PY=f2py
@@ -13,15 +13,15 @@ directories:
 	mkdir -p ${OUTDIR}
 
 util:
-	${F2PY} ${F2PYFLAGS} -m util magi/core/interface/util.f95
+	${F2PY} ${F2PYFLAGS} -m util src/core/interface/util.f95
 	mv util*.so ${OUTDIR}
 
 wannier:
-	${F2PY} ${F2PYFLAGS} -m wannier magi/core/interface/wannier.f95
+	${F2PY} ${F2PYFLAGS} -m wannier src/core/interface/wannier.f95
 	mv wannier*.so ${OUTDIR}
 
 negf: mkl_dfti.mod
-	${F2PY} ${F2PYFLAGS} -m negf magi/core/interface/negf.f95 skip: trimul_c mul_c :
+	${F2PY} ${F2PYFLAGS} -m negf src/core/interface/negf.f95 skip: trimul_c mul_c :
 	mv negf*.so ${OUTDIR}
 
 mkl_dfti.mod: 
@@ -29,7 +29,7 @@ mkl_dfti.mod:
 
 clean_compile:
 	rm -f *.mod
-	rm -f magi/core/interface/*.mod
+	rm -f src/core/interface/*.mod
 
 clean:
 	rm -f ${OUTDIR}/*
