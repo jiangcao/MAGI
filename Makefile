@@ -13,6 +13,7 @@ directories:
 	mkdir -p ${OUTDIR}
 
 util:
+
 	${F2PY} ${F2PYFLAGS} -m util src/magi/core/interface/util.f95
 	mv util*.so ${OUTDIR}
 
@@ -29,6 +30,7 @@ mkl_dfti.mod:
 
 clean_compile:
 	rm -f *.mod
+
 	rm -f src/magi/core/interface/*.mod
 
 clean:
