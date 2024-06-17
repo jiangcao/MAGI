@@ -3,7 +3,7 @@
 """
 Created on Fri Mar 31 2024
 
-@author: jiacao
+@author: Jiang Cao
 """
 
 
@@ -31,8 +31,8 @@ if __name__=='__main__':
    Lx=L[0]
 
    ns = 2
-   length = 10
-   nen = 320
+   length = 20
+   nen = 1600
    nsub = 1
    nky=1
    nkz=1
@@ -45,7 +45,7 @@ if __name__=='__main__':
    temp =  np.ones(2)* 300.0
    mu = np.array( [-2.25,-2.25 ] )
 
-   ndiag=nb
+   ndiag=nb*2
 
    if (ndiag==0):
        ldiag=True

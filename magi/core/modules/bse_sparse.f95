@@ -270,7 +270,7 @@ module bse_sparse
                 call zbtasinv(blocksize, nm_dev, num_blocks, &
                             Adiag,Alower,Aupper,Alowerarrow,Aupperarrow,Atip)
                 finish = omp_get_wtime()
-                print '("  sinv time = ", F0.3 ," seconds.")', finish-start            
+                print '("  selected inversion time = ", F0.3 ," seconds.")', finish-start            
                 ! compute P_retarded P_ij = L_iijj , hence the arrowtip block of L                
                 Atip = matmul( Atip , Ltip(:,:,1) )
                 Atip = Atip + matmul( Alowerarrow, Lupperarrow(:,:,1) ) 
@@ -358,8 +358,8 @@ module bse_sparse
                                     Sig_lesser(i,j,ie)=Sig_lesser(i,j,ie) + G_lesser(i,l,ie-nop,isub,ik) * W_lesser(i,k) * vertex(l,j,k)                                
                                     Sig_greater(i,j,ie)=Sig_greater(i,j,ie) + G_greater(i,l,ie-nop,isub,ik) * W_greater(i,k) * vertex(l,j,k)   
                                     Sig_retarded(i,j,ie)=Sig_retarded(i,j,ie) + &
-                                                            G_lesser(i,l,ie-nop,isub,ik) * W_retarded(i,k) * vertex(l,j,k)    + &                                      
-                                                            G_retarded(i,l,ie-nop,isub,ik) * W_lesser(i,k) * vertex(l,j,k)    + &
+                                                            G_lesser(i,l,ie-nop,isub,ik) * W_retarded(i,k) * vertex(l,j,k) + &                                      
+                                                            G_retarded(i,l,ie-nop,isub,ik) * W_lesser(i,k) * vertex(l,j,k) + &
                                                             G_retarded(i,l,ie-nop,isub,ik) * W_retarded(i,k) * vertex(l,j,k)                                                  
                                 endif     
                                 if ((ie > max(-nop,1)) .and. (ie <= min(nen-nop,nen))) then 
@@ -491,8 +491,6 @@ module bse_sparse
         endif
         !
     end subroutine bse_sparse_solve_scba
-
-
   
     ! build the Bethe-Salpeter Equation system matrix to invert from L0 and Kernel matrices
     !   A = ( I - L0 @ K )
@@ -777,7 +775,6 @@ module bse_sparse
         print *, "DONE CHECK"
     end subroutine bse_sparse_check_system
 
-
     ! build the Bethe-Salpeter Equation L0 and Kernel matrices
     subroutine bse_sparse_build(method,alpha,spindeg,nm_dev,ndiag,nen,En,nop,nnop,blocksize,num_blocks,N,table,&
         G_lesser,G_greater,G_retarded,W,V,&
@@ -946,7 +943,7 @@ module bse_sparse
         !$omp end parallel 
         finish = omp_get_wtime()
         print *
-        print '("  computation time = ", F0.3 ," seconds.")', finish-start
+        print '(" L0 and K computation time = ", F0.3 ," seconds.")', finish-start
         start = finish
     end subroutine bse_sparse_build
 
