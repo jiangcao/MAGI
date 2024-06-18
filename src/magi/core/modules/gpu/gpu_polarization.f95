@@ -1,3 +1,4 @@
+
 module gpu_polarization_m
 #ifdef _CUDA
     ! custom CUDA kernel to compute the polarization integral
