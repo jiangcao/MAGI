@@ -162,6 +162,7 @@ module bse_sparse
         else
             lsolve_sigma = .false. 
         endif
+        print *,'====================== bse_sparse_solve ======================='                 
         ! pre-process the sparsity pattern of system
         print *, " pre-process ... "
         allocate(table(2,nm_dev*nm_dev))
