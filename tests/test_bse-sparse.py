@@ -13,6 +13,8 @@ from wannier import wannierham
 import matplotlib.pyplot as plt
 import os
 os.environ["OMP_NUM_THREADS"] = "128"
+# from sinv import sinv_tridiagonal_arrowhead
+# from serinv.sequential import ddbtasinv
 import time
 
 if __name__=='__main__':   
@@ -32,7 +34,7 @@ if __name__=='__main__':
 
    ns = 2
    length = 10
-   nen = 1400
+   nen = 800
    nsub = 1
    nky=1
    nkz=1
@@ -40,13 +42,15 @@ if __name__=='__main__':
    niter=0
    eps_screen=1.0
    r0=3.0
-   emin=-10.0
-   emax= 4.0
+   emin=-6.0
+   emax= 2.0
    temp =  np.ones(2)* 300.0
    mu = np.array( [-2.25,-2.25 ] )
-   light_polar = np.array( [1.0, 0.0, 0.0] )
-   hw_phot = 2.0 # eV
-   intensity = 1e13 # W/m2
+   light_polar = np.array( [1.0, 1.0, 0.0] )
+   light_polar = light_polar / np.linalg.norm(light_polar)
+   hw_phot = 2.5 # eV
+   intensity = 1e10 # W/m2
+
    n_bose_phot = intensity / hw_phot / parameters_mod.e_charge
    print('n_bose_phot=',n_bose_phot)
 
@@ -106,6 +110,7 @@ if __name__=='__main__':
    nstep=4
    eps_M=np.zeros(nen//nstep,dtype='complex')
    eps_M_sinv=np.zeros(nen//nstep,dtype='complex')
+   eps_M_sinv2=np.zeros(nen//nstep,dtype='complex')
    eps_en=np.zeros(nen//nstep)
 
    Ephmin = 0.5
@@ -136,7 +141,7 @@ if __name__=='__main__':
       epsilon_M = np.eye(nm_dev) -  v[:,:,0] @ P_r[:,:,iop]
       eps_M_sinv[iop] = np.sum( epsilon_M[ nm_dev//2, nb*ns:(nm_dev-nb*ns) ] )
       eps_en[iop]=nops[iop]*dE
-      print('- E=',eps_en[iop],np.abs( np.imag(eps_M_sinv[iop]) ))   
+      print('- E=',eps_en[iop],np.abs( np.imag(eps_M_sinv[iop]) ) )   
 
    finish_t = time.time()
    print("! BSE solver takes %s second for all optical energies " % (finish_t - start_t))
