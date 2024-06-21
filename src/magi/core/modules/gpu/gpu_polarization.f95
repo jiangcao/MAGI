@@ -1,68 +1,136 @@
+!===============================================================================
+! Copyright (C) 2023 Jiang Cao
+!
+! This program is distributed under the terms of the GNU General Public License.
+! See the file `LICENSE' in the root directory of this distribution, or obtain 
+! a copy of the License at <https://www.gnu.org/licenses/gpl-3.0.txt>.
+!
+! Author: jiacao <jiacao@ethz.ch>
+! Comment:
+!  
+! Maintenance:
+!===============================================================================
+module gpu_polarization
+    implicit none 
+    integer,parameter :: size_of_complex=16 !8->single precision; 16->double precision
 
-module gpu_polarization_m
-    ! CUDA functions to compute the polarization integral
-    use cublas
-    implicit none
-    integer, parameter :: dp=8
-    contains
-    !
-    ! calculates independent-particle polarizability matrix at one frequency
-    subroutine gpu_four_polarization_block(alpha,nm_dev,nen,dE,nop,block_size1,&
-        block_size2,G_lesser,G_greater,G_retarded,jl,ki,L0)
-        integer,intent(in) :: nm_dev,nen,nop,block_size1,block_size2
-        integer,intent(in) :: jl(block_size1),ki(block_size2)
-        real(dp),intent(in) :: dE, alpha 
-        complex(dp),intent(in),dimension(nm_dev*nm_dev,nen) :: G_lesser,G_greater,G_retarded
-        complex(dp),intent(out),dimension(block_size1,block_size2) :: L0
-        ! ---
-        real(dp) :: weights
-        integer :: n
-        complex(dp),dimension(:,:),allocatable :: a,b,c
-        REAL(kind=dp), PARAMETER :: twopi = 6.2831853072_dp
-        COMPLEX(kind=dp), PARAMETER :: czero  = dcmplx(0.0_dp,0.0_dp)
-        COMPLEX(kind=dp), PARAMETER :: cone = dcmplx(1.0_dp,0.0_dp)
-        complex(dp)::a1,a2
-        ! the P4 tensor is computed from $P4(q,E') = \sum_{k} \int dE G(E,k) G(E-E',k-q)                           
-        weights = dE/twopi
-        a1 = weights * alpha * 0.5_dp
+    contains 
+
+    subroutine gpu_polarization(a1,a2,nop,nen,nm,num_jl,jl,num_ki,ki,copy_to_gpu,G_lesser,G_greater,G_retarded,G_advanced,&
+        devPtrGL,devPtrGG,devPtrGR,devPtrGA,partial_P)
+        complex(8),intent(in) :: a1,a2
+        integer,intent(in) :: nop,nen,nm,jl(:),ki(:),num_jl,num_ki
+        integer(8),intent(inout) :: devPtrGL, devPtrGG, devPtrGR, devPtrGA
+        complex(8), dimension(:,:), intent(in) :: G_greater, G_lesser, G_retarded, G_advanced
+        complex(8), dimension(:,:), intent(out) :: partial_P
+        logical,intent(in) :: copy_to_gpu
+        integer :: n, i        
+        integer(8) :: devPtrA, devPtrB, devPtrC        
         !
-        n = nen-nop
-        allocate(a(block_size1,n))
-        allocate(b(n,block_size2))
-        allocate(c(block_size1,block_size2))
-        a = G_greater(jl, (nop+1):nen)         
-        b = reshape( G_lesser(ki,1:n) , shape=[n,block_size2], order=[2,1] )
-        call zgemm('n','n',block_size1,block_size2,n,a1,a,block_size1,b,n,czero,c,block_size1) 
-        a = G_lesser(jl, (nop+1):nen)         
-        b = reshape( G_greater(ki,1:n) , shape=[n,block_size2], order=[2,1] )
-        call zgemm('n','n',block_size1,block_size2,n,-a1,a,block_size1,b,n,cone,c,block_size1) 
-        !             
-        ! L0 =    (1.0_dp - alpha) * ( sum( G_lesser_jl((nop+1):nen)   * conjg(G_retarded_ik(1:(nen-nop))) ) &
-        !                             +  sum( G_retarded_jl((nop+1):nen) * G_lesser_ki(1:(nen-nop)) ) )  &
-        !         + alpha * 0.5_dp * ( sum( G_greater_jl((nop+1):nen) * G_lesser_ki(1:(nen-nop)) )  & 
-        !                             -  sum( G_lesser_jl((nop+1):nen)  * G_greater_ki(1:(nen-nop)) ) )  
-        ! L0 = L0 * weights 
-    end subroutine gpu_four_polarization_block
-    !
-    !
-    ! calculates the summation of products of two complex arrays : 
-    ! c(i,j) = sum( a(i, offset+1:n) + b(j, 1:n-offset) ) / dble(n)
-    subroutine gpu_sum_complex(a,b,nnz,n,c)
-        integer,intent(in) :: nnz, n
-        complex(8),intent(in),dimension(nnz,n) :: a
-        complex(8),intent(in),dimension(n,nnz) :: b
-        complex(8),intent(out) :: c(nnz,nnz)
-        complex(8),parameter::czero=dcmplx(0.0d0,0.0d0)
-        complex(8),parameter::cone=dcmplx(1.0d0,0.0d0)
-        ! ---       
-        integer :: i,j,k
-        !$omp target enter data map(to:a,b,c)  
-        !$omp target data use_device_ptr(a,b,c)
-        call zgemm('n','n',nnz,nnz,n,cone,a,nnz,b,n,czero,c,nnz) 
-        !$omp end target data 
-        !$omp target update from(c)     
-        !$omp target exit data map(delete:a,b,c)
-        !
-    end subroutine gpu_sum_complex
-    !
-end module gpu_polarization_m
+        if (copy_to_gpu) then 
+            call cublas_alloc(nm*nm*nen, size_of_complex, devPtrGG)
+            call cublas_alloc(nm*nm*nen, size_of_complex, devPtrGL)
+            call cublas_alloc(nm*nm*nen, size_of_complex, devPtrGR) 
+            call cublas_alloc(nm*nm*nen, size_of_complex, devPtrGA)                
+            !copy data to GPU
+            call cublas_set_matrix(nen,nm*nm,size_of_complex,G_lesser,nen,devPtrGL,nen)
+            call cublas_set_matrix(nen,nm*nm,size_of_complex,G_greater,nen,devPtrGG,nen)
+            call cublas_set_matrix(nen,nm*nm,size_of_complex,G_retarded,nen,devPtrGR,nen)
+            call cublas_set_matrix(nen,nm*nm,size_of_complex,G_advanced,nen,devPtrGA,nen)
+        endif
+        n = nen - nop
+        call cublas_alloc(n*num_jl, size_of_complex, devPtrA)
+        call cublas_alloc(n*num_ki, size_of_complex, devPtrB)
+        call cublas_alloc(num_jl*num_ki, size_of_complex, devPtrC)
+        ! G^>_jl G^<_ki
+        do i = 1,num_jl 
+            call cublas_zcopy(n, devPtrGG+((jl(i)-1) * nen + nop)*size_of_complex, 1, devPtrA+(i-1)*n*size_of_complex, 1)
+        enddo
+        do i = 1,num_ki                
+            call cublas_zcopy(n, devPtrGL+((ki(i)-1) * nen)*size_of_complex      , 1, devPtrB+(i-1)*n*size_of_complex, 1)
+        enddo
+        call cublas_zgemm('t','n',num_jl,num_ki,n,a2,devPtrA,n,devPtrB,n,dcmplx(0.0,0.0),devPtrC,num_jl)
+        ! G^<_jl G^>_ki
+        do i = 1,num_jl 
+            call cublas_zcopy(n, devPtrGL+((jl(i)-1) * nen + nop)*size_of_complex, 1, devPtrA+(i-1)*n*size_of_complex, 1)
+        enddo
+        do i = 1,num_ki                
+            call cublas_zcopy(n, devPtrGG+((ki(i)-1) * nen)*size_of_complex      , 1, devPtrB+(i-1)*n*size_of_complex, 1)
+        enddo
+        call cublas_zgemm('t','n',num_jl,num_ki,n,-a2,devPtrA,n,devPtrB,n,dcmplx(1.0,0.0),devPtrC,num_jl)
+        ! G^<_jl G^A_ki 
+        do i = 1,num_jl 
+            call cublas_zcopy(n, devPtrGL+((jl(i)-1) * nen + nop)*size_of_complex, 1, devPtrA+(i-1)*n*size_of_complex, 1)
+        enddo
+        do i = 1,num_ki                
+            call cublas_zcopy(n, devPtrGA+((ki(i)-1) * nen)*size_of_complex      , 1, devPtrB+(i-1)*n*size_of_complex, 1)
+        enddo
+        call cublas_zgemm('t','n',num_jl,num_ki,n,a1,devPtrA,n,devPtrB,n,dcmplx(1.0,0.0),devPtrC,num_jl)
+        ! G^R_jl G^<_ki
+        do i = 1,num_jl 
+            call cublas_zcopy(n, devPtrGR+((jl(i)-1) * nen + nop)*size_of_complex, 1, devPtrA+(i-1)*n*size_of_complex, 1)
+        enddo
+        do i = 1,num_ki                
+            call cublas_zcopy(n, devPtrGL+((ki(i)-1) * nen)*size_of_complex      , 1, devPtrB+(i-1)*n*size_of_complex, 1)
+        enddo
+        call cublas_zgemm('t','n',num_jl,num_ki,n,a1,devPtrA,n,devPtrB,n,dcmplx(1.0,0.0),devPtrC,num_jl)
+
+        !copy data from GPU
+        call cublas_get_matrix(num_jl,num_ki,size_of_complex,devPtrC,num_jl,partial_P,num_ki)
+    
+        !Free GPU memory
+        call cublas_free(devPtrA)
+        call cublas_free(devPtrB)
+        call cublas_free(devPtrC)
+    end subroutine gpu_polarization
+
+    subroutine test_cublaszgemm(m,n,A,B,C)
+        integer,intent(in) :: m,n
+        complex(8), dimension(:,:), intent(in) :: A, B
+        complex(8), dimension(:,:), intent(out) :: C
+        real(8) :: gflops
+        real(8) :: tstart, tstop, elapsed_time
+        integer,dimension(8) :: values
+        integer(8) :: devPtrA, devPtrB, devPtrC
+
+        call cublas_alloc(m*n, size_of_complex, devPtrA)
+        call cublas_alloc(n*m, size_of_complex, devPtrB)
+        call cublas_alloc(m*m, size_of_complex, devPtrC)
+    
+        call date_and_time(VALUES=values) !values(8) = milisecs of the second
+        ! seed = values(8) !using value in milisecs as seeder
+        ! call srand(seed) !not a std implementation, but i like it better.
+                
+        !copy data to GPU
+        call cublas_set_matrix(m,n,size_of_complex,A,m,devPtrA,m)
+        call cublas_set_matrix(n,m,size_of_complex,B,n,devPtrB,n)
+        call cublas_set_matrix(m,m,size_of_complex,C,m,devPtrC,m)
+    
+        call cpu_time(tstart)
+        !call SGEMM from CUBLAS
+        call cublas_zgemm('n','n',m,m,n,dcmplx(1.0,0.0),devPtrA,m,devPtrB,n,dcmplx(0.0,0.0),devPtrC,m)
+        call cpu_time(tstop)
+
+        !copy data from GPU
+        call cublas_get_matrix(m,m,size_of_complex,devPtrC,m,C,m)
+        ! call cpu_time(tstop)
+    
+        elapsed_time = tstop - tstart !in seconds
+    
+        write(*,*) 'Matrix A ', m,'x',n
+        write(*,*) 'Matrix B ', n,'x',m
+        write(*,20) 'Elapsed time : ',elapsed_time, 'secs'
+    
+        gflops = 2*float(n)*float(n)*float(n)/(elapsed_time*1.0e9)
+        write(*,10)  'Performance:', gflops,' GFLOPS'
+        
+    10 format(A12,2X,1F0.4,2X,A7)
+    20 format(A15,2X,1F0.8,2X,A4)
+
+        !Free GPU memory
+        call cublas_free(devPtrA)
+        call cublas_free(devPtrB)
+        call cublas_free(devPtrC)
+    end subroutine test_cublaszgemm
+
+end module gpu_polarization
