@@ -360,8 +360,7 @@ module bse_sparse
                     ik=1
                     nop=nops(iop)
                     P_lesser = czero                     
-                    P_retarded(:,:,iop) = dcmplx( 0.0_dp, -abs(aimag(P_retarded(:,:,iop))) )
-                    P_greater = 2.0_dp * P_retarded(:,:,iop) 
+                    P_greater = 2.0_dp * c1i * aimag(P_retarded(:,:,iop)) 
                     !
                     print '("  Start W computation ... ")'
                     call calc_w(1,NB,NS,nm_dev,P_retarded(:,:,iop),P_lesser,P_greater,V,W_retarded,W_lesser,W_greater)
@@ -435,9 +434,8 @@ module bse_sparse
                     endif 
                     finish = omp_get_wtime()
                     print *,""
-                    print '("  Sigma computation time = ", F0.3 ," seconds.")', finish-start        
+                    print '("  Sigma computation time = ", F0.3 ," seconds.")', finish-start  
                 endif
-                !
             enddo
             if (lsolve_sigma) then 
                 dE = dcmplx( 0.0_dp, (En(2)-En(1))/twopi )               
@@ -456,13 +454,13 @@ module bse_sparse
                     Sig_greater(:,:,ie) = (Sig_greater(:,:,ie) + tmp(:,:))/2.0_dp
                 enddo                
             endif
-        endif 
+        endif          
     end subroutine bse_sparse_solve
 
     ! driver function for solving BSE with SCBA iteration
     subroutine bse_sparse_solve_scba(method,niter,nm_dev,Lx,length,spindeg,temp,mu,&
         alpha_mix,nen,En,nops,nnop,nb,ns,Ham,H00lead,H10lead,T,V,&
-        ndiag,encut,egap,vertex,bse,flatband,output_files,inj_photon,nphot,m_phot,n_bose_phot,&
+        ndiag,encut,egap,vertex,bse_sigma,flatband,output_files,inj_photon,nphot,m_phot,n_bose_phot,&
         G_retarded,G_lesser,G_greater,&
         current,transmission,P_retarded) 
         ! in 
@@ -474,7 +472,7 @@ module bse_sparse
         complex(dp),intent(in) :: Ham(nm_dev,nm_dev),H00lead(NB*NS,NB*NS,2),H10lead(NB*NS,NB*NS,2),T(NB*NS,nm_dev,2)
         complex(dp), intent(in):: V(nm_dev,nm_dev)    
         real(dp),intent(in) :: encut(2) !! intraband and interband cutoff 
-        logical, intent(in) :: vertex, bse, flatband, output_files
+        logical, intent(in) :: vertex, bse_sigma, flatband, output_files
         !
         logical, intent(in) :: inj_photon !! photon injection
         complex(dp), intent(in),optional :: m_phot(nm_dev,nm_dev,1,1) !! e-photon interaction H of size (N,N,nk,nq)
@@ -527,13 +525,13 @@ module bse_sparse
                 nm_dev=nm_dev,ndiag=ndiag,nen=nen,nsub=1,&
                 en=en,nops=nops,nnop=nnop,nk=1,&
                 g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,&
-                w=W0_retarded,v=v,solve_sigma=bse,with_vertex=vertex,nb=nb,ns=ns,&
+                w=W0_retarded,v=v,solve_sigma=bse_sigma,with_vertex=vertex,nb=nb,ns=ns,&
                 P_retarded=P_retarded,sig_retarded=Sig_r_bse,sig_lesser=sig_l_bse,sig_greater=sig_g_bse)
-        if (bse) then   
+        if (bse_sigma) then   
             ! update self-energy 
             Sig_l = aimag( Sig_l_bse ) * c1i
             Sig_g = aimag( Sig_g_bse ) * c1i
-            Sig_r = dble(Sig_r_bse) + aimag(Sig_g - Sig_l) / 2.0_dp * c1i
+            Sig_r = dble(Sig_r) + aimag(Sig_g - Sig_l) / 2.0_dp * c1i
             ! get leads sigma        
             siglead(:,:,:,1) = Sig_r(1:NB*NS,1:NB*NS,:)
             siglead(:,:,:,2) = Sig_r(nm_dev-NB*NS+1:nm_dev,nm_dev-NB*NS+1:nm_dev,:)    

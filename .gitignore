@@ -171,3 +171,5 @@ bin/*
 
 *.dat
 *.png
+magi/__init__.py
+magi/__about__.py
