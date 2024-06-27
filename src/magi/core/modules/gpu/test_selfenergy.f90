@@ -10,7 +10,7 @@ program test_selfenergy
     real(8) :: gflops, sum, L2
     real :: randnum
     integer, allocatable, dimension(:) :: ij
-    integer(8) :: devPtrA, devPtrB, devPtrC, devPtrGL,devPtrGG,devPtrGR
+    integer(8) :: devPtrA, devPtrB, devPtrC, devPtrGL,devPtrGG,devPtrGR, devPtrSigL,devPtrSigG,devPtrSigR
     integer :: n=1400
     integer :: m=140
     integer :: nen=2048
@@ -77,10 +77,11 @@ program test_selfenergy
     sig_greater= dcmplx(0.0,0.0)
     sig_retarded = dcmplx(0.0,0.0)
     call cpu_time(tstart)
-    call gpu_selfenergy_GW(nen=nen,nop=nop,nm=m,num_ij=m*m,ij=ij,copy_to_gpu=.true.,&
+    call gpu_add_selfenergy_GW(nen=nen,nop=nop,nm=m,num_ij=m*m,ij=ij,copy_to_gpu=.true.,copy_to_cpu=.true.,&
                         G_lesser=g_lesser,G_greater=g_greater,G_retarded=g_retarded,&
                         W_lesser=W_lesser,W_greater=W_greater,W_retarded=W_retarded,&
                         devPtrGL=devPtrGL,devPtrGG=devPtrGG,devPtrGR=devPtrGR,&
+                        devPtrSigL=devPtrSigL,devPtrSigG=devPtrSigG,devPtrSigR=devPtrSigR,&
                         sig_lesser=sig_lesser,sig_greater=sig_greater,sig_retarded=sig_retarded)
     call cpu_time(tstop)
 
@@ -93,29 +94,28 @@ program test_selfenergy
     20 format(A15,2X,1F0.8,2X,A4)  
 
     do j=1,10000
-    sig_lesser = dcmplx(0.0,0.0)
-    sig_greater= dcmplx(0.0,0.0)
-    sig_retarded = dcmplx(0.0,0.0)        
         call cpu_time(tstart)
 
-        call gpu_selfenergy_GW(nen=nen,nop=nop,nm=m,num_ij=m*m,ij=ij,copy_to_gpu=.false.,&
+        call gpu_add_selfenergy_GW(nen=nen,nop=nop,nm=m,num_ij=m*m,ij=ij,copy_to_gpu=.false.,copy_to_cpu=.false.,&
                             G_lesser=g_lesser,G_greater=g_greater,G_retarded=g_retarded,&
                             W_lesser=W_lesser,W_greater=W_greater,W_retarded=W_retarded,&
                             devPtrGL=devPtrGL,devPtrGG=devPtrGG,devPtrGR=devPtrGR,&
+                            devPtrSigL=devPtrSigL,devPtrSigG=devPtrSigG,devPtrSigR=devPtrSigR,&
                             sig_lesser=sig_lesser,sig_greater=sig_greater,sig_retarded=sig_retarded)
 
         call cpu_time(tstop)
 
         elapsed_time = tstop - tstart !in seconds
-        ! print *,C(1,1)
         write(*,20) 'Elapsed time : ',elapsed_time, 'secs'
-        print *,sig_retarded(nen/2,10)
     enddo
 
     !Free GPU memory
     call cublas_free(devPtrGR)
     call cublas_free(devPtrGL)
     call cublas_free(devPtrGG)
+    call cublas_free(devPtrSigR)
+    call cublas_free(devPtrSigG)
+    call cublas_free(devPtrSigL)
 
     sig_lesser = dcmplx(0.0,0.0)
     sig_greater= dcmplx(0.0,0.0)

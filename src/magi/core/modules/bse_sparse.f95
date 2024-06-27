@@ -5,7 +5,7 @@
 ! See the file `LICENSE' in the root directory of this distribution, or obtain 
 ! a copy of the License at <https://www.gnu.org/licenses/gpl-3.0.txt>.
 !
-! Author: jiacao <jiacao@ethz.ch>
+! Author: Jiang Cao <jiacao@ethz.ch>
 ! Comment:
 !  
 ! Maintenance:
@@ -408,25 +408,23 @@ module bse_sparse
                             i1=max(i-ndiag,1)
                             i2=min(nm_dev,i+ndiag)   
                             do concurrent (j=i1:i2)    
-                                if ((abs(l-j)<ndiag).and.(abs(l-k)<ndiag).and.(abs(j-k)<ndiag)) then   
-                                    ie1 = max(nop,1) + 1
-                                    ie2 = min(nen+nop,nen)
-                                    Sig_lesser(i,j,ie1:ie2)=Sig_lesser(i,j,ie1:ie2) + G_lesser(i,j,(ie1-nop):(ie2-nop),isub,ik) * W_lesser(i,j)                                
-                                    Sig_greater(i,j,ie1:ie2)=Sig_greater(i,j,ie1:ie2) + G_greater(i,j,(ie1-nop):(ie2-nop),isub,ik) * W_greater(i,j)   
-                                    Sig_retarded(i,j,ie1:ie2)=Sig_retarded(i,j,ie1:ie2) + &
-                                                            G_lesser(i,j,(ie1-nop):(ie2-nop),isub,ik) * W_retarded(i,j) + &                                      
-                                                            G_retarded(i,j,(ie1-nop):(ie2-nop),isub,ik) * W_lesser(i,j) + &
-                                                            G_retarded(i,j,(ie1-nop):(ie2-nop),isub,ik) * W_retarded(i,j)                                                  
-                                    !
-                                    ie1 = max(-nop,1) + 1
-                                    ie2 = min(nen-nop,nen)
-                                    Sig_lesser(i,j,ie1:ie2)=Sig_lesser(i,j,ie1:ie2) + G_lesser(i,j,(ie1+nop):(ie2+nop),isub,ik) * W_greater(i,j)   
-                                    Sig_greater(i,j,ie1:ie2)=Sig_greater(i,j,ie1:ie2) + G_greater(i,j,(ie1+nop):(ie2+nop),isub,ik) * W_lesser(i,j)   
-                                    Sig_retarded(i,j,ie1:ie2)=Sig_retarded(i,j,ie1:ie2) - &
-                                                            G_lesser(i,j,(ie1+nop):(ie2+nop),isub,ik) * conjg(W_retarded(i,j)) - &                                      
-                                                            G_retarded(i,j,(ie1+nop):(ie2+nop),isub,ik) * conjg(W_greater(i,j)) - &
-                                                            G_retarded(i,j,(ie1+nop):(ie2+nop),isub,ik) * conjg(W_retarded(i,j))     
-                                endif
+                                ie1 = max(nop,0) + 1
+                                ie2 = min(nen+nop,nen)
+                                Sig_lesser(i,j,ie1:ie2)=Sig_lesser(i,j,ie1:ie2) + G_lesser(i,j,(ie1-nop):(ie2-nop),isub,ik) * W_lesser(i,j)                                
+                                Sig_greater(i,j,ie1:ie2)=Sig_greater(i,j,ie1:ie2) + G_greater(i,j,(ie1-nop):(ie2-nop),isub,ik) * W_greater(i,j)   
+                                Sig_retarded(i,j,ie1:ie2)=Sig_retarded(i,j,ie1:ie2) + &
+                                                        G_lesser(i,j,(ie1-nop):(ie2-nop),isub,ik) * W_retarded(i,j) + &                                      
+                                                        G_retarded(i,j,(ie1-nop):(ie2-nop),isub,ik) * W_lesser(i,j) + &
+                                                        G_retarded(i,j,(ie1-nop):(ie2-nop),isub,ik) * W_retarded(i,j)                                                  
+                                !
+                                ie1 = max(-nop,0) + 1
+                                ie2 = min(nen-nop,nen)
+                                Sig_lesser(i,j,ie1:ie2)=Sig_lesser(i,j,ie1:ie2) + G_lesser(i,j,(ie1+nop):(ie2+nop),isub,ik) * W_greater(i,j)   
+                                Sig_greater(i,j,ie1:ie2)=Sig_greater(i,j,ie1:ie2) + G_greater(i,j,(ie1+nop):(ie2+nop),isub,ik) * W_lesser(i,j)   
+                                Sig_retarded(i,j,ie1:ie2)=Sig_retarded(i,j,ie1:ie2) - &
+                                                        G_lesser(i,j,(ie1+nop):(ie2+nop),isub,ik) * conjg(W_retarded(i,j)) - &                                      
+                                                        G_retarded(i,j,(ie1+nop):(ie2+nop),isub,ik) * conjg(W_greater(i,j)) - &
+                                                        G_retarded(i,j,(ie1+nop):(ie2+nop),isub,ik) * conjg(W_retarded(i,j))     
                             enddo
                         enddo
                         !$omp end do
@@ -439,11 +437,12 @@ module bse_sparse
             enddo
             if (lsolve_sigma) then 
                 dE = dcmplx( 0.0_dp, (En(2)-En(1))/twopi )               
-                Sig_lesser = Sig_lesser   * dE
-                Sig_greater= Sig_greater  * dE
+                Sig_lesser  = Sig_lesser  * dE
+                Sig_greater = Sig_greater * dE
                 Sig_retarded=Sig_retarded * dE
                 !
                 Sig_retarded = dcmplx( dble(Sig_retarded), aimag(Sig_greater-Sig_lesser)/2.0_dp )
+                !
                 ! symmetrize the selfenergies
                 do ie=1,nen
                     tmp(:,:)=transpose(Sig_retarded(:,:,ie))

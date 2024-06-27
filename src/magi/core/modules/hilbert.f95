@@ -5,7 +5,7 @@
 ! See the file `LICENSE' in the root directory of this distribution, or obtain 
 ! a copy of the License at <https://www.gnu.org/licenses/gpl-3.0.txt>.
 !
-! Author: jiacao <jiacao@ethz.ch>
+! Author: Jiang Cao <jiacao@ethz.ch>
 ! Comment:
 !  
 ! Maintenance:
@@ -46,7 +46,7 @@ module hilbert
       call ZGEMM('N','N',nse,nomega,nomegasf,cone,sf_chi0,nse,kkweight,nomegasf,czero,chi0,nse)
     end subroutine hilbert_transform_mmm
 
-    !   This subroutine is copied from Abinit 'm_chi0tk.F90'
+    !   This subroutine is copied and adapted from Abinit 'm_chi0tk.F90'
     !!  Calculate frequency dependent weights needed to perform the Hilbert transform
     !!  Subroutine needed to implement the calculation
     !!  of the polarizability using the spectral representation as proposed in:

@@ -42,7 +42,7 @@ module gpu_polarization
         call cublas_alloc(n*num_jl, size_of_complex, devPtrA)
         call cublas_alloc(n*num_ki, size_of_complex, devPtrB)
         call cublas_alloc(num_jl*num_ki, size_of_complex, devPtrC)
-        ! G^>_jl G^<_ki
+        ! a2 * G^>_jl G^<_ki
         do i = 1,num_jl 
             call cublas_zcopy(n, devPtrGG+((jl(i)-1) * nen + nop)*size_of_complex, 1, devPtrA+(i-1)*n*size_of_complex, 1)
         enddo
@@ -50,7 +50,7 @@ module gpu_polarization
             call cublas_zcopy(n, devPtrGL+((ki(i)-1) * nen)*size_of_complex      , 1, devPtrB+(i-1)*n*size_of_complex, 1)
         enddo
         call cublas_zgemm('t','n',num_jl,num_ki,n,a2,devPtrA,n,devPtrB,n,dcmplx(0.0,0.0),devPtrC,num_jl)
-        ! G^<_jl G^>_ki
+        ! a2 * G^<_jl G^>_ki
         do i = 1,num_jl 
             call cublas_zcopy(n, devPtrGL+((jl(i)-1) * nen + nop)*size_of_complex, 1, devPtrA+(i-1)*n*size_of_complex, 1)
         enddo
@@ -58,7 +58,7 @@ module gpu_polarization
             call cublas_zcopy(n, devPtrGG+((ki(i)-1) * nen)*size_of_complex      , 1, devPtrB+(i-1)*n*size_of_complex, 1)
         enddo
         call cublas_zgemm('t','n',num_jl,num_ki,n,-a2,devPtrA,n,devPtrB,n,dcmplx(1.0,0.0),devPtrC,num_jl)
-        ! G^<_jl G^A_ki 
+        ! a1 * G^<_jl G^A_ki 
         do i = 1,num_jl 
             call cublas_zcopy(n, devPtrGL+((jl(i)-1) * nen + nop)*size_of_complex, 1, devPtrA+(i-1)*n*size_of_complex, 1)
         enddo
@@ -66,7 +66,7 @@ module gpu_polarization
             call cublas_zcopy(n, devPtrGA+((ki(i)-1) * nen)*size_of_complex      , 1, devPtrB+(i-1)*n*size_of_complex, 1)
         enddo
         call cublas_zgemm('t','n',num_jl,num_ki,n,a1,devPtrA,n,devPtrB,n,dcmplx(1.0,0.0),devPtrC,num_jl)
-        ! G^R_jl G^<_ki
+        ! a1 * G^R_jl G^<_ki
         do i = 1,num_jl 
             call cublas_zcopy(n, devPtrGR+((jl(i)-1) * nen + nop)*size_of_complex, 1, devPtrA+(i-1)*n*size_of_complex, 1)
         enddo
@@ -76,7 +76,7 @@ module gpu_polarization
         call cublas_zgemm('t','n',num_jl,num_ki,n,a1,devPtrA,n,devPtrB,n,dcmplx(1.0,0.0),devPtrC,num_jl)
 
         !copy data from GPU
-        call cublas_get_matrix(num_jl,num_ki,size_of_complex,devPtrC,num_jl,partial_P,num_ki)
+        call cublas_get_matrix(num_jl,num_ki,size_of_complex,devPtrC,num_jl,partial_P,num_jl)
     
         !Free GPU memory
         call cublas_free(devPtrA)
