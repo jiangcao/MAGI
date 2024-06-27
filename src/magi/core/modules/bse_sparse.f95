@@ -1,12 +1,23 @@
-
+!===============================================================================
+! Copyright (C) 2023 Jiang Cao
+!
+! This program is distributed under the terms of the GNU General Public License.
+! See the file `LICENSE' in the root directory of this distribution, or obtain 
+! a copy of the License at <https://www.gnu.org/licenses/gpl-3.0.txt>.
+!
+! Author: Jiang Cao <jiacao@ethz.ch>
+! Comment:
+!  
+! Maintenance:
+!===============================================================================
 module bse_sparse    
-    use parameters_mod,only:dp,twopi,pi,e_charge,epsilon0,m0_charge,hbar,c1i,czero,cone    
+    use parameters_mod,only:dp,twopi,pi,e_charge,epsilon0,m0_charge,hbar,c1i,czero,cone,light_speed    
     use omp_lib
     use polarization
     use sinv
     use observ
     use output
-    use gw_dense, only : calc_w,solve_gw => solve_gw_1D_memsaving,calc_gf
+    use gw_dense, only : calc_w,solve_gw => solve_gw_1D_memsaving,calc_gf,selfenergy_eph_mono
     implicit none
     contains
 
@@ -124,7 +135,7 @@ module bse_sparse
 
     ! solve the Bethe-Salpeter Equation with selected inversion 
     subroutine bse_sparse_solve(method,alpha,spindeg,nm_dev,ndiag,nen,nsub,En,nops,nnop,nk,&
-        G_lesser,G_greater,G_retarded,W,V,solve_sigma,nb,ns,&
+        G_lesser,G_greater,G_retarded,W,V,solve_sigma,with_vertex,nb,ns,&
         P_retarded,sig_retarded,sig_lesser,sig_greater)        
         ! in
         character(len=*),intent(in)::method
@@ -135,7 +146,7 @@ module bse_sparse
         complex(dp),intent(in),dimension(nm_dev,nm_dev,nen,nsub,nk):: G_lesser,G_greater,G_retarded ! electron Green Functions
         complex(dp),intent(in),dimension(nm_dev,nm_dev) :: W ! W_0 static screened Coulomb operator
         complex(dp),intent(in),dimension(nm_dev,nm_dev) :: V ! bare Coulomb operator
-        logical,intent(in),optional::solve_sigma 
+        logical,intent(in),optional::solve_sigma , with_vertex
         integer,intent(in),optional::ns,nb ! NEEDED if solve_sigma, number of cells inside lead supercell, number of WF basis
         ! out 
         complex(dp),intent(out),dimension(nm_dev,nm_dev,nnop):: P_retarded ! 2-point polarization function with interacting electron-hole
@@ -150,11 +161,11 @@ module bse_sparse
         integer(8):: nnz
         integer,allocatable,dimension(:,:)::table
         integer,allocatable,dimension(:,:)::ipiv_diagonal
-        integer,allocatable,dimension(:)::ipiv_arrow_tip
+        integer,allocatable,dimension(:)::ipiv_arrow_tip        
         real(dp) :: start, finish
-        integer::l,h,ie,isub,ik,nop,ib
+        integer::l,h,ie,isub,ik,nop,ib,nepoch,ie1,ie2
         complex(dp),allocatable,dimension(:,:) ::  P_lesser,P_greater,W_retarded,W_lesser,W_greater,tmp 
-        logical::lsolve_sigma
+        logical::lsolve_sigma, lwith_vertex
         complex::dE
         !
         if (present(solve_sigma)) then 
@@ -162,6 +173,12 @@ module bse_sparse
         else
             lsolve_sigma = .false. 
         endif
+        if (present(with_vertex)) then 
+            lwith_vertex = with_vertex 
+        else
+            lwith_vertex = .false. 
+        endif
+        print *,'====================== bse_sparse_solve ======================='                 
         ! pre-process the sparsity pattern of system
         print *, " pre-process ... "
         allocate(table(2,nm_dev*nm_dev))
@@ -249,7 +266,9 @@ module bse_sparse
             print *
             print '("  computation time = ", F0.3 ," seconds.")', finish-start
         else 
-            do iop = 1,nnop                
+            do iop = 1,nnop    
+                print *," "   
+                print '("  iop = ", I10, "/", I10 )', iop, nnop         
                 ! build BTA blocks of RPA polarization L0 and 2-body interaction kernal K  
                 local_nops = nops(iop)       
                 call bse_sparse_build(method,alpha,spindeg,nm_dev,ndiag,nen,En,local_nops,1,blocksize,num_blocks,N,table,&
@@ -272,28 +291,10 @@ module bse_sparse
                             Adiag,Alower,Aupper,Alowerarrow,Aupperarrow,Atip)
                 finish = omp_get_wtime()
                 print '("  selected inversion time = ", F0.3 ," seconds.")', finish-start            
-                ! compute P_retarded P_ij = L_iijj , hence the arrowtip block of L                
-                Atip = matmul( Atip , Ltip(:,:,1) )
-                Atip = Atip + matmul( Alowerarrow, Lupperarrow(:,:,1) ) 
-                !$omp parallel default(shared) private(row,col,fliped_row,fliped_col,i,k)
-                !$omp do
-                do row=1,nm_dev
-                    do col=1,nm_dev
-                        fliped_row = nm_dev - col + 1
-                        fliped_col = nm_dev - row + 1 
-                        i=table(1,row)
-                        k=table(1,col)
-                        P_retarded(i,k,iop) =  - c1i * Atip(fliped_row,fliped_col)    
-                        if (lsolve_sigma) then  
-                            vertex(i,i,k) = Atip(fliped_row,fliped_col)           
-                        endif
-                    enddo
-                enddo                          
-                !$omp end do
-                !$omp end parallel  
-                !
-                if (lsolve_sigma) then 
-                    start = omp_get_wtime()
+                !                
+                if (lsolve_sigma .and. lwith_vertex) then 
+                    start = omp_get_wtime()                    
+                    print '("  Start vertex computation ... ")'
                     ! compute vertex Gamma_ijk = L_ijkk , hence the upper-arrow block of L
                     Llowerarrow(:,:,1) = matmul( Atip , Llowerarrow(:,:,1) )
                     do ib = 1,num_blocks 
@@ -332,61 +333,116 @@ module bse_sparse
                     finish = omp_get_wtime()
                     print '("  vertex computation time = ", F0.3 ," seconds.")', finish-start 
                     start = finish
+                endif 
+                ! compute P_retarded P_ij = L_iijj , hence the arrowtip block of L                
+                Atip = matmul( Atip , Ltip(:,:,1) )
+                Atip = Atip + matmul( Alowerarrow, Lupperarrow(:,:,1) ) 
+                !$omp parallel default(shared) private(row,col,fliped_row,fliped_col,i,k)
+                !$omp do
+                do row=1,nm_dev
+                    do col=1,nm_dev
+                        fliped_row = nm_dev - col + 1
+                        fliped_col = nm_dev - row + 1 
+                        i=table(1,row)
+                        k=table(1,col)
+                        P_retarded(i,k,iop) =  - c1i * Atip(fliped_row,fliped_col)    
+                        if (lsolve_sigma .and. lwith_vertex) then  
+                            vertex(i,i,k) = Atip(fliped_row,fliped_col)           
+                        endif
+                    enddo
+                enddo                          
+                !$omp end do
+                !$omp end parallel  
+                if (lsolve_sigma) then 
                     !                
                     ! solve W
                     isub=1
                     ik=1
                     nop=nops(iop)
                     P_lesser = czero                     
-                    P_retarded(:,:,iop) = dcmplx( 0.0_dp, -abs(aimag(P_retarded(:,:,iop))) )
-                    P_greater = 2.0_dp * P_retarded(:,:,iop) 
+                    P_greater = 2.0_dp * c1i * aimag(P_retarded(:,:,iop)) 
                     !
+                    print '("  Start W computation ... ")'
                     call calc_w(1,NB,NS,nm_dev,P_retarded(:,:,iop),P_lesser,P_greater,V,W_retarded,W_lesser,W_greater)
                     finish = omp_get_wtime()
                     print '("  W computation time = ", F0.3 ," seconds.")', finish-start 
                     !
                     start = finish
+                    write(*, '(A)', advance="no") "  Start Sigma computation ... "                    
                     ! Accumulate the GW to Sigma
                     ! hw from -inf to +inf: Sig^<>_ij(E) = (i/2pi) \int_dhw G^<>_ij(E-hw) W^<>_ij(hw)  
-                    !$omp parallel default(shared) private(i1,i2,l,i,j,k,ie) 
-                    !$omp do
-                    do i=1,nm_dev
-                        i1=max(i-ndiag,1)
-                        i2=min(nm_dev,i+ndiag)   
-                        do concurrent (j=i1:i2, l=i1:i2, k=i1:i2)        
-                            do ie=1,nen
-                                if ((ie > max(nop,1)) .and. (ie <= min(nen+nop,nen))) then 
-                                    Sig_lesser(i,j,ie)=Sig_lesser(i,j,ie) + G_lesser(i,l,ie-nop,isub,ik) * W_lesser(i,k) * vertex(l,j,k)                                
-                                    Sig_greater(i,j,ie)=Sig_greater(i,j,ie) + G_greater(i,l,ie-nop,isub,ik) * W_greater(i,k) * vertex(l,j,k)   
-                                    Sig_retarded(i,j,ie)=Sig_retarded(i,j,ie) + &
-                                                            G_lesser(i,l,ie-nop,isub,ik) * W_retarded(i,k) * vertex(l,j,k) + &                                      
-                                                            G_retarded(i,l,ie-nop,isub,ik) * W_lesser(i,k) * vertex(l,j,k) + &
-                                                            G_retarded(i,l,ie-nop,isub,ik) * W_retarded(i,k) * vertex(l,j,k)                                                  
-                                endif     
-                                if ((ie > max(-nop,1)) .and. (ie <= min(nen-nop,nen))) then 
-                                    Sig_lesser(i,j,ie)=Sig_lesser(i,j,ie) + G_lesser(i,l,ie+nop,isub,ik) * W_greater(i,k) * vertex(l,j,k)   
-                                    Sig_greater(i,j,ie)=Sig_greater(i,j,ie) + G_greater(i,l,ie+nop,isub,ik) * W_lesser(i,k) * vertex(l,j,k)   
-                                    Sig_retarded(i,j,ie)=Sig_retarded(i,j,ie) - &
-                                                            G_lesser(i,l,ie+nop,isub,ik) * conjg(W_retarded(i,k)) * vertex(l,j,k) - &                                      
-                                                            G_retarded(i,l,ie+nop,isub,ik) * conjg(W_greater(i,k)) * vertex(l,j,k) - &
-                                                            G_retarded(i,l,ie+nop,isub,ik) * conjg(W_retarded(i,k)) * vertex(l,j,k)     
-                                endif 
-                            enddo   
+                    if (lwith_vertex) then 
+                        !$omp parallel default(shared) private(i1,i2,l,i,j,k,ie,ie1,ie2) 
+                        !$omp do
+                        do i=1,nm_dev                        
+                            i1=max(i-ndiag,1)
+                            i2=min(nm_dev,i+ndiag)   
+                            do concurrent (j=i1:i2, l=i1:i2, k=i1:i2)    
+                                if ((abs(l-j)<ndiag).and.(abs(l-k)<ndiag).and.(abs(j-k)<ndiag)) then   
+                                    ie1 = max(nop,1) + 1
+                                    ie2 = min(nen+nop,nen)
+                                    Sig_lesser(i,j,ie1:ie2)=Sig_lesser(i,j,ie1:ie2) + G_lesser(i,l,(ie1-nop):(ie2-nop),isub,ik) * W_lesser(i,k) * vertex(l,j,k)                                
+                                    Sig_greater(i,j,ie1:ie2)=Sig_greater(i,j,ie1:ie2) + G_greater(i,l,(ie1-nop):(ie2-nop),isub,ik) * W_greater(i,k) * vertex(l,j,k)   
+                                    Sig_retarded(i,j,ie1:ie2)=Sig_retarded(i,j,ie1:ie2) + &
+                                                            G_lesser(i,l,(ie1-nop):(ie2-nop),isub,ik) * W_retarded(i,k) * vertex(l,j,k) + &                                      
+                                                            G_retarded(i,l,(ie1-nop):(ie2-nop),isub,ik) * W_lesser(i,k) * vertex(l,j,k) + &
+                                                            G_retarded(i,l,(ie1-nop):(ie2-nop),isub,ik) * W_retarded(i,k) * vertex(l,j,k)                                                  
+                                    !
+                                    ie1 = max(-nop,1) + 1
+                                    ie2 = min(nen-nop,nen)
+                                    Sig_lesser(i,j,ie1:ie2)=Sig_lesser(i,j,ie1:ie2) + G_lesser(i,l,(ie1+nop):(ie2+nop),isub,ik) * W_greater(i,k) * vertex(l,j,k)   
+                                    Sig_greater(i,j,ie1:ie2)=Sig_greater(i,j,ie1:ie2) + G_greater(i,l,(ie1+nop):(ie2+nop),isub,ik) * W_lesser(i,k) * vertex(l,j,k)   
+                                    Sig_retarded(i,j,ie1:ie2)=Sig_retarded(i,j,ie1:ie2) - &
+                                                            G_lesser(i,l,(ie1+nop):(ie2+nop),isub,ik) * conjg(W_retarded(i,k)) * vertex(l,j,k) - &                                      
+                                                            G_retarded(i,l,(ie1+nop):(ie2+nop),isub,ik) * conjg(W_greater(i,k)) * vertex(l,j,k) - &
+                                                            G_retarded(i,l,(ie1+nop):(ie2+nop),isub,ik) * conjg(W_retarded(i,k)) * vertex(l,j,k)     
+                                endif
+                            enddo
                         enddo
-                    enddo
-                    !$omp end do
-                    !$omp end parallel       
+                        !$omp end do
+                        !$omp end parallel       
+                    else
+                        !$omp parallel default(shared) private(i1,i2,i,j,ie,ie1,ie2) 
+                        !$omp do
+                        do i=1,nm_dev                        
+                            i1=max(i-ndiag,1)
+                            i2=min(nm_dev,i+ndiag)   
+                            do concurrent (j=i1:i2)    
+                                ie1 = max(nop,0) + 1
+                                ie2 = min(nen+nop,nen)
+                                Sig_lesser(i,j,ie1:ie2)=Sig_lesser(i,j,ie1:ie2) + G_lesser(i,j,(ie1-nop):(ie2-nop),isub,ik) * W_lesser(i,j)                                
+                                Sig_greater(i,j,ie1:ie2)=Sig_greater(i,j,ie1:ie2) + G_greater(i,j,(ie1-nop):(ie2-nop),isub,ik) * W_greater(i,j)   
+                                Sig_retarded(i,j,ie1:ie2)=Sig_retarded(i,j,ie1:ie2) + &
+                                                        G_lesser(i,j,(ie1-nop):(ie2-nop),isub,ik) * W_retarded(i,j) + &                                      
+                                                        G_retarded(i,j,(ie1-nop):(ie2-nop),isub,ik) * W_lesser(i,j) + &
+                                                        G_retarded(i,j,(ie1-nop):(ie2-nop),isub,ik) * W_retarded(i,j)                                                  
+                                !
+                                ie1 = max(-nop,0) + 1
+                                ie2 = min(nen-nop,nen)
+                                Sig_lesser(i,j,ie1:ie2)=Sig_lesser(i,j,ie1:ie2) + G_lesser(i,j,(ie1+nop):(ie2+nop),isub,ik) * W_greater(i,j)   
+                                Sig_greater(i,j,ie1:ie2)=Sig_greater(i,j,ie1:ie2) + G_greater(i,j,(ie1+nop):(ie2+nop),isub,ik) * W_lesser(i,j)   
+                                Sig_retarded(i,j,ie1:ie2)=Sig_retarded(i,j,ie1:ie2) - &
+                                                        G_lesser(i,j,(ie1+nop):(ie2+nop),isub,ik) * conjg(W_retarded(i,j)) - &                                      
+                                                        G_retarded(i,j,(ie1+nop):(ie2+nop),isub,ik) * conjg(W_greater(i,j)) - &
+                                                        G_retarded(i,j,(ie1+nop):(ie2+nop),isub,ik) * conjg(W_retarded(i,j))     
+                            enddo
+                        enddo
+                        !$omp end do
+                        !$omp end parallel 
+                    endif 
                     finish = omp_get_wtime()
-                    print '("  Sigma computation time = ", F0.3 ," seconds.")', finish-start        
+                    print *,""
+                    print '("  Sigma computation time = ", F0.3 ," seconds.")', finish-start  
                 endif
             enddo
             if (lsolve_sigma) then 
                 dE = dcmplx( 0.0_dp, (En(2)-En(1))/twopi )               
-                Sig_lesser = Sig_lesser   * dE
-                Sig_greater= Sig_greater  * dE
+                Sig_lesser  = Sig_lesser  * dE
+                Sig_greater = Sig_greater * dE
                 Sig_retarded=Sig_retarded * dE
                 !
                 Sig_retarded = dcmplx( dble(Sig_retarded), aimag(Sig_greater-Sig_lesser)/2.0_dp )
+                !
                 ! symmetrize the selfenergies
                 do ie=1,nen
                     tmp(:,:)=transpose(Sig_retarded(:,:,ie))
@@ -397,28 +453,33 @@ module bse_sparse
                     Sig_greater(:,:,ie) = (Sig_greater(:,:,ie) + tmp(:,:))/2.0_dp
                 enddo                
             endif
-        endif 
+        endif          
     end subroutine bse_sparse_solve
 
     ! driver function for solving BSE with SCBA iteration
     subroutine bse_sparse_solve_scba(method,niter,nm_dev,Lx,length,spindeg,temp,mu,&
         alpha_mix,nen,En,nops,nnop,nb,ns,Ham,H00lead,H10lead,T,V,&
-        ndiag,encut,egap,vertex,bse,flatband,output_files,&
+        ndiag,encut,egap,vertex,bse_sigma,flatband,output_files,inj_photon,nphot,m_phot,n_bose_phot,&
         G_retarded,G_lesser,G_greater,&
         current,transmission,P_retarded) 
         ! in 
         character(len=*),intent(in)::method
         integer, intent(in) :: nen, nb, ns,niter,nm_dev,length
         integer, intent(in) :: ndiag
-        integer,intent(in) :: nnop,nops(nnop) ! number of optical energies, optical energies in unit of energy interval
+        integer,intent(in) :: nnop,nops(nnop) !! number of optical energies, optical energies in unit of energy interval        
         real(dp), intent(in) :: En(nen), temp(2), mu(2), alpha_mix, Lx, spindeg, egap
         complex(dp),intent(in) :: Ham(nm_dev,nm_dev),H00lead(NB*NS,NB*NS,2),H10lead(NB*NS,NB*NS,2),T(NB*NS,nm_dev,2)
         complex(dp), intent(in):: V(nm_dev,nm_dev)    
-        real(dp),intent(in) :: encut(2) ! intraband and interband cutoff for P
-        logical, intent(in) :: vertex, bse, flatband, output_files
+        real(dp),intent(in) :: encut(2) !! intraband and interband cutoff 
+        logical, intent(in) :: vertex, bse_sigma, flatband, output_files
+        !
+        logical, intent(in) :: inj_photon !! photon injection
+        complex(dp), intent(in),optional :: m_phot(nm_dev,nm_dev,1,1) !! e-photon interaction H of size (N,N,nk,nq)
+        integer,intent(in),optional :: nphot !! photon energy in unit of energy interval 
+        real(dp), intent(in),optional :: n_bose_phot !! Bose number of photon mode
         ! out 
-        real(dp),intent(out)::current(nen,2) ! current spectrum on leads
-        real(dp),intent(out)::transmission(nen,2) ! transmission matrix
+        real(dp),intent(out)::current(nen,2) !! current spectrum on leads
+        real(dp),intent(out)::transmission(nen,2) !! transmission matrix
         complex(dp),intent(out),dimension(nm_dev,nm_dev,nen) ::  G_retarded,G_lesser,G_greater
         complex(dp),intent(out),dimension(nm_dev,nm_dev,nnop) ::  P_retarded   
         ! --- local 
@@ -429,6 +490,8 @@ module bse_sparse
         complex(dp),allocatable,dimension(:,:,:)::Sig_r_bse,Sig_l_bse,Sig_g_bse
         real(dp),dimension(nen,2,2)::te
         integer::iter
+        real(dp)::E_phot
+        real(dp), parameter :: pre_fact=((hbar/m0_kg)**2)*e_charge/(2.0d0*epsilon0*light_speed**3)
         !
         print *, " init memory ... "
         allocate(W0_greater(nm_dev,nm_dev))
@@ -450,7 +513,7 @@ module bse_sparse
                 temp=temp,mu=mu,alpha_mix=alpha_mix,&
                 nen=nen,en=en,nb=nb,ns=ns,&
                 ham=ham,h00lead=h00lead,h10lead=h10lead,t=t,v=v,&
-                ndiag=ndiag,encut=encut,egap=egap,flatband=.False.,vertex=.False.,bse=.False.,output_files=.True.,&
+                ndiag=ndiag,encut=encut,egap=egap,flatband=.False.,vertex=.False.,bse=.False.,output_files=output_files,&
                 G_retarded=G_retarded,G_lesser=G_lesser,G_greater=G_greater,&
                 Sig_retarded_new=Sig_r,sig_lesser_new=Sig_l,sig_greater_new=Sig_g,&
                 current=current,transmission=transmission,&
@@ -461,23 +524,60 @@ module bse_sparse
                 nm_dev=nm_dev,ndiag=ndiag,nen=nen,nsub=1,&
                 en=en,nops=nops,nnop=nnop,nk=1,&
                 g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,&
-                w=W0_retarded,v=v,solve_sigma=.True.,nb=nb,ns=ns,&
-                P_retarded=P_retarded,sig_retarded=Sig_r_bse,sig_lesser=sig_l_bse,sig_greater=sig_g_bse)  
-        ! accumulate 
-        Sig_r = Sig_r + aimag( Sig_r_bse ) * c1i
-        Sig_l = Sig_l + aimag( Sig_l_bse ) * c1i
-        Sig_g = Sig_g + aimag( Sig_g_bse ) * c1i
-        ! get leads sigma        
-        siglead(:,:,:,1) = Sig_r(1:NB*NS,1:NB*NS,:)
-        siglead(:,:,:,2) = Sig_r(nm_dev-NB*NS+1:nm_dev,nm_dev-NB*NS+1:nm_dev,:)    
+                w=W0_retarded,v=v,solve_sigma=bse_sigma,with_vertex=vertex,nb=nb,ns=ns,&
+                P_retarded=P_retarded,sig_retarded=Sig_r_bse,sig_lesser=sig_l_bse,sig_greater=sig_g_bse)
+        if (bse_sigma) then   
+            ! update self-energy 
+            Sig_l = aimag( Sig_l_bse ) * c1i
+            Sig_g = aimag( Sig_g_bse ) * c1i
+            Sig_r = dble(Sig_r) + aimag(Sig_g - Sig_l) / 2.0_dp * c1i
+            ! get leads sigma        
+            siglead(:,:,:,1) = Sig_r(1:NB*NS,1:NB*NS,:)
+            siglead(:,:,:,2) = Sig_r(nm_dev-NB*NS+1:nm_dev,nm_dev-NB*NS+1:nm_dev,:)    
+            !
+            print *, 'calc G ...'  
+            !
+            call calc_gf(nen,En,2,nm_dev,[nb*ns,nb*ns],nb*ns,&
+                        Ham(:,:),H00lead(:,:,:),H10lead(:,:,:),Siglead(:,:,:,:),&
+                        T(:,:,:),Sig_r(:,:,:),Sig_l(:,:,:),Sig_g(:,:,:),&
+                        G_retarded(:,:,:),G_lesser(:,:,:),&
+                        G_greater(:,:,:),current,Te,mu,temp,flatband)   
+        endif 
+        ! 
+        if (inj_photon) then 
+            !
+            print *, 'calc Photon self-energy ...'      
+            sig_l_bse = czero
+            sig_g_bse = czero            
+            E_phot = nphot * (En(2) - En(1))
+            !
+            print *,'n_bose_phot=',n_bose_phot
+            print *,'E_phot (eV)=',E_phot
+            print *,'max |M|^2 * n_bose_phot * pre-factor = ', maxval( abs( M_phot ) )**2 * n_bose_phot * pre_fact / E_phot 
+            !
+            call selfenergy_eph_mono(nm_dev,nen,En,nphot,1,1,1,1,1,1,1,M_phot,G_lesser,G_greater,&
+                        Sig_l_bse,Sig_g_bse,n_bose=n_bose_phot,gamma_q=.True.)  
+            !
+            sig_l_bse = sig_l_bse * pre_fact / E_phot
+            sig_g_bse = sig_g_bse * pre_fact / E_phot
+            Sig_r_bse = aimag(Sig_g_bse - Sig_l_bse) / 2.0_dp * c1i
+            ! accumulate 
+            Sig_r = Sig_r + aimag( Sig_r_bse ) * c1i
+            Sig_l = Sig_l + aimag( Sig_l_bse ) * c1i
+            Sig_g = Sig_g + aimag( Sig_g_bse ) * c1i
+            ! get leads sigma        
+            siglead(:,:,:,1) = Sig_r(1:NB*NS,1:NB*NS,:)
+            siglead(:,:,:,2) = Sig_r(nm_dev-NB*NS+1:nm_dev,nm_dev-NB*NS+1:nm_dev,:)    
+            !
+        endif
         print *, 'calc G last time ...'  
         !
         call calc_gf(nen,En,2,nm_dev,[nb*ns,nb*ns],nb*ns,&
                     Ham(:,:),H00lead(:,:,:),H10lead(:,:,:),Siglead(:,:,:,:),&
                     T(:,:,:),Sig_r(:,:,:),Sig_l(:,:,:),Sig_g(:,:,:),&
                     G_retarded(:,:,:),G_lesser(:,:,:),&
-                    G_greater(:,:,:),current,Te,mu,temp,flatband)                        
-        !   
+                    G_greater(:,:,:),current,Te,mu,temp,flatband)    
+        !                                      
         transmission(:,1)=te(:,1,2)
         transmission(:,2)=te(:,2,1)     
         iter=niter
@@ -809,9 +909,9 @@ module bse_sparse
         Llowerarrow = czero
         NT = blocksize * num_blocks   
         !
-        nepoch = N / 100
+        nepoch = N / 50
         start = omp_get_wtime()              
-        print *,'  start computation L0_ijkl = G_jl G_ki ...'                 
+        write(*, '(A)', advance="no") '  start computation L0_ijkl = G_jl G_ki '                 
         !$omp parallel default(shared) private(row,col,i,j,k,l,L0ijkl,ib,p,q,fliped_row,fliped_col)
         !$omp do        
         do row = 1,N 
@@ -944,7 +1044,7 @@ module bse_sparse
         !$omp end parallel 
         finish = omp_get_wtime()
         print *
-        print '(" L0 and K computation time = ", F0.3 ," seconds.")', finish-start
+        print '("  L0 and K computation time = ", F0.3 ," seconds.")', finish-start
         start = finish
     end subroutine bse_sparse_build
 

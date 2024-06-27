@@ -168,6 +168,11 @@ dev/*
 bin/*
 *.mod
 *.o
+*.x
 
 *.dat
 *.png
+magi/__init__.py
+magi/__about__.py
+
+*.swp

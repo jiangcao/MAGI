@@ -1,4 +1,15 @@
-
+!===============================================================================
+! Copyright (C) 2023 Jiang Cao
+!
+! This program is distributed under the terms of the GNU General Public License.
+! See the file `LICENSE' in the root directory of this distribution, or obtain 
+! a copy of the License at <https://www.gnu.org/licenses/gpl-3.0.txt>.
+!
+! Author: Jiang Cao <jiacao@ethz.ch>
+! Comment:
+!  
+! Maintenance:
+!===============================================================================
 module gw_dense 
     use parameters_mod
     use output
@@ -789,7 +800,6 @@ module gw_dense
     ! calculate e-photon/phonon self-energies for single mode in thermal equilibrium 
     subroutine selfenergy_eph_mono(nm,nen,En,nop,nky,nkz,nqy,nqz,ik_start,ik_end,iq_in,M,G_lesser,G_greater,&
         Sig_lesser,Sig_greater,n_bose,gamma_q)
-    ! 
         integer,intent(in)::nm,nen,nop,nky,nkz,nqy,nqz,iq_in,ik_start,ik_end
         real(8),intent(in)::en(nen),n_bose
         logical,intent(in)::gamma_q
@@ -798,7 +808,9 @@ module gw_dense
         complex(8),intent(out),dimension(nm,nm,nen,nky*nkz)::Sig_lesser,Sig_greater
         !---------
         integer::ie,ikd,ik ,iq,iqd
-        complex(8),allocatable::B(:,:),A(:,:) ! tmp matrix               
+        complex(8),allocatable::B(:,:),A(:,:) ! tmp matrix  
+        real(8)::dE 
+        dE = (en(2)-en(1)) / twopi             
         if (gamma_q) then 
 			iq=1
 			iqd=1
@@ -853,6 +865,8 @@ module gw_dense
         !$omp end do        
         deallocate(A,B)
         !$omp end parallel
+        sig_greater = sig_greater * dE 
+        sig_lesser  = sig_lesser  * dE
     end subroutine selfenergy_eph_mono
     
 

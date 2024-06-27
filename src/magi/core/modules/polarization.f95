@@ -1,3 +1,15 @@
+!===============================================================================
+! Copyright (C) 2023 Jiang Cao
+!
+! This program is distributed under the terms of the GNU General Public License.
+! See the file `LICENSE' in the root directory of this distribution, or obtain 
+! a copy of the License at <https://www.gnu.org/licenses/gpl-3.0.txt>.
+!
+! Author: Jiang Cao <jiacao@ethz.ch>
+! Comment:
+!  
+! Maintenance:
+!===============================================================================
 module polarization 
     use parameters_mod,only:dp,twopi,pi,e_charge,epsilon0,m0_charge,hbar,c1i,czero,cone    
     use omp_lib
