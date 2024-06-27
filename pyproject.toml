@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "magi"
+version = "0.1"
+authors = [{ name = "Jiang Cao", email = "jiacao@iis.ee.ethz.ch" }]
+description = "."
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "GPL-3.0"}
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: GPL License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "numpy",
+    "scipy",
+    "matplotlib",
+    "mpi4py",
+]
+
+[project.urls]
+repository = "https://github.com/jiangcao/magi"
