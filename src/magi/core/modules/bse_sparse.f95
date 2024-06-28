@@ -361,17 +361,23 @@ module bse_sparse
                     nop=nops(iop)
                     P_lesser = czero                     
                     P_greater = 2.0_dp * c1i * aimag(P_retarded(:,:,iop)) 
+                    P_retarded(:,:,iop) = dcmplx(0.0_dp, aimag(P_retarded(:,:,iop)))
                     !
                     print '("  Start W computation ... ")'
+                    !
                     call calc_w(1,NB,NS,nm_dev,P_retarded(:,:,iop),P_lesser,P_greater,V,W_retarded,W_lesser,W_greater)
+                    !
                     finish = omp_get_wtime()
                     print '("  W computation time = ", F0.3 ," seconds.")', finish-start 
                     !
                     start = finish
                     write(*, '(A)', advance="no") "  Start Sigma computation ... "                    
-                    ! Accumulate the GW to Sigma
+                    !
+                    ! Accumulate the contribution from this optical frequency to
+                    ! the self-energy
                     ! hw from -inf to +inf: Sig^<>_ij(E) = (i/2pi) \int_dhw G^<>_ij(E-hw) W^<>_ij(hw)  
                     if (lwith_vertex) then 
+                        ! include vertex, $\Sigma = i G*W*\Gamma$
                         !$omp parallel default(shared) private(i1,i2,l,i,j,k,ie,ie1,ie2) 
                         !$omp do
                         do i=1,nm_dev                        
@@ -402,6 +408,7 @@ module bse_sparse
                         !$omp end do
                         !$omp end parallel       
                     else
+                        ! ignore vertex, $\Sigma = i G*W$
                         !$omp parallel default(shared) private(i1,i2,i,j,ie,ie1,ie2) 
                         !$omp do
                         do i=1,nm_dev                        
@@ -416,15 +423,17 @@ module bse_sparse
                                                         G_lesser(i,j,(ie1-nop):(ie2-nop),isub,ik) * W_retarded(i,j) + &                                      
                                                         G_retarded(i,j,(ie1-nop):(ie2-nop),isub,ik) * W_lesser(i,j) + &
                                                         G_retarded(i,j,(ie1-nop):(ie2-nop),isub,ik) * W_retarded(i,j)                                                  
-                                !
-                                ie1 = max(-nop,0) + 1
-                                ie2 = min(nen-nop,nen)
-                                Sig_lesser(i,j,ie1:ie2)=Sig_lesser(i,j,ie1:ie2) + G_lesser(i,j,(ie1+nop):(ie2+nop),isub,ik) * W_greater(i,j)   
-                                Sig_greater(i,j,ie1:ie2)=Sig_greater(i,j,ie1:ie2) + G_greater(i,j,(ie1+nop):(ie2+nop),isub,ik) * W_lesser(i,j)   
-                                Sig_retarded(i,j,ie1:ie2)=Sig_retarded(i,j,ie1:ie2) - &
-                                                        G_lesser(i,j,(ie1+nop):(ie2+nop),isub,ik) * conjg(W_retarded(i,j)) - &                                      
-                                                        G_retarded(i,j,(ie1+nop):(ie2+nop),isub,ik) * conjg(W_greater(i,j)) - &
-                                                        G_retarded(i,j,(ie1+nop):(ie2+nop),isub,ik) * conjg(W_retarded(i,j))     
+                                ! negative frequency part by symmetry
+                                if (nop /= 0) then
+                                    ie1 = max(-nop,0) + 1
+                                    ie2 = min(nen-nop,nen)
+                                    Sig_lesser(i,j,ie1:ie2)=Sig_lesser(i,j,ie1:ie2) - G_lesser(i,j,(ie1+nop):(ie2+nop),isub,ik) * conjg(W_greater(i,j))   
+                                    Sig_greater(i,j,ie1:ie2)=Sig_greater(i,j,ie1:ie2) - G_greater(i,j,(ie1+nop):(ie2+nop),isub,ik) * conjg(W_lesser(i,j))   
+                                    Sig_retarded(i,j,ie1:ie2)=Sig_retarded(i,j,ie1:ie2) - &
+                                                            G_lesser(i,j,(ie1+nop):(ie2+nop),isub,ik) * conjg(W_retarded(i,j)) - &                                      
+                                                            G_retarded(i,j,(ie1+nop):(ie2+nop),isub,ik) * conjg(W_greater(i,j)) - &
+                                                            G_retarded(i,j,(ie1+nop):(ie2+nop),isub,ik) * conjg(W_retarded(i,j))     
+                                endif
                             enddo
                         enddo
                         !$omp end do

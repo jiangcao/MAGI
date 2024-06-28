@@ -80,7 +80,7 @@ program test_polarization
     
     20 format(A15,2X,1F0.8,2X,A4)  
 
-    do j=1,100000
+    do j=1,200000
         ki = ki + 1
         if (ki(1) > m*m) then 
             ki = 1
@@ -106,36 +106,36 @@ program test_polarization
     call cublas_free(devPtrGL)
     call cublas_free(devPtrGG)
 
-    !reference from CPU
-    call cpu_time(tstart)
-    do i=1,n 
-        do j=1,n 
-            ref(i,j) = a2* dot_product( G_greater(1+nop:nen, jl(i)) , G_lesser(1:nen-nop, ki(j)) ) &
-                     - a2* dot_product( G_lesser(1+nop:nen, jl(i)) , G_greater(1:nen-nop, ki(j)) ) &
-                     + a1* dot_product( G_lesser(1+nop:nen, jl(i)) , G_advanced(1:nen-nop, ki(j)) ) &
-                     + a1* dot_product( G_retarded(1+nop:nen, jl(i)) , G_lesser(1:nen-nop, ki(j)) ) 
-
-        enddo 
-    enddo 
-    call cpu_time(tstop)
-    
-    elapsed_time = tstop - tstart !in seconds
-    write(*,20) 'CPU Elapsed t : ',elapsed_time, 'secs'
-    
-    print *,C(1,1)
-    print *,ref(1,1)
-    index = n
-    sum = 0.0
-    !show result
-    do j = 1, index
-       do i = 1, index
-          sum = sum + abs( ref(i,j)- C(i,j) )**2
-       end do
-    end do
-    L2 = sqrt( sum / ( dble(index)*dble(index) ) )
-    write(*,30) 'L2-residual :', L2
-  30 format(A15,2X,1E18.8)
-    
+!    !reference from CPU
+!    call cpu_time(tstart)
+!    do i=1,n 
+!        do j=1,n 
+!            ref(i,j) = a2* dot_product( G_greater(1+nop:nen, jl(i)) , G_lesser(1:nen-nop, ki(j)) ) &
+!                     - a2* dot_product( G_lesser(1+nop:nen, jl(i)) , G_greater(1:nen-nop, ki(j)) ) &
+!                     + a1* dot_product( G_lesser(1+nop:nen, jl(i)) , G_advanced(1:nen-nop, ki(j)) ) &
+!                     + a1* dot_product( G_retarded(1+nop:nen, jl(i)) , G_lesser(1:nen-nop, ki(j)) ) 
+!
+!        enddo 
+!    enddo 
+!    call cpu_time(tstop)
+!    
+!    elapsed_time = tstop - tstart !in seconds
+!    write(*,20) 'CPU Elapsed t : ',elapsed_time, 'secs'
+!    
+!    print *,C(1,1)
+!    print *,ref(1,1)
+!    index = n
+!    sum = 0.0
+!    !show result
+!    do j = 1, index
+!       do i = 1, index
+!          sum = sum + abs( ref(i,j)- C(i,j) )**2
+!       end do
+!    end do
+!    L2 = sqrt( sum / ( dble(index)*dble(index) ) )
+!    write(*,30) 'L2-residual :', L2
+!  30 format(A15,2X,1E18.8)
+!    
     
   end program test_polarization
   
