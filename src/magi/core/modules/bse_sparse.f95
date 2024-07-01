@@ -136,7 +136,7 @@ module bse_sparse
     ! solve the Bethe-Salpeter Equation with selected inversion 
     subroutine bse_sparse_solve(method,alpha,spindeg,nm_dev,ndiag,nen,nsub,En,nops,nnop,nk,&
         G_lesser,G_greater,G_retarded,W,V,solve_sigma,with_vertex,nb,ns,&
-        P_retarded,sig_retarded,sig_lesser,sig_greater)        
+        P_retarded,P0_retarded,sig_retarded,sig_lesser,sig_greater)        
         ! in
         character(len=*),intent(in)::method
         integer,intent(in)::nm_dev,nen ! device dimension, number of energies        
@@ -150,6 +150,7 @@ module bse_sparse
         integer,intent(in),optional::ns,nb ! NEEDED if solve_sigma, number of cells inside lead supercell, number of WF basis
         ! out 
         complex(dp),intent(out),dimension(nm_dev,nm_dev,nnop):: P_retarded ! 2-point polarization function with interacting electron-hole
+        complex(dp),intent(out),dimension(nm_dev,nm_dev,nnop):: P0_retarded ! RPA polarization function 
         complex(dp),dimension(nm_dev,nm_dev,nen),intent(out) ::  Sig_retarded,Sig_lesser,Sig_greater
         !---- local
         complex(dp),allocatable,dimension(:,:):: Adiag,Aupper,Alower,Alowerarrow,Aupperarrow,Atip 
@@ -257,6 +258,7 @@ module bse_sparse
                         i=table(1,row)
                         k=table(1,col)
                         P_retarded(i,k,iop) =  - c1i * Atip(fliped_row,fliped_col)                
+                        P0_retarded(i,k,iop) =  - c1i * Ltip(fliped_row,fliped_col,iop)    
                     enddo
                 enddo                          
                 !$omp end do
@@ -346,6 +348,7 @@ module bse_sparse
                         i=table(1,row)
                         k=table(1,col)
                         P_retarded(i,k,iop) =  - c1i * Atip(fliped_row,fliped_col)    
+                        P0_retarded(i,k,iop) =  - c1i * Ltip(fliped_row,fliped_col,1)    
                         if (lsolve_sigma .and. lwith_vertex) then  
                             vertex(i,i,k) = Atip(fliped_row,fliped_col)           
                         endif
@@ -361,10 +364,11 @@ module bse_sparse
                     ik=1
                     nop=nops(iop)
                     P_lesser = czero                     
-                    P_retarded(:,:,iop) = dcmplx(0.0_dp, -abs(aimag(P_retarded(:,:,iop))))
+                    ! P_retarded(:,:,iop) = dcmplx(0.0_dp, -abs(aimag(P_retarded(:,:,iop))))
                     P_greater = 2.0_dp * c1i * aimag(P_retarded(:,:,iop)) 
                     !
                     print '("  Start W computation ... ")'
+                    start = finish
                     !
                     call calc_w(1,NB,NS,nm_dev,P_retarded(:,:,iop),P_lesser,P_greater,V,W_retarded,W_lesser,W_greater)
                     !
@@ -413,7 +417,7 @@ module bse_sparse
                         !$omp end parallel       
                     else
                         !
-                        ! ignore vertex, $\Sigma = i G*W$
+                        ! approx vertex as delta, $\Sigma = i G*W$
                         !
                         !$omp parallel default(shared) private(i1,i2,i,j,ie,ie1,ie2) 
                         !$omp do
@@ -447,21 +451,7 @@ module bse_sparse
                     endif 
                     finish = omp_get_wtime()
                     print *,""
-                    print '("  Sigma computation time = ", F0.3 ," seconds.")', finish-start  
-                    ! ! 
-                    ! !$omp parallel default(shared) private(row,col,fliped_row,fliped_col,i,k)
-                    ! !$omp do
-                    ! do row=1,nm_dev
-                    !     do col=1,nm_dev
-                    !         fliped_row = nm_dev - col + 1
-                    !         fliped_col = nm_dev - row + 1 
-                    !         i=table(1,row)
-                    !         k=table(1,col)
-                    !         P_retarded(i,k,iop) =  - c1i * Atip(fliped_row,fliped_col)    
-                    !     enddo
-                    ! enddo                          
-                    ! !$omp end do
-                    ! !$omp end parallel  
+                    print '("  Sigma computation time = ", F0.3 ," seconds.")', finish-start   
                 endif
             enddo
             if (lsolve_sigma) then 
@@ -490,7 +480,7 @@ module bse_sparse
         alpha_mix,nen,En,nops,nnop,nb,ns,Ham,H00lead,H10lead,T,V,&
         ndiag,encut,egap,vertex,bse_sigma,flatband,output_files,inj_photon,nphot,m_phot,n_bose_phot,&
         G_retarded,G_lesser,G_greater,&
-        current,transmission,P_retarded) 
+        current,transmission,P_retarded,P0_retarded) 
         ! in 
         character(len=*),intent(in)::method
         integer, intent(in) :: nen, nb, ns,niter,nm_dev,length
@@ -510,7 +500,8 @@ module bse_sparse
         real(dp),intent(out)::current(nen,2) !! current spectrum on leads
         real(dp),intent(out)::transmission(nen,2) !! transmission matrix
         complex(dp),intent(out),dimension(nm_dev,nm_dev,nen) ::  G_retarded,G_lesser,G_greater
-        complex(dp),intent(out),dimension(nm_dev,nm_dev,nnop) ::  P_retarded   
+        complex(dp),intent(out),dimension(nm_dev,nm_dev,nnop) ::  P_retarded  ! bse 
+        complex(dp),intent(out),dimension(nm_dev,nm_dev,nnop) ::  P0_retarded ! rpa 
         ! --- local 
         real(dp),allocatable :: cur(:,:,:),tot_cur(:,:),tot_ecur(:,:)
         complex(dp),allocatable,dimension(:,:) :: W0_retarded,W0_lesser,W0_greater
@@ -554,7 +545,7 @@ module bse_sparse
                 en=en,nops=nops,nnop=nnop,nk=1,&
                 g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,&
                 w=W0_retarded,v=v,solve_sigma=bse_sigma,with_vertex=vertex,nb=nb,ns=ns,&
-                P_retarded=P_retarded,sig_retarded=Sig_r_bse,sig_lesser=sig_l_bse,sig_greater=sig_g_bse)
+                P_retarded=P_retarded,P0_retarded=P0_retarded,sig_retarded=Sig_r_bse,sig_lesser=sig_l_bse,sig_greater=sig_g_bse)
         if (bse_sigma) then   
             ! update self-energy 
             Sig_l = aimag( Sig_l_bse ) * c1i

@@ -344,7 +344,7 @@ module gw_dense
     subroutine selfenergy_gw(nm_dev,nen,nsub,nphiy,nphiz,nb,ns,ndiag,length, en, V,flatband,spindeg,&
                              G_retarded,G_lesser,G_greater, &
                              Sig_retarded_new,Sig_lesser_new,Sig_greater_new,W0_retarded)
-    !
+        !
         use fft_mod, only : conv1d_fock, corr1d => corr1d2  
         use parameters_mod
         !
@@ -477,7 +477,7 @@ module gw_dense
     subroutine solve_gw_3D(niter,scba_tol,nm_dev,Lx,length,spindeg,temps,tempd,mus,mud,&
         alpha_mix,nen,nsub,En,nb,ns,nphiy,nphiz,Ham,H00lead,H10lead,T,V,&
         ndiag,num_lead,flatband,output_files,G_retarded,G_lesser,G_greater,W0_retarded,tr)
-    !
+        !
         use fft_mod, only : conv1d => conv1d2, corr1d => corr1d2  
         use parameters_mod
         !  
@@ -769,7 +769,7 @@ module gw_dense
     subroutine solve_eph(niter,scba_tol,nm_dev,Lx,length,spindeg,temps,tempd,mus,mud,&
         alpha_mix,nen,nsub,En,nb,ns,nphiy,nphiz,Ham,H00lead,H10lead,T,&
         ndiag,num_lead,flatband,output_files,G_retarded,G_lesser,G_greater,tr)
-    ! 
+        ! 
         integer, intent(in) :: nen, nsub, nb, ns,niter,nm_dev,length, nphiz, nphiy, num_lead
         real(dp), intent(in) :: En(nen), temps,tempd, mus, mud, alpha_mix,Lx,spindeg,scba_tol
         complex(dp),intent(in) :: Ham(nm_dev,nm_dev,nphiy*nphiz),H00lead(NB*NS,NB*NS,num_lead,nphiy*nphiz),H10lead(NB*NS,NB*NS,num_lead,nphiy*nphiz),T(NB*NS,nm_dev,num_lead,nphiy*nphiz)        
