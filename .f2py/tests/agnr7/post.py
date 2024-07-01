@@ -3,8 +3,8 @@ import numpy as np
 
 ndiag= 28
 length=10
-nen = 800
-n_phot = 613
+nen = 1400
+n_phot = 249
 
 path='./'
 fname='data_len'+str(length)+'_ndiag'+str(ndiag)+'_nen'+str(nen)+'_nphot'+str(n_phot)+'.npz'

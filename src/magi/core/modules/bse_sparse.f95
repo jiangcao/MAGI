@@ -353,6 +353,7 @@ module bse_sparse
                 enddo                          
                 !$omp end do
                 !$omp end parallel  
+                !
                 if (lsolve_sigma) then 
                     !                
                     ! solve W
@@ -360,8 +361,8 @@ module bse_sparse
                     ik=1
                     nop=nops(iop)
                     P_lesser = czero                     
+                    P_retarded(:,:,iop) = dcmplx(0.0_dp, -abs(aimag(P_retarded(:,:,iop))))
                     P_greater = 2.0_dp * c1i * aimag(P_retarded(:,:,iop)) 
-                    P_retarded(:,:,iop) = dcmplx(0.0_dp, aimag(P_retarded(:,:,iop)))
                     !
                     print '("  Start W computation ... ")'
                     !
@@ -375,9 +376,12 @@ module bse_sparse
                     !
                     ! Accumulate the contribution from this optical frequency to
                     ! the self-energy
+                    !
                     ! hw from -inf to +inf: Sig^<>_ij(E) = (i/2pi) \int_dhw G^<>_ij(E-hw) W^<>_ij(hw)  
                     if (lwith_vertex) then 
+                        !
                         ! include vertex, $\Sigma = i G*W*\Gamma$
+                        !
                         !$omp parallel default(shared) private(i1,i2,l,i,j,k,ie,ie1,ie2) 
                         !$omp do
                         do i=1,nm_dev                        
@@ -408,7 +412,9 @@ module bse_sparse
                         !$omp end do
                         !$omp end parallel       
                     else
+                        !
                         ! ignore vertex, $\Sigma = i G*W$
+                        !
                         !$omp parallel default(shared) private(i1,i2,i,j,ie,ie1,ie2) 
                         !$omp do
                         do i=1,nm_dev                        
@@ -442,6 +448,20 @@ module bse_sparse
                     finish = omp_get_wtime()
                     print *,""
                     print '("  Sigma computation time = ", F0.3 ," seconds.")', finish-start  
+                    ! ! 
+                    ! !$omp parallel default(shared) private(row,col,fliped_row,fliped_col,i,k)
+                    ! !$omp do
+                    ! do row=1,nm_dev
+                    !     do col=1,nm_dev
+                    !         fliped_row = nm_dev - col + 1
+                    !         fliped_col = nm_dev - row + 1 
+                    !         i=table(1,row)
+                    !         k=table(1,col)
+                    !         P_retarded(i,k,iop) =  - c1i * Atip(fliped_row,fliped_col)    
+                    !     enddo
+                    ! enddo                          
+                    ! !$omp end do
+                    ! !$omp end parallel  
                 endif
             enddo
             if (lsolve_sigma) then 
@@ -710,7 +730,7 @@ module bse_sparse
         real(dp) :: error        
         !
         NT = blocksize * num_blocks + nm_dev
-        print *, " check the system matrix"
+        print *, " start checking the system matrix blocks"
         allocate(Mmat(NT,NT), source=czero)        
         allocate(Lmat(NT,NT), source=czero)     
         allocate(Amat(NT,NT), source=czero)  
@@ -882,13 +902,15 @@ module bse_sparse
                 enddo 
             enddo 
         enddo 
-        print *, "DONE CHECK"
+        print *, " DONE CHECK, all checks pass "
     end subroutine bse_sparse_check_system
 
     ! build the Bethe-Salpeter Equation L0 and Kernel matrices
     subroutine bse_sparse_build(method,alpha,spindeg,nm_dev,ndiag,nen,En,nop,nnop,blocksize,num_blocks,N,table,&
         G_lesser,G_greater,G_retarded,W,V,&
-        Ldiag,Lupper,Llower,Lupperarrow,Llowerarrow,Ltip,Ktip,Kdiag)        
+        Ldiag,Lupper,Llower,Lupperarrow,Llowerarrow,Ltip,Ktip,Kdiag)      
+        !
+        ! use gpu_polarization  
         ! input
         character(len=*),intent(in)::method
         integer,intent(in)::nm_dev,nen,nnop,nop(nnop),ndiag,N,table(2,N)
@@ -906,9 +928,14 @@ module bse_sparse
         complex(dp),intent(out),dimension(blocksize*num_blocks):: Kdiag ! diagonal of Kernel
         complex(dp),intent(out),dimension(nm_dev,nm_dev):: Ktip ! dense tip block of Kernel
         ! ---- local
-        complex(dp) :: L0ijkl(nnop)              
+        complex(dp) :: L0ijkl(nnop), P_ijkl              
         real(dp) :: start, finish
-        integer :: i,j,k,l,p,q,ie,row,col,it,iop,ib,NT,nepoch,fliped_row,fliped_col                
+        complex(dp) :: a1, a2 
+        integer :: i,j,k,l,p,q,ie,row,col,it,iop,ib,NT,nepoch,fliped_row,fliped_col     
+        integer(8) :: devPtrA, devPtrB, devPtrC, devPtrGL,devPtrGG,devPtrGR,devPtrGA           
+        !
+        a1 = 1.0 - alpha
+        a2 = alpha * 0.5
         !
         Ltip = czero
         Ldiag = czero
@@ -918,10 +945,23 @@ module bse_sparse
         Llowerarrow = czero
         NT = blocksize * num_blocks   
         !
+        if (trim(method)=='gpu_sum') then
+            ! print *, "gpu polarization prepare"
+            ! call gpu_polarization_prepare(&
+            !     nen=nen,nm=nm_dev,&
+            !     G_lesser=g_lesser,G_greater=g_greater,G_retarded=g_retarded,&
+            !     devPtrGL=devPtrGL,devPtrGG=devPtrGG,devPtrGR=devPtrGR,devPtrGA=devPtrGA)
+        endif
+        !
         nepoch = N / 50
         start = omp_get_wtime()              
         write(*, '(A)', advance="no") '  start computation L0_ijkl = G_jl G_ki '                 
-        !$omp parallel default(shared) private(row,col,i,j,k,l,L0ijkl,ib,p,q,fliped_row,fliped_col)
+        !$omp parallel default(shared) private(row,col,i,j,k,l,L0ijkl,ib,p,q,fliped_row,fliped_col,devPtrA, devPtrB, devPtrC)
+        ! call gpu_polarization_calc_ijkl(&
+        !                                 a1=a1,a2=a2,nop=nop(1),nen=nen,nm=nm_dev,i=1,j=1,k=1,l=1,&
+        !                                 devPtrGL=devPtrGL,devPtrGG=devPtrGG,devPtrGR=devPtrGR,devPtrGA=devPtrGA,&
+        !                                 devPtrA=devPtrA,devPtrB=devPtrB,devPtrC=devPtrC,&
+        !                                 P_ijkl = P_ijkl, malloc_gpu=.true.)
         !$omp do        
         do row = 1,N 
             if (mod(row-1,nepoch)==0) write(*, '(A)', advance="no") '.'                 
@@ -938,41 +978,80 @@ module bse_sparse
                     if (fliped_col > NT) then 
                         if (fliped_row > NT) then 
                             ! tip block
-                            if (trim(method)=='fft') then
+                            select case (trim(method))
+                            case('fft')
                                 call four_polarization_fft(alpha,nm_dev,nen,en,nop,nnop,ndiag,&
                                             G_lesser,G_greater,G_retarded,i,j,k,l,L0ijkl)
-                            else    
+
+                            case('gpu_sum') 
+                                ! do iop=1,nnop
+                                !     call gpu_polarization_calc_ijkl(&
+                                !         a1=a1,a2=a2,nop=nop(iop),nen=nen,nm=nm_dev,i=i,j=j,k=k,l=l,&
+                                !         devPtrGL=devPtrGL,devPtrGG=devPtrGG,devPtrGR=devPtrGR,devPtrGA=devPtrGA,&
+                                !         devPtrA=devPtrA,devPtrB=devPtrB,devPtrC=devPtrC,&
+                                !         P_ijkl = P_ijkl, malloc_gpu=.false.)
+                                !     L0ijkl(iop) = P_ijkl * ( En(2) - En(1) ) / twopi
+                                ! enddo
+                                
+                            case default    
                                 do iop=1,nnop
                                     call four_polarization(alpha,nm_dev,nen,en,nop(iop),ndiag,&
                                             G_lesser,G_greater,G_retarded,i,j,k,l,L0ijkl(iop))
                                 enddo
-                            endif         
+
+                            end select         
                             Ltip(fliped_row - NT,fliped_col - NT,1:nnop) = L0ijkl * spindeg
                         else
                             ! upper arrow block 
-                            if (trim(method)=='fft') then
+                            select case (trim(method))
+                            case('fft')
                                 call four_polarization_fft(alpha,nm_dev,nen,en,nop,nnop,ndiag,&
                                             G_lesser,G_greater,G_retarded,i,j,k,l,L0ijkl)
-                            else    
+
+                            case('gpu_sum') 
+                                ! do iop=1,nnop
+                                !     call gpu_polarization_calc_ijkl(&
+                                !         a1=a1,a2=a2,nop=nop(iop),nen=nen,nm=nm_dev,i=i,j=j,k=k,l=l,&
+                                !         devPtrGL=devPtrGL,devPtrGG=devPtrGG,devPtrGR=devPtrGR,devPtrGA=devPtrGA,&
+                                !         devPtrA=devPtrA,devPtrB=devPtrB,devPtrC=devPtrC,&
+                                !         P_ijkl = P_ijkl, malloc_gpu=.false.)
+                                !     L0ijkl(iop) = P_ijkl * ( En(2) - En(1) ) / twopi
+                                ! enddo
+
+                            case default    
                                 do iop=1,nnop
                                     call four_polarization(alpha,nm_dev,nen,en,nop(iop),ndiag,&
                                             G_lesser,G_greater,G_retarded,i,j,k,l,L0ijkl(iop))
                                 enddo
-                            endif 
+
+                            end select 
                             Lupperarrow(fliped_row,fliped_col - NT,1:nnop) = L0ijkl * spindeg          
                         endif 
                     else 
                         if (fliped_row > NT) then 
                             ! lower arrow block 
-                            if (trim(method)=='fft') then
+                            select case (trim(method))
+                            case('fft')
                                 call four_polarization_fft(alpha,nm_dev,nen,en,nop,nnop,ndiag,&
                                             G_lesser,G_greater,G_retarded,i,j,k,l,L0ijkl)
-                            else    
+
+                            case('gpu_sum') 
+                                ! do iop=1,nnop
+                                !     call gpu_polarization_calc_ijkl(&
+                                !         a1=a1,a2=a2,nop=nop(iop),nen=nen,nm=nm_dev,i=i,j=j,k=k,l=l,&
+                                !         devPtrGL=devPtrGL,devPtrGG=devPtrGG,devPtrGR=devPtrGR,devPtrGA=devPtrGA,&
+                                !         devPtrA=devPtrA,devPtrB=devPtrB,devPtrC=devPtrC,&
+                                !         P_ijkl = P_ijkl, malloc_gpu=.false.)
+                                !     L0ijkl(iop) = P_ijkl * ( En(2) - En(1) ) / twopi
+                                ! enddo
+                                               
+                            case default    
                                 do iop=1,nnop
                                     call four_polarization(alpha,nm_dev,nen,en,nop(iop),ndiag,&
                                             G_lesser,G_greater,G_retarded,i,j,k,l,L0ijkl(iop))
                                 enddo
-                            endif 
+
+                            end select
                             Llowerarrow(fliped_row - NT,fliped_col,1:nnop) = L0ijkl * spindeg   
                         else 
                             ib = (fliped_row-1) / blocksize
@@ -980,41 +1059,80 @@ module bse_sparse
                             q = p + blocksize
                             if ((fliped_col > p).and.(fliped_col <= q)) then 
                                 ! diag block 
-                                if (trim(method)=='fft') then
+                                select case (trim(method))
+                                case('fft')
                                     call four_polarization_fft(alpha,nm_dev,nen,en,nop,nnop,ndiag,&
                                                 G_lesser,G_greater,G_retarded,i,j,k,l,L0ijkl)
-                                else    
+
+                                case('gpu_sum') 
+                                    ! do iop=1,nnop
+                                    !     call gpu_polarization_calc_ijkl(&
+                                    !         a1=a1,a2=a2,nop=nop(iop),nen=nen,nm=nm_dev,i=i,j=j,k=k,l=l,&
+                                    !         devPtrGL=devPtrGL,devPtrGG=devPtrGG,devPtrGR=devPtrGR,devPtrGA=devPtrGA,&
+                                    !         devPtrA=devPtrA,devPtrB=devPtrB,devPtrC=devPtrC,&
+                                    !         P_ijkl = P_ijkl, malloc_gpu=.false.)
+                                    !     L0ijkl(iop) = P_ijkl * ( En(2) - En(1) ) / twopi
+                                    ! enddo
+                                                    
+                                case default    
                                     do iop=1,nnop
                                         call four_polarization(alpha,nm_dev,nen,en,nop(iop),ndiag,&
                                                 G_lesser,G_greater,G_retarded,i,j,k,l,L0ijkl(iop))
                                     enddo
-                                endif 
+
+                                end select
                                 Ldiag(fliped_row - p, fliped_col, 1:nnop) = L0ijkl * spindeg   
                             else
                                 if ((fliped_col > q).and.(fliped_col <= (q+blocksize))) then                             
                                     ! upper diag block 
-                                    if (trim(method)=='fft') then
+                                    select case (trim(method))
+                                    case('fft')
                                         call four_polarization_fft(alpha,nm_dev,nen,en,nop,nnop,ndiag,&
                                                     G_lesser,G_greater,G_retarded,i,j,k,l,L0ijkl)
-                                    else    
+                                    
+                                    case('gpu_sum') 
+                                        ! do iop=1,nnop
+                                        !     call gpu_polarization_calc_ijkl(&
+                                        !         a1=a1,a2=a2,nop=nop(iop),nen=nen,nm=nm_dev,i=i,j=j,k=k,l=l,&
+                                        !         devPtrGL=devPtrGL,devPtrGG=devPtrGG,devPtrGR=devPtrGR,devPtrGA=devPtrGA,&
+                                        !         devPtrA=devPtrA,devPtrB=devPtrB,devPtrC=devPtrC,&
+                                        !         P_ijkl = P_ijkl, malloc_gpu=.false.)
+                                        !     L0ijkl(iop) = P_ijkl * ( En(2) - En(1) ) / twopi
+                                        ! enddo
+
+                                    case default    
                                         do iop=1,nnop
                                             call four_polarization(alpha,nm_dev,nen,en,nop(iop),ndiag,&
                                                     G_lesser,G_greater,G_retarded,i,j,k,l,L0ijkl(iop))
                                         enddo
-                                    endif 
+
+                                    end select
                                     Lupper(fliped_row - p, fliped_col - blocksize,1:nnop) = L0ijkl * spindeg                               
                                 endif
                                 if ((fliped_col > (p-blocksize)).and.(fliped_col <= p)) then                             
                                     ! lower diag block
-                                    if (trim(method)=='fft') then
+                                    select case (trim(method))
+                                    case('fft')
                                         call four_polarization_fft(alpha,nm_dev,nen,en,nop,nnop,ndiag,&
                                                     G_lesser,G_greater,G_retarded,i,j,k,l,L0ijkl)
-                                    else    
+
+                                    case('gpu_sum') 
+                                        ! do iop=1,nnop
+                                        !     call gpu_polarization_calc_ijkl(&
+                                        !         a1=a1,a2=a2,nop=nop(iop),nen=nen,nm=nm_dev,i=i,j=j,k=k,l=l,&
+                                        !         devPtrGL=devPtrGL,devPtrGG=devPtrGG,devPtrGR=devPtrGR,devPtrGA=devPtrGA,&
+                                        !         devPtrA=devPtrA,devPtrB=devPtrB,devPtrC=devPtrC,&
+                                        !         P_ijkl = P_ijkl, malloc_gpu=.false.)
+                                        !     L0ijkl(iop) = P_ijkl * ( En(2) - En(1) ) / twopi
+                                        ! enddo
+
+                                    case default    
                                         do iop=1,nnop
                                             call four_polarization(alpha,nm_dev,nen,en,nop(iop),ndiag,&
                                                     G_lesser,G_greater,G_retarded,i,j,k,l,L0ijkl(iop))
                                         enddo
-                                    endif 
+
+                                    end select
                                     Llower(fliped_row - p, fliped_col,1:nnop ) = L0ijkl * spindeg                            
                                 endif 
                             endif 
@@ -1023,9 +1141,17 @@ module bse_sparse
                 endif 
             enddo
         enddo         
-        !$omp end do
-        !$omp end parallel 
-        !        
+        !$omp end do        
+        ! call cublas_free(devPtrA)
+        ! call cublas_free(devPtrB)
+        ! call cublas_free(devPtrC)
+        !$omp end parallel        
+        if (trim(method)=='gpu_sum') then
+            print *, "gpu polarization finish, free gpu memory"
+            ! call gpu_polarization_finalize(&
+            !     devPtrGL=devPtrGL,devPtrGG=devPtrGG,devPtrGR=devPtrGR,devPtrGA=devPtrGA)
+        endif
+        !
         Ktip=czero
         Kdiag=czero
         !$omp parallel default(shared) private(row,col,i,j,k,l,fliped_row,fliped_col)

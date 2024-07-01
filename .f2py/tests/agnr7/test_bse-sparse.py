@@ -34,7 +34,7 @@ if __name__=='__main__':
 
    ns = 2
    length = 10
-   nen = 800
+   nen = 1400
    nsub = 1
    nky=1
    nkz=1
@@ -42,8 +42,8 @@ if __name__=='__main__':
    niter=0
    eps_screen=1.0
    r0=3.0
-   emin=-6.0
-   emax= 2.0
+   emin=-10.0
+   emax= 4.0
    temp =  np.ones(2)* 300.0
    mu = np.array( [-2.25,-2.25 ] )
    light_polar = np.array( [1.0, 1.0, 0.0] )
@@ -122,11 +122,13 @@ if __name__=='__main__':
    eps_en=np.zeros(nnop)
 
    start_t = time.time()
-   ( G_retarded,G_lesser,G_greater,
-        tr,te,P_r )= bse_sparse.bse_sparse_solve_scba(method='sum',niter=0,nm_dev=nm_dev,lx=Lx,length=length,spindeg=2.0,temp=temp,mu=mu,
+
+   ( G_retarded,G_lesser,G_greater,tr,te,P_r ) = bse_sparse.bse_sparse_solve_scba(
+        method='sum',niter=0,nm_dev=nm_dev,lx=Lx,length=length,spindeg=2.0,temp=temp,mu=mu,
         alpha_mix=0.5,nen=nen,en=energies,nops=nops,nnop=nnop,nb=nb,ns=ns,ham=ham,h00lead=lead_h00,h10lead=lead_h10,t=lead_coupling,v=v,
-        ndiag=ndiag,encut=encut,egap=egap,vertex=False,bse_sigma=True,flatband=False,output_files=True,
-        inj_photon=False,nphot=n_phot,m_phot=M_phot,n_bose_phot=n_bose_phot) 
+        ndiag=ndiag,encut=encut,egap=egap,vertex=False,bse_sigma=False,flatband=False,output_files=True,
+        inj_photon=False,nphot=n_phot,m_phot=M_phot,n_bose_phot=n_bose_phot ) 
+
    print('done')                                                       
    print('current=', -np.sum(tr[:,0]) , np.sum(tr[:,1]))                                                       
 
@@ -148,6 +150,7 @@ if __name__=='__main__':
    bse_time = (finish_t - start_t)
 
    fname='data_len'+str(length)+'_ndiag'+str(ndiag)+'_nen'+str(nen)+'_nphot'+str(n_phot)+'.npz'
+   print("save data in ",fname)
    np.savez(fname, 
             ID_list=ID_list,
             tr=tr,

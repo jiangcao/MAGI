@@ -16,32 +16,112 @@ module gpu_polarization
 
     contains 
 
-    subroutine gpu_polarization(a1,a2,nop,nen,nm,num_jl,jl,num_ki,ki,copy_to_gpu,G_lesser,G_greater,G_retarded,G_advanced,&
-        devPtrGL,devPtrGG,devPtrGR,devPtrGA,partial_P)
+    subroutine gpu_polarization_prepare(nen,nm,G_lesser,G_greater,G_retarded,&
+        devPtrGL,devPtrGG,devPtrGR,devPtrGA)
+        integer,intent(in) :: nen,nm
+        integer(8),intent(out) :: devPtrGL, devPtrGG, devPtrGR, devPtrGA
+        complex(8), dimension(nm,nm,nen), intent(in) :: G_greater, G_lesser, G_retarded        
+        complex(8), allocatable, dimension(:,:) :: Gx
+        complex(8), allocatable, dimension(:,:,:) :: Ga
+        integer::ie
+        !
+        allocate( Gx(nen, nm*nm) )
+        allocate( Ga(nm,nm,nen) )
+        !
+        call cublas_alloc(nm*nm*nen, size_of_complex, devPtrGG)
+        call cublas_alloc(nm*nm*nen, size_of_complex, devPtrGL)
+        call cublas_alloc(nm*nm*nen, size_of_complex, devPtrGR) 
+        call cublas_alloc(nm*nm*nen, size_of_complex, devPtrGA)                
+        !
+        ! transpose the G to be contiguous in energy, then copy data to GPU
+        Gx = reshape( G_lesser, shape=[nen, nm*nm], order=[2,1] )
+        call cublas_set_matrix(nen,nm*nm,size_of_complex,Gx,nen,devPtrGL,nen)
+        !
+        Gx = reshape( G_greater, shape=[nen, nm*nm], order=[2,1] )
+        call cublas_set_matrix(nen,nm*nm,size_of_complex,Gx,nen,devPtrGG,nen)
+        !
+        Gx = reshape( G_retarded, shape=[nen, nm*nm], order=[2,1] )
+        call cublas_set_matrix(nen,nm*nm,size_of_complex,Gx,nen,devPtrGR,nen)
+        !
+        !$omp parallel default(shared) private(ie)
+        !$omp do  
+        do ie=1,nen
+            Ga(:,:,ie) = transpose(conjg(G_retarded(:,:,ie)))
+        enddo
+        !$omp end do
+        !$omp end parallel 
+        Gx = reshape( Ga, shape=[nen, nm*nm], order=[2,1] )
+        call cublas_set_matrix(nen,nm*nm,size_of_complex,Gx,nen,devPtrGA,nen)
+    end subroutine gpu_polarization_prepare
+
+    subroutine gpu_polarization_finalize( &
+        devPtrGL,devPtrGG,devPtrGR,devPtrGA)
+        integer(8),intent(in) :: devPtrGL, devPtrGG, devPtrGR, devPtrGA        
+        !Free GPU memory
+        call cublas_free(devPtrGG)
+        call cublas_free(devPtrGL)
+        call cublas_free(devPtrGR)
+        call cublas_free(devPtrGA)
+    end subroutine gpu_polarization_finalize
+
+
+    subroutine gpu_polarization_calc_ijkl(a1,a2,nop,nen,nm,i,j,k,l,malloc_gpu,&
+        devPtrGL,devPtrGG,devPtrGR,devPtrGA,devPtrA,devPtrB,devPtrC,P_ijkl)
+        complex(8),intent(in) :: a1,a2
+        integer,intent(in) :: nop,nen,nm,i,j,k,l
+        integer(8),intent(inout) :: devPtrGL, devPtrGG, devPtrGR, devPtrGA
+        integer(8),intent(inout) :: devPtrA, devPtrB, devPtrC
+        complex(8),intent(out) :: P_ijkl
+        complex(8)::partial_P(1,1)
+        logical,intent(in) :: malloc_gpu 
+        integer :: n, jl(1), ki(1)        
+        if (malloc_gpu) then 
+            call cublas_alloc(nen, size_of_complex, devPtrA)
+            call cublas_alloc(nen, size_of_complex, devPtrB)
+            call cublas_alloc(1, size_of_complex, devPtrC)
+        endif 
+        jl = (l-1)*nm + j 
+        ki = (i-1)*nm + k
+        call gpu_polarization(a1=a1,a2=a2,nop=nop,nen=nen,nm=nm,&
+            num_jl=1,jl=jl,num_ki=1,ki=ki,copy_to_gpu=.false.,malloc_gpu=.false.,&
+            devPtrGL=devPtrGL,devPtrGG=devPtrGG,devPtrGR=devPtrGR,devPtrGA=devPtrGA,&
+            devPtrA=devPtrA,devPtrB=devPtrB,devPtrC=devPtrC,&
+            partial_P=partial_P)
+        P_ijkl = partial_P(1,1)
+    end subroutine gpu_polarization_calc_ijkl
+
+
+    subroutine gpu_polarization(a1,a2,nop,nen,nm,num_jl,jl,num_ki,ki,copy_to_gpu,malloc_gpu,&
+        G_lesser,G_greater,G_retarded,G_advanced,&
+        devPtrGL,devPtrGG,devPtrGR,devPtrGA,&
+        devPtrA, devPtrB, devPtrC,&
+        partial_P)
         complex(8),intent(in) :: a1,a2
         integer,intent(in) :: nop,nen,nm,jl(:),ki(:),num_jl,num_ki
         integer(8),intent(inout) :: devPtrGL, devPtrGG, devPtrGR, devPtrGA
-        complex(8), dimension(:,:), intent(in) :: G_greater, G_lesser, G_retarded, G_advanced
+        complex(8), dimension(:,:), intent(in),optional :: G_greater, G_lesser, G_retarded, G_advanced
         complex(8), dimension(:,:), intent(out) :: partial_P
-        logical,intent(in) :: copy_to_gpu
-        integer :: n, i        
-        integer(8) :: devPtrA, devPtrB, devPtrC        
+        logical,intent(in) :: copy_to_gpu,malloc_gpu
+        integer :: n,i       
+        integer(8), intent(inout) :: devPtrA, devPtrB, devPtrC        
         !
-        if (copy_to_gpu) then 
+        if (malloc_gpu) then 
             call cublas_alloc(nm*nm*nen, size_of_complex, devPtrGG)
             call cublas_alloc(nm*nm*nen, size_of_complex, devPtrGL)
             call cublas_alloc(nm*nm*nen, size_of_complex, devPtrGR) 
             call cublas_alloc(nm*nm*nen, size_of_complex, devPtrGA)                
+            call cublas_alloc(n*num_jl, size_of_complex, devPtrA)
+            call cublas_alloc(n*num_ki, size_of_complex, devPtrB)
+            call cublas_alloc(num_jl*num_ki, size_of_complex, devPtrC)
+        endif
+        if (copy_to_gpu) then 
             !copy data to GPU
             call cublas_set_matrix(nen,nm*nm,size_of_complex,G_lesser,nen,devPtrGL,nen)
             call cublas_set_matrix(nen,nm*nm,size_of_complex,G_greater,nen,devPtrGG,nen)
             call cublas_set_matrix(nen,nm*nm,size_of_complex,G_retarded,nen,devPtrGR,nen)
             call cublas_set_matrix(nen,nm*nm,size_of_complex,G_advanced,nen,devPtrGA,nen)
         endif
-        n = nen - nop
-        call cublas_alloc(n*num_jl, size_of_complex, devPtrA)
-        call cublas_alloc(n*num_ki, size_of_complex, devPtrB)
-        call cublas_alloc(num_jl*num_ki, size_of_complex, devPtrC)
+        n = nen - nop  
         ! a2 * G^>_jl G^<_ki
         do i = 1,num_jl 
             call cublas_zcopy(n, devPtrGG+((jl(i)-1) * nen + nop)*size_of_complex, 1, devPtrA+(i-1)*n*size_of_complex, 1)
@@ -74,14 +154,10 @@ module gpu_polarization
             call cublas_zcopy(n, devPtrGL+((ki(i)-1) * nen)*size_of_complex      , 1, devPtrB+(i-1)*n*size_of_complex, 1)
         enddo
         call cublas_zgemm('t','n',num_jl,num_ki,n,a1,devPtrA,n,devPtrB,n,dcmplx(1.0,0.0),devPtrC,num_jl)
-
+        !
         !copy data from GPU
         call cublas_get_matrix(num_jl,num_ki,size_of_complex,devPtrC,num_jl,partial_P,num_jl)
-    
-        !Free GPU memory
-        call cublas_free(devPtrA)
-        call cublas_free(devPtrB)
-        call cublas_free(devPtrC)
+        !
     end subroutine gpu_polarization
 
     subroutine test_cublaszgemm(m,n,A,B,C)
