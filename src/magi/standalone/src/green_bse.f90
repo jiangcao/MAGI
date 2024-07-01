@@ -1,6 +1,15 @@
-! Copyright (c) 2023 Jiang Cao, ETH Zurich 
-! All rights reserved.
+!===============================================================================
+! Copyright (C) 2023 Jiang Cao
 !
+! This program is distributed under the terms of the GNU General Public License.
+! See the file `LICENSE' in the root directory of this distribution, or obtain 
+! a copy of the License at <https://www.gnu.org/licenses/gpl-3.0.txt>.
+!
+! Author: Jiang Cao <jiacao@ethz.ch>
+! Comment:
+!  
+! Maintenance:
+!===============================================================================
 module green_bse
 use linalg
 use parameters_mod,only:dp,twopi,pi,e_charge,c0,epsilon0,hbar,c1i,czero,cone
