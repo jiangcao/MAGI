@@ -72,9 +72,9 @@ subroutine fem_remove_duplicate_points(mesh)
 			do elemt=1, hash_elemt(hash_val,1)            
 				j = hash_elemt(hash_val,elemt+1)
 				!! CHeck is two points are equal
-				if (abs(mesh%XN(i)-mesh%XN(j)).lt.1.0D-10 .and. &
-					abs(mesh%YN(i)-mesh%YN(j)).lt.1.0D-10 .and. &
-					abs(mesh%ZN(i)-mesh%ZN(j)).lt.1.0D-10 )then
+				if (abs(mesh%XN(i)-mesh%XN(j)) < 1.0e-10 .and. &
+					abs(mesh%YN(i)-mesh%YN(j)) < 1.0e-10 .and. &
+					abs(mesh%ZN(i)-mesh%ZN(j)) < 1.0e-10 )then
 					write(*,*) '-- Find double-point:',j,i,' combining them ...'
 					pt_toDelete(i) = .true.  !! prepare to delete point-i
 					NP_deleted = NP_deleted + 1
@@ -91,7 +91,7 @@ subroutine fem_remove_duplicate_points(mesh)
 		if (.not. pt_toDelete(i)) then
 			!! add point-i into the hash-table
 			hash_elemt(hash_val,1) = hash_elemt(hash_val,1)+1
-			if (hash_elemt(hash_val,1) .gt. (size(hash_elemt,2)-1)) then 
+			if (hash_elemt(hash_val,1) > (size(hash_elemt,2)-1)) then 
 				write(*,*) "Failed, hash-table full"
 				stop
 			else

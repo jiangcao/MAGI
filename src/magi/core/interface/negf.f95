@@ -6,7 +6,7 @@
 ! See the file `LICENSE' in the root directory of this distribution, or obtain 
 ! a copy of the License at <https://www.gnu.org/licenses/gpl-3.0.txt>.
 !
-! Author: jiacao <jiacao@ethz.ch>
+! Author: Jiang Cao <jiacao@ethz.ch>
 ! Comment:
 !  
 ! Maintenance:

@@ -9,8 +9,8 @@ program test_polarization
     real :: randnum
     integer, allocatable, dimension(:) :: jl,ki
     integer(8) :: devPtrA, devPtrB, devPtrC, devPtrGL,devPtrGG,devPtrGR,devPtrGA
-    integer :: n=56
-    integer :: m=140
+    integer :: n=250
+    integer :: m=500
     integer :: nen=6400
     integer :: nop=10
     ! integer :: size_of_real=8 !4->single precision; 8->double precision

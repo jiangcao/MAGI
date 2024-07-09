@@ -609,6 +609,10 @@ module bse_sparse
             call write_spectrum_nosub('bse_ldos',iter,G_retarded,nen,En,length,NB,Lx,(/1.0d0,-2.0d0/))
             call write_spectrum_nosub('bse_ndos',iter,G_lesser,nen,En,length,NB,Lx,(/1.0d0,1.0d0/))
             call write_spectrum_nosub('bse_pdos',iter,G_greater,nen,En,length,NB,Lx,(/1.0d0,-1.0d0/))                    
+            call write_transmission_spectrum('bse_trL',iter,current(:,1)*spindeg,nen,En)
+            call write_transmission_spectrum('bse_trR',iter,current(:,2)*spindeg,nen,En)
+            call write_transmission_spectrum('bse_TE_LR',iter,Te(:,1,2)*spindeg,nen,En)
+            call write_transmission_spectrum('bse_TE_RL',iter,Te(:,2,1)*spindeg,nen,En)    
         endif
         !
     end subroutine bse_sparse_solve_scba
