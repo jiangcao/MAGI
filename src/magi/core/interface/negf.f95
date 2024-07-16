@@ -35,6 +35,8 @@ include "../modules/polarization.f95"
 
 include "../modules/gw_dense.f95"
 
+include "../modules/eph_dense.f95"
+
 include "../modules/bse_dense.f95"
 
 ! include "../modules/gpu/gpu_polarization.f95"

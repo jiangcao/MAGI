@@ -17,7 +17,8 @@ module bse_sparse
     use sinv
     use observ
     use output
-    use gw_dense, only : calc_w,solve_gw => solve_gw_1D_memsaving,calc_gf,selfenergy_eph_mono
+    use gw_dense, only : calc_w,solve_gw => solve_gw_1D_memsaving,calc_gf
+    use eph_dense, only : selfenergy_eph_mono
     implicit none
     contains
 
