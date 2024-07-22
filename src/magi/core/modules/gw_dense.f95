@@ -743,7 +743,7 @@ module gw_dense
         integer,intent(in)::ik,iq,nk,sgn 
         integer::map_kq 
         integer::ikd
-        ikd = ik + sgn * iq + nk/2            
+        ikd = ik + sgn * (iq - nk/2)            
         if (ikd<1) ikd=ikd+nk
         if (ikd>nk) ikd=ikd-nk
         if (nk==1) ikd=1

@@ -43,4 +43,5 @@ include "../modules/bse_dense.f95"
 
 include "../modules/bse_sparse.f95"
 
+include "../modules/rgf.f95"
 

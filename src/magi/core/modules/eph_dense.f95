@@ -24,17 +24,25 @@ module eph_dense
 
     subroutine solve_eph_3d(niter,scba_tol,nm_dev,Lx,length,spindeg,temps,tempd,mus,mud,&
         alpha_mix,nen,nsub,En,nb,ns,nphiy,nphiz,Ham,H00lead,H10lead,T,&
-        ndiag,num_lead,flatband,output_files,G_retarded,G_lesser,G_greater,tr)
+        ndiag,num_lead,Dop,nop,midgap,&
+        flatband,output_files,G_retarded,G_lesser,G_greater,tr,nelec,pelec)
         ! 
         integer, intent(in) :: nen, nsub, nb, ns,niter,nm_dev,length, nphiz, nphiy, num_lead
         real(dp), intent(in) :: En(nen), temps,tempd, mus, mud, alpha_mix,Lx,spindeg,scba_tol
-        complex(dp),intent(in) :: Ham(nm_dev,nm_dev,nphiy*nphiz),H00lead(NB*NS,NB*NS,num_lead,nphiy*nphiz),H10lead(NB*NS,NB*NS,num_lead,nphiy*nphiz),T(NB*NS,nm_dev,num_lead,nphiy*nphiz)        
+        complex(dp),intent(in) :: Ham(nm_dev,nm_dev,nphiy*nphiz)
+        complex(dp),intent(in) :: H00lead(NB*NS,NB*NS,num_lead,nphiy*nphiz)
+        complex(dp),intent(in) :: H10lead(NB*NS,NB*NS,num_lead,nphiy*nphiz)
+        complex(dp),intent(in) :: T(NB*NS,nm_dev,num_lead,nphiy*nphiz)        
         integer,intent(in)::ndiag
         logical,intent(in)::flatband
         logical,intent(in) :: output_files
         complex(dp),intent(out),dimension(nm_dev,nm_dev,nen,nsub,nphiy*nphiz) ::  G_retarded,G_lesser,G_greater        
+        real(dp),intent(in) :: Dop  
+        real(dp),intent(in) :: midgap(nm_dev)  
+        integer,intent(in) :: Nop  
         real(dp),intent(out) ::Tr(nen,num_lead) ! current spectrum on leads    
-        !------        
+        real(dp),intent(out) ::nelec(nm_dev),pelec(nm_dev)
+        ! ------        
         complex(dp),dimension(:,:,:,:),allocatable ::  Sig_retarded,Sig_lesser,Sig_greater
         complex(dp),dimension(:,:,:,:),allocatable ::  Sig_retarded_new,Sig_lesser_new,Sig_greater_new
         complex(dp),allocatable::siglead(:,:,:,:,:) ! lead scattering sigma_retarded
@@ -44,21 +52,27 @@ module eph_dense
         real(dp),allocatable::Te(:,:,:) ! transmission matrix spectrum
         real(dp),allocatable::sumTr(:,:) ! current spectrum on leads summed over k
         real(dp),allocatable::sumTe(:,:,:) ! transmission matrix spectrum summed over k
-        integer :: iter,ie,nopmax
-        integer :: i,j,nm,nop,l,h,iop,ikz,iqz,ikzd,iky,iqy,ikyd,ik,iq,ikd,isub        
+        integer :: iter,ie
+        integer :: i,j,nm,l,h,iop,ikz,iqz,ikzd,iky,iqy,ikyd,ik,iq,ikd,isub        
         complex(dp) :: dE
         real(dp)::mu(2),temp(2)
         real(dp)::weights(nsub),xen(nsub)
         real(dp)::scba_error
         complex(dp),allocatable::Scat_spec(:,:,:,:) ! collision integral spectrum
         complex(dp),allocatable::Scat(:,:) ! collision integral
+        integer :: nqy,nqz,ik_start,ik_end
+        real(dp) :: n_bose
+        logical :: gamma_q
 
-        allocate(Sig_retarded(nm_dev,nm_dev,nen,nphiy*nphiz),Sig_lesser(nm_dev,nm_dev,nen,nphiy*nphiz),Sig_greater(nm_dev,nm_dev,nen,nphiy*nphiz))
+        allocate(Sig_retarded(nm_dev,nm_dev,nen,nphiy*nphiz), source=czero)
+        allocate(Sig_lesser(nm_dev,nm_dev,nen,nphiy*nphiz), source=czero)
+        allocate(Sig_greater(nm_dev,nm_dev,nen,nphiy*nphiz), source=czero)
+        
+        allocate(Sig_retarded_new(nm_dev,nm_dev,nen,nphiy*nphiz), source=czero)
+        allocate(Sig_lesser_new(nm_dev,nm_dev,nen,nphiy*nphiz), source=czero)
+        allocate(Sig_greater_new(nm_dev,nm_dev,nen,nphiy*nphiz), source=czero)                 
         
         scba_error=1.0d0
-        Sig_retarded = czero
-        sig_lesser = czero
-        sig_greater = czero
         !
         print *,'============ green_solve_eph_3D ============'
         dE = En(2) - En(1)
@@ -87,7 +101,7 @@ module eph_dense
             temp=(temps+tempd)/2.0d0
         else
             mu=(/ mus, mud /)
-            temp=(/temps,tempd/)
+            temp=(/ temps, tempd /)
         endif
         iter=0
         print '(a8,f15.4,a8,f15.4)', 'mus=',mu(1),'mud=',mu(2)
@@ -117,6 +131,8 @@ module eph_dense
                     sumTe=sumTe + Te * weights(isub)
                 enddo
             enddo
+            call calc_charge(G_lesser,G_greater,nen,nsub,nphiy*nphiz,En,NS,NB,nm_dev,nelec,pelec,midgap)
+            print *, '  total charge=', sum(nelec) - sum(pelec)
             sumcur=sumcur/dble(nphiy)/dble(nphiz)
             sumtot_cur=sumtot_cur/dble(nphiy)/dble(nphiz)
             sumtot_ecur=sumtot_ecur/dble(nphiy)/dble(nphiz)
@@ -150,16 +166,17 @@ module eph_dense
             !
             G_retarded=dcmplx(0.0d0*dble(G_retarded),aimag(G_retarded))
             G_lesser=dcmplx(0.0d0*dble(G_lesser),aimag(G_lesser))
-            G_greater=dcmplx(0.0d0*dble(G_greater),aimag(G_greater))
-            !                    
-            allocate(Sig_retarded_new(nm_dev,nm_dev,nen,nphiy*nphiz),source=czero)
-            allocate(Sig_lesser_new(nm_dev,nm_dev,nen,nphiy*nphiz),source=czero)
-            allocate(Sig_greater_new(nm_dev,nm_dev,nen,nphiy*nphiz),source=czero)
+            G_greater=dcmplx(0.0d0*dble(G_greater),aimag(G_greater))            
             !                      
-            call selfenergy_eph_mono(nm_dev,nen,en,nop,nphiy,nphiz,nqy,nqz,ik_start,ik_end,iq,M,&
-                                G_lesser,G_greater,&
-                                Sig_lesser,Sig_greater,n_bose,gamma_q)
+            gamma_q=.false.
+            n_bose=1.0_dp/(EXP((dble(Nop)*dE)/(BOLTZ*(sum(TEMP)/2.0_dp)))-1.0_dp)
+            call selfenergy_eph_simple(nm=nm_dev,nen=nen,en=en,nop=Nop,nky=nphiy,nkz=nphiz,Dop=Dop,&
+                                G_lesser=G_lesser,G_greater=G_greater,&
+                                Sig_lesser=sig_lesser_new,Sig_greater=sig_greater_new,&
+                                n_bose=n_bose,gamma_q=gamma_q)
             !
+            Sig_retarded_new = dcmplx( 0.0_dp, aimag(Sig_greater_new-Sig_lesser_new)/2.0d0 )
+            ! 
             if (output_files) then
                 print *,'  calc collision integral'
                 allocate(Scat_spec(nm_dev,nm_dev,nen,nsub),source=czero)
@@ -197,9 +214,7 @@ module eph_dense
             ! mixing with previous ones
             Sig_retarded = Sig_retarded+ alpha_mix * (Sig_retarded_new -Sig_retarded)
             Sig_lesser = Sig_lesser+ alpha_mix * (Sig_lesser_new -Sig_lesser)
-            Sig_greater = Sig_greater+ alpha_mix * (Sig_greater_new -Sig_greater)  
-            !
-            deallocate(Sig_retarded_new,Sig_lesser_new,Sig_greater_new)
+            Sig_greater = Sig_greater+ alpha_mix * (Sig_greater_new -Sig_greater)              
             !
             if (.not. flatband) then
                 ! get leads sigma
@@ -215,9 +230,10 @@ module eph_dense
             !  call write_spectrum_summed_over_kz('SigL',iter,Sig_lesser,nen,En,nphiy*nphiz,length,NB,Lx,(/1.0,1.0/))
             !  call write_spectrum_summed_over_kz('SigG',iter,Sig_greater,nen,En,nphiy*nphiz,length,NB,Lx,(/1.0,1.0/))
         end do  
+        !
+        deallocate(Sig_retarded_new,Sig_lesser_new,Sig_greater_new)
         if (iter == niter) then 
-            print *, "warning: max number of iterations reached!"
-        
+            print *, "warning: max number of iterations reached!"        
         endif
         ! calculate GF for the last time    
         print *, 'calc G for the last time'  
@@ -280,21 +296,100 @@ module eph_dense
         deallocate(Sig_greater,Sig_lesser,Sig_retarded)
     end subroutine solve_eph_3d
 
-
+    ! calculate simple (deformation potential approximation) e-phonon self-energies 
+    subroutine selfenergy_eph_simple(nm,nen,En,nop,Dop,nky,nkz,G_lesser,G_greater,&
+        Sig_lesser,Sig_greater,n_bose,gamma_q)
+        integer,intent(in)::nm,nen,nky,nkz
+        integer,intent(in)::nop ! phonon freq. in unit of energy discretization step
+        real(dp),intent(in)::en(nen),n_bose 
+        logical,intent(in)::gamma_q ! whether q=0
+        real(dp),intent(in)::Dop ! deformation potential at q for ith-mode
+        complex(dp),intent(in),dimension(nm,nm,nen,nky*nkz)::G_lesser,G_greater ! Green's functions
+        complex(dp),intent(inout),dimension(nm,nm,nen,nky*nkz)::Sig_lesser,Sig_greater ! accumulate the e-ph self-energies 
+        !---------
+        integer::ie,ikd,ik,iq,nq,nk,i
+        real(8)::dE 
+        Sig_lesser = czero
+        Sig_greater = czero
+        dE = (en(2)-en(1)) / twopi             
+        nk=nky*nkz
+        if (gamma_q) then 			
+            nq=1
+		else
+			nq=nky*nkz
+		endif
+        ! Sig^<>(E,k) = Dop^2 [ N G^<>(E -+ hw,k-+q) + (N+1) G^<>(E +- hw,k+-q)]        
+        !$omp parallel default(shared) private(ie,ik,ikd,i)         
+        !$omp do
+        do ie=1,nen
+			do ik=1,nk
+                do iq=1,nq
+                    ! Sig^<(E,k) 
+                    if (gamma_q) then 
+                        ikd = ik					
+                    else
+                        ikd = map_kq_2d(-1,ik,iq,nky,nkz)					
+                    endif
+                    if (ie-nop>=1) then 
+                        do i=1,nm
+                            Sig_lesser(i,i,ie,ik) = Sig_lesser(i,i,ie,ik) + G_lesser(i,i,ie-nop,ikd) * n_bose * Dop**2 * dE 
+                        enddo
+                    endif
+                    if (gamma_q) then 
+                        ikd = ik
+                    else
+                        ikd = map_kq_2d(+1,ik,iq,nky,nkz)
+                    endif
+                    if (ie+nop<=nen) then 
+                        do i=1,nm
+                            Sig_lesser(i,i,ie,ik) = Sig_lesser(i,i,ie,ik) + G_lesser(i,i,ie+nop,ikd) * (n_bose+1.0_dp) * Dop**2 * dE            
+                        enddo
+                    endif
+                    !
+                    ! Sig^>(E,k)
+                    if (gamma_q) then 
+                        ikd = ik
+                    else
+                        ikd = map_kq_2d(-1,ik,iq,nky,nkz)
+                    endif
+                    if (ie-nop>=1) then 
+                        do i=1,nm
+                            Sig_greater(i,i,ie,ik) = Sig_greater(i,i,ie,ik) + G_greater(i,i,ie-nop,ikd) * (n_bose+1.0_dp) * Dop**2 * dE   
+                        enddo
+                    endif
+                    if (gamma_q) then 
+                        ikd = ik 
+                    else                
+                        ikd = map_kq_2d(+1,ik,iq,nky,nkz)
+                    endif
+                    if (ie+nop<=nen) then 
+                        do i=1,nm
+                            Sig_greater(i,i,ie,ik) = Sig_greater(i,i,ie,ik) + G_greater(i,i,ie+nop,ikd) * n_bose * Dop**2 * dE   
+                        enddo
+                    endif
+                enddo
+			enddo  
+        enddo
+        !$omp end do   
+        !$omp end parallel
+    end subroutine selfenergy_eph_simple
 
     ! calculate e-photon/phonon self-energies for single mode in thermal equilibrium 
     subroutine selfenergy_eph_mono(nm,nen,En,nop,nky,nkz,nqy,nqz,ik_start,ik_end,iq_in,M,G_lesser,G_greater,&
         Sig_lesser,Sig_greater,n_bose,gamma_q)
-        integer,intent(in)::nm,nen,nop,nky,nkz,nqy,nqz,iq_in,ik_start,ik_end
-        real(8),intent(in)::en(nen),n_bose
-        logical,intent(in)::gamma_q
-        complex(8),intent(in),dimension(nm,nm,nky*nkz,nqy*nqz)::M ! interaction matrix at k q
-        complex(8),intent(in),dimension(nm,nm,nen,nky*nkz)::G_lesser,G_greater
-        complex(8),intent(out),dimension(nm,nm,nen,nky*nkz)::Sig_lesser,Sig_greater
+        integer,intent(in)::nm,nen,nky,nkz,nqy,nqz,iq_in,ik_start,ik_end
+        integer,intent(in)::nop ! phonon freq. in unit of energy discretization step
+        real(8),intent(in)::en(nen),n_bose 
+        logical,intent(in)::gamma_q ! whether q=0
+        complex(8),intent(in),dimension(nm,nm,nky*nkz,nqy*nqz)::M ! list of the interaction matrix at all k q pairs
+        complex(8),intent(in),dimension(nm,nm,nen,nky*nkz)::G_lesser,G_greater ! Green's functions
+        complex(8),intent(inout),dimension(nm,nm,nen,nky*nkz)::Sig_lesser,Sig_greater ! accumulate the e-ph self-energies 
         !---------
         integer::ie,ikd,ik ,iq,iqd
         complex(8),allocatable::B(:,:),A(:,:) ! tmp matrix  
         real(8)::dE 
+        Sig_lesser = czero
+        Sig_greater = czero
         dE = (en(2)-en(1)) / twopi             
         if (gamma_q) then 
 			iq=1
@@ -326,7 +421,7 @@ module eph_dense
 				if (ie+nop<=nen) A =A+ G_lesser(:,:,ie+nop,ikd) * (n_bose+1.0_dp)
 				call zgemm('n','n',nm,nm,nm,cone,M(:,:,ik,iq),nm,A,nm,czero,B,nm) 
 				call zgemm('n','n',nm,nm,nm,cone,B,nm,M(:,:,ikd,iqd),nm,czero,A,nm)     
-				Sig_lesser(:,:,ie,ik) = Sig_lesser(:,:,ie,ik) + A             
+				Sig_lesser(:,:,ie,ik) = Sig_lesser(:,:,ie,ik) + A * dE            
 				!
 				! Sig^>(E,k)
 				A = czero
@@ -344,14 +439,12 @@ module eph_dense
 				if (ie+nop<=nen) A =A+ G_greater(:,:,ie+nop,ikd) * n_bose
 				call zgemm('n','n',nm,nm,nm,cone,M(:,:,ik,iq),nm,A,nm,czero,B,nm) 
 				call zgemm('n','n',nm,nm,nm,cone,B,nm,M(:,:,ikd,iqd),nm,czero,A,nm)     
-				Sig_greater(:,:,ie,ik) = Sig_greater(:,:,ie,ik) + A                
+				Sig_greater(:,:,ie,ik) = Sig_greater(:,:,ie,ik) + A * dE               
 			enddo  
         enddo
         !$omp end do        
         deallocate(A,B)
         !$omp end parallel
-        sig_greater = sig_greater * dE 
-        sig_lesser  = sig_lesser  * dE
     end subroutine selfenergy_eph_mono
 
 end module eph_dense
