@@ -43,7 +43,7 @@ module rgf
         complex(dp), intent(out) :: G_greater(mm,mm,nx,nen), G_lesser(mm,mm,nx,nen), G_r(mm,mm,nx,nen), Jdens(mm,mm,nx,nen)            
         real(dp), intent(out)      :: tr(nen), tre(nen)    
         integer :: ie 
-        print *, 'calc G'
+        ! print *, 'calc G'
         !$omp parallel default(shared) private(ie)
         !$omp do
         do ie = 1,nen 
