@@ -132,7 +132,9 @@ module eph_dense
                 enddo
             enddo
             call calc_charge(G_lesser,G_greater,nen,nsub,nphiy*nphiz,En,NS,NB,nm_dev,nelec,pelec,midgap)
-            print *, '  total charge=', sum(nelec) - sum(pelec)
+            nelec = nelec * dble(spindeg)
+            pelec = pelec * dble(spindeg)
+            write(*,'( "  total charges in device =", E16.6,"(n)", E16.6,"(p)" )') sum(nelec),sum(pelec)
             sumcur=sumcur/dble(nphiy)/dble(nphiz)
             sumtot_cur=sumtot_cur/dble(nphiy)/dble(nphiz)
             sumtot_ecur=sumtot_ecur/dble(nphiy)/dble(nphiz)
@@ -264,6 +266,7 @@ module eph_dense
         sumtot_ecur=sumtot_ecur/dble(nphiy)/dble(nphiz)
         sumTr=sumTr/dble(nphiz)/dble(nphiy)
         sumTe=sumTe/dble(nphiz)/dble(nphiy)
+        sumTr=sumTr *e_charge/twopi/hbar*e_charge*dble(spindeg)
         if (flatband) then
             print *,'flatband'
             ! call write_spectrum_per_kz('eph_ldos',iter,G_retarded(:,:,:,1,:),nen,En,nphiy,nphiz,length,NB,Lx,(/1.0d0,-2.0d0/),at_ky=kt_cbm/(twopi/Ly),at_kz=ktz_cbm/(twopi/Lz))
@@ -278,11 +281,10 @@ module eph_dense
         call write_current_spectrum('eph_Jdens',iter,sumcur,nen,en,length,NB,Lx)
         call write_current('eph_I',iter,sumtot_cur,length,NB,NS,Lx)
         call write_current('eph_EI',iter,sumtot_ecur,length,NB,NS,Lx)
-        call write_transmission_spectrum('eph_trL',iter,sumTr(:,1)*spindeg,nen,En)
-        call write_transmission_spectrum('eph_trR',iter,sumTr(:,2)*spindeg,nen,En)
+        call write_transmission_spectrum('eph_trL',iter,sumTr(:,1),nen,En)
+        call write_transmission_spectrum('eph_trR',iter,sumTr(:,2),nen,En)
         ! call write_transmission_spectrum('eph_TE_LR',iter,sumTe(:,1,2)*spindeg,nen,En)
-        ! call write_transmission_spectrum('eph_TE_RL',iter,sumTe(:,2,1)*spindeg,nen,En)
-        sumTr = sumTr *e_charge/twopi/hbar*e_charge*dble(spindeg)
+        ! call write_transmission_spectrum('eph_TE_RL',iter,sumTe(:,2,1)*spindeg,nen,En)        
         open(unit=101,file='eph_Id_iteration.dat',status='unknown',position='append')
         write(101,'(I4,2E16.6)') iter, -sum(sumTr(:,1)), sum(sumTr(:,2))
         close(101)

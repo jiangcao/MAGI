@@ -27,7 +27,7 @@ module observ
         integer::ie,j,isub,ik
         dE=E(2)-E(1)
         call gaulegf(0.0d0, dble(dE), xen, weights, nsub) ! obtain the Legendre ordinates and weights    
-        weights=weights/dble(nk)
+        weights=weights/dble(nk)/twopi
         nelec=0.0d0
         pelec=0.0d0        
         do ik=1,nk
