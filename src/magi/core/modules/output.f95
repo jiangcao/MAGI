@@ -325,6 +325,36 @@ module output
         close(11)
     end subroutine write_rgf_spectrum_summed_over_kz
 
+    ! write spectrum into file (pm3d map)
+    subroutine write_rgf_spectrum(dataset,i,G,nen,en,length,nm,nb,Lx,coeff)
+        character(len=*), intent(in) :: dataset
+        complex(8), intent(in) :: G(:,:,:,:)
+        integer, intent(in)::i,nen,length,nm(:),nb
+        real(8), intent(in)::Lx,en(nen),coeff(2)
+        integer:: ie,j,ib,icell,ix
+        complex(8)::tr
+        character(len=4) :: i_str
+        character(len=8) :: fmt
+        fmt = '(I4.4)'
+        write (i_str, fmt) i 
+        open(unit=11,file=trim(dataset)//i_str//'.dat',status='unknown')        
+        do ie = 1,nen
+            ix=0
+            do j = 1,length
+                do icell=1,(nm(j)/nb)
+                    tr=0.0d0          
+                    do ib=1,nb                        
+                        tr = tr + G(ib+(icell-1)*nb,ib+(icell-1)*nb,j,ie)                                    
+                    enddo
+                    write(11,'(4E20.6)') dble(ix)*Lx, en(ie), dble(tr)*coeff(1), aimag(tr)*coeff(2)        
+                    ix=ix+1
+                enddo
+            enddo
+            write(11,*)               
+        enddo
+        close(11)
+    end subroutine write_rgf_spectrum
+
 end module output
 
 

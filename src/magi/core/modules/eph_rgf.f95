@@ -23,9 +23,10 @@ module eph_rgf
 
     contains
 
-
-    subroutine solve_eph_rgf_3d(nx,mm,nm, nen, energies, nphiy, nphiz, niter, scba_tol, spindeg, Dop, Nop, alpha_mix, mus, mud, temps, tempd, &
-        Hii, H1i, Sii, G_r, G_lesser, G_greater, Jdens, tr, tre, output_files,nb,Lx)
+    ! solve SCBA with electron-phonon interaction under simple deformation potential approximation
+    subroutine solve_eph_rgf_3d(nx,mm,nm, nen, energies, nphiy, nphiz, niter, scba_tol, &
+        spindeg, Dop, Nop, alpha_mix, mus, mud, temps, tempd, &
+        Hii, H1i, Sii, G_r, G_lesser, G_greater, Jdens, tr, tre, output_files,nb,Lx,midgap,nelec,pelec)
         integer, intent(in) :: mm !! max size of blocks
         integer, intent(in) :: nx !! lenght of the device    
         integer, intent(in) :: nen !! number of energies  
@@ -42,15 +43,17 @@ module eph_rgf
         real(dp),intent(in) :: Dop  !! optical deformation potential
         integer,intent(in) :: Nop  !! optical phonon freq. in unit of energy step
         logical, intent(in) :: output_files
-        complex(dp), intent(out), dimension(mm,mm,nx,nen,nphiy*nphiz) :: G_greater, G_lesser, G_r, Jdens
+        real(dp),intent(in) :: midgap(nx)  
+        complex(dp), intent(out), dimension(mm,mm,nx,nen) :: G_greater, G_lesser, G_r, Jdens
         real(dp), intent(out) :: tr(nen,nphiy*nphiz), tre(nen,nphiy*nphiz)   
+        real(dp),intent(out) ::nelec(nx*mm),pelec(nx*mm)
         ! ----
         complex(dp),allocatable,dimension(:,:,:,:) :: sigma_lesser_ph, sigma_r_ph
+        complex(dp), dimension(mm,mm,nx,nen) :: G_greater_k, G_lesser_k, G_r_k, Jdens_k
         complex(dp),allocatable,dimension(:,:,:,:) :: sigma_lesser_ph_new, sigma_r_ph_new, sigma_greater_ph_new
         real(dp), dimension(mm,mm) :: mul, mur, TEMPr, TEMPl
         character(len=50) :: dataset_name
-        real(dp) :: scba_error, n_bose, dE
-        logical :: gamma_q
+        real(dp) :: scba_error, n_bose, dE, dkt
         integer::iter
         integer::ik
         !
@@ -67,6 +70,7 @@ module eph_rgf
         scba_error=1.0_dp
         iter=0
         dE = energies(2) - energies(1)
+        dkt= 1.0_dp/dble(nphiy)/dble(nphiz)
         !
         print '(a8,f15.4,a8,f15.4)', 'mus=',mus,'mud=',mud
         !
@@ -74,135 +78,124 @@ module eph_rgf
             !
             print *,'+ iter=',iter,'error=',scba_error
             print *,'  calc G'  
+            G_r=czero
+            G_greater=czero
+            G_lesser=czero
             do ik=1,nphiy*nphiz
                 call rgf_energies(nx,mm,nm, nen, energies, mul, mur, TEMPl, TEMPr, &
                     Hii(:,:,:,ik), H1i(:,:,:,ik), Sii(:,:,:,ik), &
                     sigma_lesser_ph(:,:,:,:), sigma_r_ph(:,:,:,:), &
-                    G_r(:,:,:,:,ik), G_lesser(:,:,:,:,ik), G_greater(:,:,:,:,ik), &
-                    Jdens(:,:,:,:,ik), tr(:,ik), tre(:,ik), verbose=.false.)
+                    G_r_k(:,:,:,:), G_lesser_k(:,:,:,:), G_greater_k(:,:,:,:), &
+                    Jdens_k(:,:,:,:), tr(:,ik), tre(:,ik), verbose=.false.)
+                G_r = G_r + G_r_k * dkt
+                G_lesser = G_lesser + G_lesser_k * dkt
+                G_greater= G_greater + G_greater_k * dkt
+                Jdens = Jdens + Jdens_k * dkt    
             enddo
-            tr = tr *e_charge/twopi/hbar*e_charge*dble(spindeg)/dble(nphiz)/dble(nphiy)    
-            tre = tre *e_charge/twopi/hbar*e_charge*dble(spindeg)/dble(nphiz)/dble(nphiy)    
+            tr = tr *dE/twopi*e_charge/twopi/hbar*e_charge*dble(spindeg) * dkt  
+            tre = tre *dE/twopi*e_charge/twopi/hbar*e_charge*dble(spindeg) * dkt
             !
             write(*,'(I4,"  IDS=",2E16.6)') iter, -sum(tr(:,:)), sum(tre(:,:))
-            !
-            gamma_q=.false.
+            ! Bose-Einstein
             n_bose=1.0_dp/(EXP((dble(Nop)*dE)/(BOLTZ*((temps+tempd)/2.0_dp)))-1.0_dp)
-            !
-            call selfenergy_eph_rgf_simple(nm=mm,nx=nx,nen=nen,en=energies,nop=Nop,nky=nphiy,nkz=nphiz,Dop=Dop,&
+            ! compute the e-phonon self-energies
+            call selfenergy_eph_rgf_simple(nm=mm,nx=nx,nen=nen,en=energies,nop=Nop,Dop=Dop,&
                                 G_lesser=G_lesser,G_greater=G_greater,&
                                 Sig_lesser=sigma_lesser_ph_new,Sig_greater=sigma_greater_ph_new,&
-                                n_bose=n_bose,gamma_q=gamma_q)
-            !
+                                n_bose=n_bose)
+            ! scba error
             sigma_r_ph_new = dcmplx( 0.0_dp, aimag(sigma_greater_ph_new - sigma_lesser_ph_new)/2.0d0 )
             scba_error = sum( abs(sigma_r_ph_new - sigma_r_ph)**2 ) / sum( abs(sigma_r_ph_new)**2 )
             open(unit=101,file='eph_scba_error.dat',status='unknown',position='append')
             write(101,'(I4,E16.6)') iter, scba_error
             close(101)
             iter=iter+1
-            ! mixing with previous ones
+            ! mixing self-energies with the previous ones
             sigma_r_ph = sigma_r_ph+ alpha_mix * (sigma_r_ph_new -sigma_r_ph)
             sigma_lesser_ph = sigma_lesser_ph+ alpha_mix * (sigma_lesser_ph_new -sigma_lesser_ph)      
         enddo
         !
         print *,'  calc G last time'  
+        G_r=czero
+        G_greater=czero
+        G_lesser=czero
         do ik=1,nphiy*nphiz
             call rgf_energies(nx,mm,nm, nen, energies, mul, mur, TEMPl, TEMPr, &
                 Hii(:,:,:,ik), H1i(:,:,:,ik), Sii(:,:,:,ik), &
                 sigma_lesser_ph(:,:,:,:), sigma_r_ph(:,:,:,:), &
-                G_r(:,:,:,:,ik), G_lesser(:,:,:,:,ik), G_greater(:,:,:,:,ik), &
-                Jdens(:,:,:,:,ik), tr(:,ik), tre(:,ik), verbose=.false.)
+                G_r_k(:,:,:,:), G_lesser_k(:,:,:,:), G_greater_k(:,:,:,:), &
+                Jdens_k(:,:,:,:), tr(:,ik), tre(:,ik), verbose=.false.)
+            G_r = G_r + G_r_k * dkt
+            G_lesser = G_lesser + G_lesser_k * dkt
+            G_greater = G_greater + G_greater_k * dkt
+            Jdens = Jdens + Jdens_k * dkt    
         enddo
-        tr = tr *e_charge/twopi/hbar*e_charge*dble(spindeg)/dble(nphiz)/dble(nphiy)    
-        tre = tre *e_charge/twopi/hbar*e_charge*dble(spindeg)/dble(nphiz)/dble(nphiy)    
-        !
+        ! current spectra from the leads
+        tr = tr *dE/twopi*e_charge/twopi/hbar*e_charge*dble(spindeg) * dkt    
+        tre = tre *dE/twopi*e_charge/twopi/hbar*e_charge*dble(spindeg) * dkt    
+        ! output files
         if (output_files) then 
             dataset_name = 'eph_ldos'
-            call write_rgf_spectrum_summed_over_kz(dataset_name,iter,G_r(:,:,:,:,:),nen,energies,nphiy*nphiz,nx,nm,nb,Lx,[1.0d0,-2.0d0])
+            call write_rgf_spectrum(dataset_name,iter,G_r,nen,energies,nx,nm,nb,Lx,[1.0d0,-2.0d0])
         endif
+        ! compute the charges
+        call calc_charge_rgf(G_lesser,G_greater,nen,energies,nm,mm,nx,nelec,pelec,midgap)
+        nelec = nelec * dble(spindeg)
+        pelec = pelec * dble(spindeg)
+        write(*,'( "  total charges in device =", E16.6,"(n)", E16.6,"(p)" )') sum(nelec),sum(pelec)
+        !
     end subroutine solve_eph_rgf_3d
 
     ! calculate simple (deformation potential approximation) e-phonon self-energies 
-    subroutine selfenergy_eph_rgf_simple(nm,nx,nen,En,nop,Dop,nky,nkz,G_lesser,G_greater,&
-        Sig_lesser,Sig_greater,n_bose,gamma_q)
-        integer,intent(in)::nm,nen,nky,nkz,nx
+    subroutine selfenergy_eph_rgf_simple(nm,nx,nen,En,nop,Dop,G_lesser,G_greater,&
+        Sig_lesser,Sig_greater,n_bose)
+        integer,intent(in)::nm,nen,nx
         integer,intent(in)::nop !! phonon freq. in unit of energy discretization step
         real(dp),intent(in)::en(nen),n_bose 
-        logical,intent(in)::gamma_q !! whether q=0
         real(dp),intent(in)::Dop !! deformation potential 
-        complex(dp),intent(in),dimension(nm,nm,nx,nen,nky*nkz)::G_lesser,G_greater !! Green's functions
+        complex(dp),intent(in),dimension(nm,nm,nx,nen)::G_lesser,G_greater !! Green's functions
         complex(dp),intent(inout),dimension(nm,nm,nx,nen)::Sig_lesser,Sig_greater !! accumulate the e-ph self-energies 
         !---------
-        integer::ie,ikd,ik,iq,nq,nk,i,ix
+        integer::ie,i,ix
         real(8)::dE 
         Sig_lesser = czero
         Sig_greater = czero
-        dE = (en(2)-en(1)) / twopi             
-        nk=nky*nkz
-        if (gamma_q) then 			
-            nq=1
-		else
-			nq=nky*nkz
-		endif
+        dE = (en(2)-en(1)) / twopi                     
         ! Sig^<>(E,k) = Dop^2 [ N G^<>(E -+ hw,k-+q) + (N+1) G^<>(E +- hw,k+-q)]        
-        !$omp parallel default(shared) private(ie,ik,ikd,i)         
+        !$omp parallel default(shared) private(ie,ix,i)         
         !$omp do
         do ie=1,nen
-			ik=1
-            do iq=1,nq
-                ! Sig^<(E,k) 
-                if (gamma_q) then 
-                    ikd = ik					
-                else
-                    ikd = map_kq_2d(-1,ik,iq,nky,nkz)					
-                endif
-                if (ie-nop>=1) then 
-                    do ix=1,nx
-                        do i=1,nm
-                            Sig_lesser(i,i,ix,ie) = Sig_lesser(i,i,ix,ie) + G_lesser(i,i,ix,ie-nop,ikd) * n_bose * Dop**2 * dE 
-                        enddo
+            ! Sig^<(E,k)
+            if (ie-nop>=1) then 
+                do ix=1,nx
+                    do i=1,nm
+                        Sig_lesser(i,i,ix,ie) = Sig_lesser(i,i,ix,ie) + G_lesser(i,i,ix,ie-nop) * n_bose * Dop**2 * dE 
                     enddo
-                endif
-                if (gamma_q) then 
-                    ikd = ik
-                else
-                    ikd = map_kq_2d(+1,ik,iq,nky,nkz)
-                endif
-                if (ie+nop<=nen) then 
-                    do ix=1,nx
-                        do i=1,nm
-                            Sig_lesser(i,i,ix,ie) = Sig_lesser(i,i,ix,ie) + G_lesser(i,i,ix,ie+nop,ikd) * (n_bose+1.0_dp) * Dop**2 * dE            
-                        enddo
+                enddo
+            endif                
+            if (ie+nop<=nen) then 
+                do ix=1,nx
+                    do i=1,nm
+                        Sig_lesser(i,i,ix,ie) = Sig_lesser(i,i,ix,ie) + G_lesser(i,i,ix,ie+nop) * (n_bose+1.0_dp) * Dop**2 * dE            
                     enddo
-                endif
-                !
-                ! Sig^>(E,k)
-                if (gamma_q) then 
-                    ikd = ik
-                else
-                    ikd = map_kq_2d(-1,ik,iq,nky,nkz)
-                endif
-                if (ie-nop>=1) then 
-                    do ix=1,nx
-                        do i=1,nm
-                            Sig_greater(i,i,ix,ie) = Sig_greater(i,i,ix,ie) + G_greater(i,i,ix,ie-nop,ikd) * (n_bose+1.0_dp) * Dop**2 * dE   
-                        enddo
+                enddo
+            endif
+            !
+            ! Sig^>(E,k)            
+            if (ie-nop>=1) then 
+                do ix=1,nx
+                    do i=1,nm
+                        Sig_greater(i,i,ix,ie) = Sig_greater(i,i,ix,ie) + G_greater(i,i,ix,ie-nop) * (n_bose+1.0_dp) * Dop**2 * dE   
                     enddo
-                endif
-                if (gamma_q) then 
-                    ikd = ik 
-                else                
-                    ikd = map_kq_2d(+1,ik,iq,nky,nkz)
-                endif
-                if (ie+nop<=nen) then 
-                    do ix=1,nx
-                        do i=1,nm
-                            Sig_greater(i,i,ix,ie) = Sig_greater(i,i,ix,ie) + G_greater(i,i,ix,ie+nop,ikd) * n_bose * Dop**2 * dE   
-                        enddo
+                enddo
+            endif
+            if (ie+nop<=nen) then 
+                do ix=1,nx
+                    do i=1,nm
+                        Sig_greater(i,i,ix,ie) = Sig_greater(i,i,ix,ie) + G_greater(i,i,ix,ie+nop) * n_bose * Dop**2 * dE   
                     enddo
-                endif
-            enddo
-			  
+                enddo
+            endif			  
         enddo
         !$omp end do   
         !$omp end parallel

@@ -124,6 +124,38 @@ module observ
         deallocate(B)
     end subroutine calc_bond_current
 
+    ! calculate number of electrons and holes from G< and G> 
+    subroutine calc_charge_rgf(G_lesser,G_greater,nen,E,nm,mm,nx,nelec,pelec,midgap)
+        complex(dp), intent(in) :: G_lesser(mm,mm,nx,nen)
+        complex(dp), intent(in) :: G_greater(mm,mm,nx,nen)
+        real(dp), intent(in)    :: E(nen),midgap(nx)
+        integer, intent(in)    :: nm(:),mm,nx,nen
+        real(dp), intent(out)   :: nelec(mm*nx),pelec(mm*nx)
+        real(dp)::dE,weights
+        integer::ie,j,i,ik,ix
+        dE=E(2)-E(1)        
+        weights=dE/twopi
+        nelec=0.0d0
+        pelec=0.0d0                
+        j=0
+        do ix=1,nx                
+            do i=1,nm(ix)
+                j=j+1
+                !$omp parallel default(shared) private(ie) reduction(+:nelec) reduction(-:pelec)
+                !$omp do 
+                do ie=1,nen
+                    if (E(ie)>midgap(ix))then
+                        nelec(j)=nelec(j)+aimag(G_lesser(i,i,ix,ie))*weights
+                    else
+                        pelec(j)=pelec(j)-aimag(G_greater(i,i,ix,ie))*weights
+                    endif
+                enddo
+                !$omp end do
+                !$omp end parallel
+            enddo
+        enddo                    
+    end subroutine calc_charge_rgf
+
 end module observ
 
 

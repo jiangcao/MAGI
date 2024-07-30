@@ -261,6 +261,10 @@ module eph_dense
                 sumTe=sumTe + Te * weights(isub)
             enddo
         enddo
+        call calc_charge(G_lesser,G_greater,nen,nsub,nphiy*nphiz,En,NS,NB,nm_dev,nelec,pelec,midgap)
+        nelec = nelec * dble(spindeg)
+        pelec = pelec * dble(spindeg)
+        write(*,'( "  total charges in device =", E16.6,"(n)", E16.6,"(p)" )') sum(nelec),sum(pelec)
         sumcur=sumcur/dble(nphiy)/dble(nphiz)
         sumtot_cur=sumtot_cur/dble(nphiy)/dble(nphiz)
         sumtot_ecur=sumtot_ecur/dble(nphiy)/dble(nphiz)
