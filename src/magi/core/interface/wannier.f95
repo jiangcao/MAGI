@@ -6,7 +6,7 @@
 ! See the file `LICENSE' in the root directory of this distribution, or obtain 
 ! a copy of the License at <https://www.gnu.org/licenses/gpl-3.0.txt>.
 !
-! Author: jiacao <jiacao@ethz.ch>
+! Author: Jiang Cao <jiacao@ethz.ch>
 ! Comment:
 !  
 ! Maintenance:
@@ -130,7 +130,7 @@ CONTAINS
         yhat = - cross(xhat,gamm)
         yhat = yhat/norm(yhat)
         zhat = gamm/norm(gamm)
-        length(2)=abs(dot_product(beta,yhat)); ! L is in unit of A
+        length(2)=abs(dot_product(beta,yhat)); ! L is in unit of Angstrom
         length(1)=abs(dot_product(alpha,xhat));
         length(3)=norm(gamm)
     END SUBROUTINE load_from_file
@@ -140,12 +140,12 @@ CONTAINS
     SUBROUTINE block_mat_def(Hii,H1i,kx, ky,kz,nb,ns,n_range,hr,cell)
         ! ky in [2pi/Ang]
         implicit none
-        integer, intent(in) :: ns,nb
+        integer, intent(in) :: ns,nb ! number of unitcell in transport cell, number of bands/orbitals per unitcell
         integer, intent(in) :: n_range(9) ! [nb,xmin,xmax,ymin,ymax,zmin,zmax,nvb,nspin]
-        COMPLEX(8), INTENT(OUT), DIMENSION(nb*ns,nb*ns) :: Hii, H1i
-        COMPLEX(8), INTENT(in):: hr(:,:,:,:,:)
-        real(8), intent(in) :: cell(3,3)
-        real(8), intent(in) :: ky,kx,kz
+        COMPLEX(8), INTENT(OUT), DIMENSION(nb*ns,nb*ns) :: Hii, H1i ! diagonal and 1st off-diagonal Ham blocks
+        COMPLEX(8), INTENT(in):: hr(:,:,:,:,:) ! real-space Ham data from Wannier90 _hr file
+        real(8), intent(in) :: cell(3,3) ! unitcell lattice
+        real(8), intent(in) :: ky,kx,kz ! wavevector in the cartesian directions, x is transport direction
         integer :: i,j,k,l
         real(8), dimension(3) :: kv, r,xhat, yhat, zhat
         Hii(:,:) = czero

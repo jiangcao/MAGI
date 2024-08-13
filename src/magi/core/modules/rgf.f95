@@ -43,7 +43,7 @@ module rgf
         complex(dp), intent(out) :: G_greater(mm,mm,nx,nen), G_lesser(mm,mm,nx,nen), G_r(mm,mm,nx,nen), Jdens(mm,mm,nx,nen)            
         real(dp), intent(out)      :: tr(nen), tre(nen)    
         integer :: ie 
-        print *, 'calc G'
+        ! print *, 'calc G'
         !$omp parallel default(shared) private(ie)
         !$omp do
         do ie = 1,nen 
@@ -119,7 +119,7 @@ module rgf
         !
         !! $$Gln(i) = Gl(i) * [\Sigma_{ph}^<(i)*S(i,i) + (-(\Sigma^R - \Sigma_R^\dagger)*ferm(..))] * Gl(i)^\dagger$$
         call MUL_c(sigma_lesser_ph(1:M,1:M,ii), Sii(1:M,1:M,ii), 'n', 'n', B)
-        sig = -(sigmal - transpose(conjg(sigmal)))*ferm((En - mur)/(BOLTZ*TEMPr))
+        sig = -(sigmal - transpose(conjg(sigmal)))*ferm((En - mul)/(BOLTZ*TEMPl))
         !
         sig = sig + B
         call triMUL_c(Gl(1:M,1:M,ii), sig, Gl(1:M,1:M,ii), B, 'n', 'n', 'c')
@@ -205,7 +205,7 @@ module rgf
         !! $$\Sigma^< = \Sigma_11^< + \Sigma_{ph}^< + \Sigma_s^<$$
         call triMUL_c(H1i(1:M1,1:M,nx), Gln(1:M1,1:M1,nx - 1), H1i(1:M1,1:M,nx), B, 'n', 'n', 'c')
         call MUL_c(sigma_lesser_ph(1:M,1:M,nx), Sii(1:M,1:M,nx), 'n', 'n', A)
-        sig = -(sigmar - transpose(conjg(sigmar)))*ferm((En - mul)/(BOLTZ*TEMPl))
+        sig = -(sigmar - transpose(conjg(sigmar)))*ferm((En - mur)/(BOLTZ*TEMPr))
         sig = sig + A + B
         !
         !! $$G^< = G * \Sigma^< * G^\dagger$$
@@ -214,9 +214,9 @@ module rgf
         G_lesser(1:M,1:M,ii) = B
         G_greater(1:M,1:M,ii) = G_lesser(1:M,1:M,ii) + (G_r(1:M,1:M,ii) - transpose(conjg(G_r(1:M,1:M,ii))))
         !
-        A = -(sigmar - transpose(conjg(sigmar)))*ferm((En - mul)/(BOLTZ*TEMPl))
+        A = -(sigmar - transpose(conjg(sigmar)))*ferm((En - mur)/(BOLTZ*TEMPr))
         call MUL_c(A, G_greater(1:M,1:M,ii), 'n', 'n', B)
-        A = -(sigmar - transpose(conjg(sigmar)))*(ferm((En - mul)/(BOLTZ*TEMPl)) - 1.0d0)
+        A = -(sigmar - transpose(conjg(sigmar)))*(ferm((En - mur)/(BOLTZ*TEMPr)) - 1.0d0)
         call MUL_c(A, G_lesser(1:M,1:M,ii), 'n', 'n', C)
         !
         Jdens(1:M,1:M,ii) = B - C
@@ -283,9 +283,9 @@ module rgf
         ii = 1
         M = nm(ii)
         ! on the left contact
-        A = -(sigmal - transpose(conjg(sigmal)))*ferm((En - mur)/(BOLTZ*TEMPr))
+        A = -(sigmal - transpose(conjg(sigmal)))*ferm((En - mul)/(BOLTZ*TEMPl))
         call MUL_c(A, G_greater(1:M,1:M,ii), 'n', 'n', B)
-        A = -(sigmal - transpose(conjg(sigmal)))*(ferm((En - mur)/(BOLTZ*TEMPr)) - 1.0d0)
+        A = -(sigmal - transpose(conjg(sigmal)))*(ferm((En - mul)/(BOLTZ*TEMPl)) - 1.0d0)
         call MUL_c(A, G_lesser(1:M,1:M,ii), 'n', 'n', C)
         tim = 0.0d0
         do jj = 1, M
@@ -309,6 +309,8 @@ module rgf
         !---------
         integer::ie,ix
         complex(8),allocatable::B(:,:),A(:,:) ! tmp matrix        
+        Sig_lesser = czero
+        Sig_greater= czero
         ! Sig^<>(E) = M [ N G^<>(E -+ hw) + (N+1) G^<>(E +- hw)] M        
         !$omp parallel default(shared) private(ie,A,B,ix) 
         allocate(B(nm,nm))

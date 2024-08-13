@@ -344,7 +344,7 @@ module gw_dense
     subroutine selfenergy_gw(nm_dev,nen,nsub,nphiy,nphiz,nb,ns,ndiag,length, en, V,flatband,spindeg,&
                              G_retarded,G_lesser,G_greater, &
                              Sig_retarded_new,Sig_lesser_new,Sig_greater_new,W0_retarded)
-    !
+        !
         use fft_mod, only : conv1d_fock, corr1d => corr1d2  
         use parameters_mod
         !
@@ -477,7 +477,7 @@ module gw_dense
     subroutine solve_gw_3D(niter,scba_tol,nm_dev,Lx,length,spindeg,temps,tempd,mus,mud,&
         alpha_mix,nen,nsub,En,nb,ns,nphiy,nphiz,Ham,H00lead,H10lead,T,V,&
         ndiag,num_lead,flatband,output_files,G_retarded,G_lesser,G_greater,W0_retarded,tr)
-    !
+        !
         use fft_mod, only : conv1d => conv1d2, corr1d => corr1d2  
         use parameters_mod
         !  
@@ -743,7 +743,7 @@ module gw_dense
         integer,intent(in)::ik,iq,nk,sgn 
         integer::map_kq 
         integer::ikd
-        ikd = ik + sgn * iq + nk/2            
+        ikd = ik + sgn * (iq - nk/2)            
         if (ikd<1) ikd=ikd+nk
         if (ikd>nk) ikd=ikd-nk
         if (nk==1) ikd=1
@@ -764,111 +764,6 @@ module gw_dense
         ikd = ikzd + (ikyd-1) * nkz
         map_kq_2d = ikd
     end function map_kq_2d
-
-
-    subroutine solve_eph(niter,scba_tol,nm_dev,Lx,length,spindeg,temps,tempd,mus,mud,&
-        alpha_mix,nen,nsub,En,nb,ns,nphiy,nphiz,Ham,H00lead,H10lead,T,&
-        ndiag,num_lead,flatband,output_files,G_retarded,G_lesser,G_greater,tr)
-    ! 
-        integer, intent(in) :: nen, nsub, nb, ns,niter,nm_dev,length, nphiz, nphiy, num_lead
-        real(dp), intent(in) :: En(nen), temps,tempd, mus, mud, alpha_mix,Lx,spindeg,scba_tol
-        complex(dp),intent(in) :: Ham(nm_dev,nm_dev,nphiy*nphiz),H00lead(NB*NS,NB*NS,num_lead,nphiy*nphiz),H10lead(NB*NS,NB*NS,num_lead,nphiy*nphiz),T(NB*NS,nm_dev,num_lead,nphiy*nphiz)        
-        integer,intent(in)::ndiag
-        logical,intent(in)::flatband
-        logical,intent(in) :: output_files
-        complex(dp),intent(out),dimension(nm_dev,nm_dev,nen,nsub,nphiy*nphiz) ::  G_retarded,G_lesser,G_greater        
-        real(dp),intent(out) ::Tr(nen,num_lead) ! current spectrum on leads    
-        !------        
-        complex(dp),dimension(:,:,:,:),allocatable ::  Sig_retarded,Sig_lesser,Sig_greater
-        complex(dp),dimension(:,:,:,:),allocatable ::  Sig_retarded_new,Sig_lesser_new,Sig_greater_new
-        complex(dp),allocatable::siglead(:,:,:,:,:) ! lead scattering sigma_retarded
-        complex(dp),allocatable,dimension(:,:):: B ! tmp matrix
-        real(dp),allocatable::cur(:,:,:),tot_cur(:,:),tot_ecur(:,:),wen(:),sumcur(:,:,:),sumtot_cur(:,:),sumtot_ecur(:,:)
-        complex(dp),allocatable::Ispec(:,:,:),Itot(:,:)    
-        real(dp),allocatable::Te(:,:,:) ! transmission matrix spectrum
-        real(dp),allocatable::sumTr(:,:) ! current spectrum on leads summed over k
-        real(dp),allocatable::sumTe(:,:,:) ! transmission matrix spectrum summed over k
-        integer :: iter,ie,nopmax
-        integer :: i,j,nm,nop,l,h,iop,ikz,iqz,ikzd,iky,iqy,ikyd,ik,iq,ikd,isub        
-        complex(dp) :: dE
-        real(dp)::mu(2),temp(2)
-        real(dp)::weights(nsub),xen(nsub)
-        real(dp)::scba_error
-    end subroutine solve_eph
-
-
-    ! calculate e-photon/phonon self-energies for single mode in thermal equilibrium 
-    subroutine selfenergy_eph_mono(nm,nen,En,nop,nky,nkz,nqy,nqz,ik_start,ik_end,iq_in,M,G_lesser,G_greater,&
-        Sig_lesser,Sig_greater,n_bose,gamma_q)
-        integer,intent(in)::nm,nen,nop,nky,nkz,nqy,nqz,iq_in,ik_start,ik_end
-        real(8),intent(in)::en(nen),n_bose
-        logical,intent(in)::gamma_q
-        complex(8),intent(in),dimension(nm,nm,nky*nkz,nqy*nqz)::M ! interaction matrix at k q
-        complex(8),intent(in),dimension(nm,nm,nen,nky*nkz)::G_lesser,G_greater
-        complex(8),intent(out),dimension(nm,nm,nen,nky*nkz)::Sig_lesser,Sig_greater
-        !---------
-        integer::ie,ikd,ik ,iq,iqd
-        complex(8),allocatable::B(:,:),A(:,:) ! tmp matrix  
-        real(8)::dE 
-        dE = (en(2)-en(1)) / twopi             
-        if (gamma_q) then 
-			iq=1
-			iqd=1
-		else
-			iq=iq_in
-			iqd=nqy*nqz+1-iq
-		endif
-        ! Sig^<>(E,k) = M_{k,-+q} [ N G^<>(E -+ hw,k-+q) + (N+1) G^<>(E +- hw,k+-q)] M_{k-+q,+-q}       
-        !$omp parallel default(shared) private(ie,A,B,ik,ikd) 
-        allocate(B(nm,nm))
-        allocate(A(nm,nm))                                
-        !$omp do
-        do ie=1,nen
-			do ik=ik_start,ik_end
-				! Sig^<(E,k)
-				A = czero            
-				if (gamma_q) then 
-					ikd = ik					
-				else
-					ikd = map_kq_2d(-1,ik,iq,nky,nkz)					
-				endif
-				if (ie-nop>=1) A =A+ G_lesser(:,:,ie-nop,ikd) * n_bose
-				if (gamma_q) then 
-					ikd = ik
-				else
-					ikd = map_kq_2d(+1,ik,iq,nky,nkz)
-				endif
-				if (ie+nop<=nen) A =A+ G_lesser(:,:,ie+nop,ikd) * (n_bose+1.0_dp)
-				call zgemm('n','n',nm,nm,nm,cone,M(:,:,ik,iq),nm,A,nm,czero,B,nm) 
-				call zgemm('n','n',nm,nm,nm,cone,B,nm,M(:,:,ikd,iqd),nm,czero,A,nm)     
-				Sig_lesser(:,:,ie,ik) = Sig_lesser(:,:,ie,ik) + A             
-				!
-				! Sig^>(E,k)
-				A = czero
-				if (gamma_q) then 
-					ikd = ik
-				else
-					ikd = map_kq_2d(-1,ik,iq,nky,nkz)
-				endif
-				if (ie-nop>=1) A =A+ G_greater(:,:,ie-nop,ikd) * (n_bose+1.0_dp)
-				if (gamma_q) then 
-					ikd = ik 
-				else                
-					ikd = map_kq_2d(+1,ik,iq,nky,nkz)
-				endif
-				if (ie+nop<=nen) A =A+ G_greater(:,:,ie+nop,ikd) * n_bose
-				call zgemm('n','n',nm,nm,nm,cone,M(:,:,ik,iq),nm,A,nm,czero,B,nm) 
-				call zgemm('n','n',nm,nm,nm,cone,B,nm,M(:,:,ikd,iqd),nm,czero,A,nm)     
-				Sig_greater(:,:,ie,ik) = Sig_greater(:,:,ie,ik) + A                
-			enddo  
-        enddo
-        !$omp end do        
-        deallocate(A,B)
-        !$omp end parallel
-        sig_greater = sig_greater * dE 
-        sig_lesser  = sig_lesser  * dE
-    end subroutine selfenergy_eph_mono
-    
 
     Function ferm(a)
         Real(dp),intent(in):: a

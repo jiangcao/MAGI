@@ -6,7 +6,7 @@
 ! See the file `LICENSE' in the root directory of this distribution, or obtain 
 ! a copy of the License at <https://www.gnu.org/licenses/gpl-3.0.txt>.
 !
-! Author: jiacao <jiacao@ethz.ch>
+! Author: Jiang Cao <jiacao@ethz.ch>
 ! Comment:
 !  
 ! Maintenance:
@@ -35,8 +35,15 @@ include "../modules/polarization.f95"
 
 include "../modules/gw_dense.f95"
 
+include "../modules/eph_dense.f95"
+
 include "../modules/bse_dense.f95"
+
+! include "../modules/gpu/gpu_polarization.f95"
 
 include "../modules/bse_sparse.f95"
 
+include "../modules/rgf.f95"
+
+include "../modules/eph_rgf.f95"
 
