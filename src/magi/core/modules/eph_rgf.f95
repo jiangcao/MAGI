@@ -74,7 +74,7 @@ module eph_rgf
         !
         print '(a8,f15.4,a8,f15.4)', 'mus=',mus,'mud=',mud
         !
-        do while ( (scba_error>=scba_tol).and.(iter<=niter)  )
+        do while ( (scba_error>=scba_tol).and.(iter<=niter) )
             !
             print *,'+ iter=',iter,'error=',scba_error
             print *,'  calc G'  
@@ -95,6 +95,9 @@ module eph_rgf
             tr = tr *dE/twopi*e_charge/twopi/hbar*e_charge*dble(spindeg) * dkt  
             tre = tre *dE/twopi*e_charge/twopi/hbar*e_charge*dble(spindeg) * dkt
             !
+            open(unit=101,file='eph_Id_iteration.dat',status='unknown',position='append')
+            write(101,'(I4,2E16.6)') iter, -sum(tr(:,:)), sum(tre(:,:))
+            close(101)
             write(*,'(I4,"  IDS=",2E16.6)') iter, -sum(tr(:,:)), sum(tre(:,:))
             ! Bose-Einstein
             n_bose=1.0_dp/(EXP((dble(Nop)*dE)/(BOLTZ*((temps+tempd)/2.0_dp)))-1.0_dp)
@@ -137,6 +140,8 @@ module eph_rgf
         if (output_files) then 
             dataset_name = 'eph_ldos'
             call write_rgf_spectrum(dataset_name,iter,G_r,nen,energies,nx,nm,nb,Lx,[1.0d0,-2.0d0])
+            dataset_name = 'eph_cur'
+            call write_rgf_spectrum(dataset_name,iter,Jdens,nen,energies,nx,nm,nb,Lx,[1.0d0,0.0d0])
         endif
         ! compute the charges
         call calc_charge_rgf(G_lesser,G_greater,nen,energies,nm,mm,nx,nelec,pelec,midgap)

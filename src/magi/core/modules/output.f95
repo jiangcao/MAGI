@@ -346,7 +346,15 @@ module output
                     do ib=1,nb                        
                         tr = tr + G(ib+(icell-1)*nb,ib+(icell-1)*nb,j,ie)                                    
                     enddo
-                    write(11,'(4E20.6)') dble(ix)*Lx, en(ie), dble(tr)*coeff(1), aimag(tr)*coeff(2)        
+                    if ( coeff(1) /= 0.0d0 .and. coeff(2) /= 0.0d0 ) then
+                        write(11,'(4E20.6)') dble(ix)*Lx, en(ie), dble(tr)*coeff(1), aimag(tr)*coeff(2)        
+                    else 
+                        if ( coeff(1) /= 0.0d0) then 
+                            write(11,'(3E20.6)') dble(ix)*Lx, en(ie), dble(tr)*coeff(1)
+                        else 
+                            write(11,'(3E20.6)') dble(ix)*Lx, en(ie), aimag(tr)*coeff(2)   
+                        endif 
+                    endif             
                     ix=ix+1
                 enddo
             enddo
