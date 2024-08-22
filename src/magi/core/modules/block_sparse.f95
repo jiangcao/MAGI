@@ -62,15 +62,15 @@ module block_sparse
     end subroutine get_block_from_bcsr
     !
     ! Puts a dense matrix values into the corresponding position of value array `v` , similar to `get_block_from_bcsr`    
-    subroutine put_block_to_bcsr(v,col_index,ind_ptr,block_size,block_start_index,iblock,idiag,mat)
+    subroutine put_block_to_bcsr(v,col_index,ind_ptr,block_nrow,block_start_index,iblock,idiag,mat)
         complex(dp),intent(inout) :: v(:)
-        integer,intent(in) :: col_index(:),block_size
+        integer,intent(in) :: col_index(:),block_nrow
         integer,intent(in) :: iblock,idiag,block_start_index(:)
         integer,intent(in) :: ind_ptr(:,:,:)
         complex(dp),intent(in) :: mat(:,:)
         ! ------
         integer :: i,j,ptr1,ptr2        
-        do i=1,block_size
+        do i=1,block_nrow
             ! get ind_ptr for the block row i
             ptr1 = ind_ptr(i,  iblock, idiag+1)
             ptr2 = ind_ptr(i+1,iblock, idiag+1)
@@ -78,7 +78,7 @@ module block_sparse
         enddo
         if (idiag == 0) then
             ! main diagonal block
-            do i=1,block_size
+            do i=1,block_nrow
                 v( block_start_index(iblock) + i ) = mat(i,i)  
             enddo
         endif
