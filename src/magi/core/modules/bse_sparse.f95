@@ -394,7 +394,7 @@ module bse_sparse
                             i2=min(nm_dev,i+ndiag)   
                             do concurrent (j=i1:i2, l=i1:i2, k=i1:i2)    
                                 if ((abs(l-j)<ndiag).and.(abs(l-k)<ndiag).and.(abs(j-k)<ndiag)) then   
-                                    ie1 = max(nop,1) + 1
+                                    ie1 = max(nop,0) + 1
                                     ie2 = min(nen+nop,nen)
                                     Sig_lesser(i,j,ie1:ie2)=Sig_lesser(i,j,ie1:ie2) + G_lesser(i,l,(ie1-nop):(ie2-nop),isub,ik) * W_lesser(i,k) * vertex(l,j,k)                                
                                     Sig_greater(i,j,ie1:ie2)=Sig_greater(i,j,ie1:ie2) + G_greater(i,l,(ie1-nop):(ie2-nop),isub,ik) * W_greater(i,k) * vertex(l,j,k)   
@@ -402,15 +402,17 @@ module bse_sparse
                                                             G_lesser(i,l,(ie1-nop):(ie2-nop),isub,ik) * W_retarded(i,k) * vertex(l,j,k) + &                                      
                                                             G_retarded(i,l,(ie1-nop):(ie2-nop),isub,ik) * W_lesser(i,k) * vertex(l,j,k) + &
                                                             G_retarded(i,l,(ie1-nop):(ie2-nop),isub,ik) * W_retarded(i,k) * vertex(l,j,k)                                                  
-                                    !
-                                    ie1 = max(-nop,1) + 1
-                                    ie2 = min(nen-nop,nen)
-                                    Sig_lesser(i,j,ie1:ie2)=Sig_lesser(i,j,ie1:ie2) + G_lesser(i,l,(ie1+nop):(ie2+nop),isub,ik) * W_greater(i,k) * vertex(l,j,k)   
-                                    Sig_greater(i,j,ie1:ie2)=Sig_greater(i,j,ie1:ie2) + G_greater(i,l,(ie1+nop):(ie2+nop),isub,ik) * W_lesser(i,k) * vertex(l,j,k)   
-                                    Sig_retarded(i,j,ie1:ie2)=Sig_retarded(i,j,ie1:ie2) - &
+                                    ! negative frequency part by symmetry
+                                    if (nop /= 0) then
+                                        ie1 = max(-nop,0) + 1
+                                        ie2 = min(nen-nop,nen)
+                                        Sig_lesser(i,j,ie1:ie2)=Sig_lesser(i,j,ie1:ie2) - G_lesser(i,l,(ie1+nop):(ie2+nop),isub,ik) * conjg(W_greater(i,k)) * vertex(l,j,k)   
+                                        Sig_greater(i,j,ie1:ie2)=Sig_greater(i,j,ie1:ie2) - G_greater(i,l,(ie1+nop):(ie2+nop),isub,ik) * conjg(W_lesser(i,k)) * vertex(l,j,k)   
+                                        Sig_retarded(i,j,ie1:ie2)=Sig_retarded(i,j,ie1:ie2) - &
                                                             G_lesser(i,l,(ie1+nop):(ie2+nop),isub,ik) * conjg(W_retarded(i,k)) * vertex(l,j,k) - &                                      
                                                             G_retarded(i,l,(ie1+nop):(ie2+nop),isub,ik) * conjg(W_greater(i,k)) * vertex(l,j,k) - &
-                                                            G_retarded(i,l,(ie1+nop):(ie2+nop),isub,ik) * conjg(W_retarded(i,k)) * vertex(l,j,k)     
+                                                            G_retarded(i,l,(ie1+nop):(ie2+nop),isub,ik) * conjg(W_retarded(i,k)) * vertex(l,j,k)
+                                    endif     
                                 endif
                             enddo
                         enddo
