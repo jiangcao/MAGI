@@ -5,7 +5,7 @@ FC=gfortran
 NVFC=nvfortran
 F2PY=f2py
 GCC=gcc
-F2PYFLAGS=-c --fcompiler=gnu95 -lgomp -llapack -lblas --f90flags="${F90FLAGS}"
+F2PYFLAGS=-c --fcompiler=gnu95 --link-lapack_opt -lgomp --f90flags="${F90FLAGS}"
 F2PYNVF90FLAGS=-c --fcompiler=nv -lgomp -llapack -lblas --f90flags="${NVF90FLAGS}"
 OUTDIR=bin
 
@@ -20,7 +20,7 @@ nvcommdir="${nvhome}/${target}/${version}/comm_libs"
 
 .PHONY: all clean
 
-all: directories util wannier negf clean_compile
+all: directories wannier negf clean_compile
 
 directories:
 	mkdir -p ${OUTDIR}
@@ -34,11 +34,11 @@ wannier:
 	mv wannier*.so ${OUTDIR}
 
 negf: mkl_dfti.mod 
-	F77=gfortran F90=gfortran CC=gcc ${F2PY} ${F2PYFLAGS} -m negf src/magi/core/interface/negf.f95 skip: trimul_c mul_c :
+	F77=gfortran F90=gfortran CC=gcc ${F2PY} ${F2PYFLAGS} -m negf src/magi/core/interface/negf.F90 skip: trimul_c mul_c :
 	mv negf*.so ${OUTDIR}
 
 mkl_dfti.mod: 
-	${FC} -c ${MKLROOT}/include/mkl_dfti.f90 
+	${FC} -c include/mkl_dfti.f90 
 
 fortran.o:
 	${GCC} -c src/magi/core/modules/gpu/fortran.c -I${nvcudadir}/include/ -DCUBLAS_GFORTRAN
