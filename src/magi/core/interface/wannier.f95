@@ -12,7 +12,7 @@
 ! Maintenance:
 !===============================================================================
 
-include "/users/hck25/MAGI_main/src/magi/core/modules/parameters_mod.f95"
+include "../modules/parameters_mod.f95"
 
 module linalg
     implicit none 
@@ -686,6 +686,6 @@ CONTAINS
 END MODULE wannierHam
 
 
-include "/users/hck25/MAGI_main/src/magi/core/modules/epw_interface.f95"
+include "../modules/epw_interface.f95"
 
 

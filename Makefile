@@ -1,6 +1,6 @@
 F90FLAGS=-march=native -ftree-parallelize-loops=28 -ffree-line-length-none -fbounds-check -fbacktrace -ffast-math -fopenmp -fexternal-blas
 NVF90FLAGS=-g -traceback -fast -O3 -stdpar=gpu -mp -cudalib=cublas -lblas
-MKLROOT="/usr/pack/intel_compiler-2020-af/x64/mkl/"
+MKLROOT=/usr/pack/intel_compiler-2020-af/x64/mkl/
 FC=gfortran
 NVFC=nvfortran
 F2PY=f2py
@@ -38,7 +38,7 @@ negf: mkl_dfti.mod
 	mv negf*.so ${OUTDIR}
 
 mkl_dfti.mod: 
-	${FC} -c include/mkl_dfti.f90 
+	${FC} -c ${MKLROOT}/include/mkl_dfti.f90 
 
 fortran.o:
 	${GCC} -c src/magi/core/modules/gpu/fortran.c -I${nvcudadir}/include/ -DCUBLAS_GFORTRAN
