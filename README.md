@@ -13,8 +13,9 @@ This project is supported by the Swiss National Science Foundation (SNSF) QuaTrE
 
 ## Building 
 
-    conda activate 
-    make
+    $ conda env create -f environment.yml
+    $ conda activate magi
+    $ make
     
 ## How to cite
 

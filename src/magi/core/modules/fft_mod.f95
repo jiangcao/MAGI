@@ -211,47 +211,47 @@ module fft_mod
     end function conv1d2
     
     subroutine do_mkl_dfti_conv(n,X_in,Y_in,Z_out)
-      ! 1D complex to complex
-      Use MKL_DFTI
+!      ! 1D complex to complex
+!      Use MKL_DFTI
       integer :: n
       Complex(dp) :: X_in(n),Y_in(n),Z_out(n)
       Complex(dp) :: X_out(n),Y_out(n),Z_in(n)
-      type(DFTI_DESCRIPTOR), POINTER :: My_Desc1_Handle, My_Desc2_Handle
-      Integer :: Status
-      ! Perform a complex to complex transform
-      Status = DftiCreateDescriptor( My_Desc1_Handle, DFTI_DOUBLE, DFTI_COMPLEX, 1, n )
-      Status = DftiSetValue( My_Desc1_Handle, DFTI_PLACEMENT, DFTI_NOT_INPLACE)
-      Status = DftiCommitDescriptor( My_Desc1_Handle )
-      Status = DftiComputeForward( My_Desc1_Handle, X_in, X_out )
-      Status = DftiComputeForward( My_Desc1_Handle, Y_in, Y_out )
-      !
-      Z_in(:) = X_out(:) * Y_out(:)
-      !
-      Status = DftiComputeBackward( My_Desc1_Handle, Z_in, Z_out )
-      Status = DftiFreeDescriptor(My_Desc1_Handle)
-      Z_out(:) = Z_out(:) / dble(n)
+!      type(DFTI_DESCRIPTOR), POINTER :: My_Desc1_Handle, My_Desc2_Handle
+!      Integer :: Status
+!      ! Perform a complex to complex transform
+!      Status = DftiCreateDescriptor( My_Desc1_Handle, DFTI_DOUBLE, DFTI_COMPLEX, 1, n )
+!      Status = DftiSetValue( My_Desc1_Handle, DFTI_PLACEMENT, DFTI_NOT_INPLACE)
+!      Status = DftiCommitDescriptor( My_Desc1_Handle )
+!      Status = DftiComputeForward( My_Desc1_Handle, X_in, X_out )
+!      Status = DftiComputeForward( My_Desc1_Handle, Y_in, Y_out )
+!      !
+!      Z_in(:) = X_out(:) * Y_out(:)
+!      !
+!      Status = DftiComputeBackward( My_Desc1_Handle, Z_in, Z_out )
+!      Status = DftiFreeDescriptor(My_Desc1_Handle)
+!      Z_out(:) = Z_out(:) / dble(n)
     end subroutine do_mkl_dfti_conv
-
+!
     subroutine do_mkl_dfti_fft(n,x_in,x_out,forward)
-    ! 1D complex to complex
-      Use MKL_DFTI
+!    ! 1D complex to complex
+!      Use MKL_DFTI
       integer :: n
       Complex(dp),intent(in) :: X_in(n)
       Complex(dp),intent(out) :: x_out(n)
       logical,intent(in) :: forward
-      type(DFTI_DESCRIPTOR), POINTER :: My_Desc1_Handle, My_Desc2_Handle
-      Integer :: Status
-      ! Perform a complex to complex transform
-      Status = DftiCreateDescriptor( My_Desc1_Handle, DFTI_DOUBLE, DFTI_COMPLEX, 1, n )
-      Status = DftiSetValue( My_Desc1_Handle, DFTI_PLACEMENT, DFTI_NOT_INPLACE)
-      Status = DftiCommitDescriptor( My_Desc1_Handle )
-      if ( forward ) then 
-        Status = DftiComputeForward( My_Desc1_Handle, x_in, x_out )
-      else 
-        Status = DftiComputeBackward( My_Desc1_Handle, x_in, x_out )
-      endif 
-      Status = DftiFreeDescriptor(My_Desc1_Handle)
-      x_out(:) = x_out(:) / dble(n)
+!      type(DFTI_DESCRIPTOR), POINTER :: My_Desc1_Handle, My_Desc2_Handle
+!      Integer :: Status
+!      ! Perform a complex to complex transform
+!      Status = DftiCreateDescriptor( My_Desc1_Handle, DFTI_DOUBLE, DFTI_COMPLEX, 1, n )
+!      Status = DftiSetValue( My_Desc1_Handle, DFTI_PLACEMENT, DFTI_NOT_INPLACE)
+!      Status = DftiCommitDescriptor( My_Desc1_Handle )
+!      if ( forward ) then 
+!        Status = DftiComputeForward( My_Desc1_Handle, x_in, x_out )
+!      else 
+!        Status = DftiComputeBackward( My_Desc1_Handle, x_in, x_out )
+!      endif 
+!      Status = DftiFreeDescriptor(My_Desc1_Handle)
+!      x_out(:) = x_out(:) / dble(n)
     end subroutine do_mkl_dfti_fft
     
 end module fft_mod

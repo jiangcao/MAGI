@@ -12,7 +12,7 @@
 ! Maintenance:
 !===============================================================================
 
-include "../modules/parameters.f95"
+include "../modules/parameters_mod.f95"
 
 module linalg
     implicit none 
@@ -686,6 +686,6 @@ CONTAINS
 END MODULE wannierHam
 
 
-
+include "../modules/epw_interface.f95"
 
 

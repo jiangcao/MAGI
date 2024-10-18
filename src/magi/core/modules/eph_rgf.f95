@@ -45,13 +45,13 @@ module eph_rgf
         integer,intent(in)  :: Nop(num_phmode)  !! optical phonon freq. in unit of energy step        
         logical, intent(in) :: output_files
         real(dp),intent(in) :: midgap(nx)  
-        complex(dp), intent(out), dimension(mm,mm,nx,nen) :: G_greater, G_lesser, G_r, Jdens
+        complex(dp), intent(out), dimension(mm,nx,nen) :: G_greater, G_lesser, G_r, Jdens
         real(dp), intent(out) :: tr(nen,nphiy*nphiz), tre(nen,nphiy*nphiz)   
         real(dp),intent(out) ::nelec(nx*mm),pelec(nx*mm)
-        ! ----
-        complex(dp),allocatable,dimension(:,:,:,:) :: sigma_lesser_ph, sigma_r_ph
+        ! ----        
+        complex(dp),allocatable,dimension(:,:,:) :: sigma_lesser_ph, sigma_r_ph
         complex(dp), dimension(mm,mm,nx,nen) :: G_greater_k, G_lesser_k, G_r_k, Jdens_k
-        complex(dp),allocatable,dimension(:,:,:,:) :: sigma_lesser_ph_new, sigma_r_ph_new, sigma_greater_ph_new
+        complex(dp),allocatable,dimension(:,:,:) :: sigma_lesser_ph_new, sigma_r_ph_new, sigma_greater_ph_new
         real(dp), dimension(mm,mm) :: mul, mur, TEMPr, TEMPl
         character(len=50) :: dataset_name
         real(dp) :: scba_error, n_bose, dE, dkt, tr_old(nen,nphiy*nphiz)
@@ -85,11 +85,21 @@ module eph_rgf
             G_lesser=czero
             tr_old=tr
             do ik=1,nphiy*nphiz
-                call rgf_energies(nx,mm,nm, nen, energies, mul, mur, TEMPl, TEMPr, &
-                    Hii(:,:,:,ik), H1i(:,:,:,ik), Sii(:,:,:,ik), &
-                    sigma_lesser_ph(:,:,:,:), sigma_r_ph(:,:,:,:), &
-                    G_r_k(:,:,:,:), G_lesser_k(:,:,:,:), G_greater_k(:,:,:,:), &
-                    Jdens_k(:,:,:,:), tr(:,ik), tre(:,ik), verbose=.false.)
+                 call rgf_energies(nx,mm,nm, nen, energies, mul, mur, TEMPl, TEMPr, &
+                     Hii(:,:,:,ik), H1i(:,:,:,ik), Sii(:,:,:,ik), &
+                     sigma_lesser_ph(:,:,:,:), sigma_r_ph(:,:,:,:), &
+                     G_r_k(:,:,:,:), G_lesser_k(:,:,:,:), G_greater_k(:,:,:,:), &
+                     Jdens_k(:,:,:,:), tr(:,ik), tre(:,ik), verbose=.false.)                
+                !!$omp parallel default(shared) private(ie,sigma_r_ph_full,sigma_lesser_ph_full)
+                !!$omp do
+                !do ie = 1,nen 
+                !    call rgf_std(nx,mm,nm, energies(ie), mul, mur, TEMPl, TEMPr, &
+                !        Hii(:,:,:,ik), H1i(:,:,:,ik), Sii(:,:,:,ik), sigma_lesser_ph_full(:,:,:), &
+                !        sigma_r_ph_full(:,:,:), G_r_k(:,:,:), G_lesser_k(:,:,:), G_greater_k(:,:,:), Jdens_k(:,:,:), &
+                !        tr(ie,ik), tre(ie,ik), verbose=.false.)
+                !enddo
+                !!$omp end do
+                !!$omp end parallel     
                 G_r = G_r + G_r_k * dkt
                 G_lesser = G_lesser + G_lesser_k * dkt
                 G_greater= G_greater + G_greater_k * dkt
