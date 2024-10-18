@@ -1,0 +1,36 @@
+name: magi
+channels:
+  - anaconda
+  - conda-forge
+  - defaults
+dependencies:
+  - _libgcc_mutex=0.1=conda_forge
+  - _openmp_mutex=4.5=2_gnu
+  - blas=1.0=openblas
+  - bzip2=1.0.8=h5eee18b_6
+  - ca-certificates=2024.9.24
+  - charset-normalizer=3.4.0
+  - ld_impl_linux-64=2.40
+  - libffi=3.4.4
+  - libgcc=14.2.0
+  - libgcc-ng=14.2.0
+  - libgfortran-ng=11.2.0
+  - libgfortran5=11.2.0
+  - libgomp=14.2.0
+  - libopenblas=0.3.21
+  - libstdcxx-ng=11.2.0
+  - libuuid=1.41.5
+  - ncurses=6.4
+  - numpy=2.1.1
+  - numpy-base=2.1.1
+  - openssl=3.3.2
+  - pip=24.2
+  - python=3.11.10
+  - readline=8.2
+  - setuptools=72.1.0
+  - sqlite=3.45.3
+  - tk=8.6.14
+  - tzdata=2024b
+  - wheel=0.44.0
+  - xz=5.4.6
+  - zlib=1.2.13

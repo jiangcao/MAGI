@@ -11,9 +11,9 @@
 !  
 ! Maintenance:
 !===============================================================================
-include "../modules/parameters.f95"
+include "../modules/parameters_mod.f95"
 
-include "../modules/fft.f95"
+include "../modules/fft_mod.f95"
 
 include "../modules/hilbert.f95"
 
@@ -45,5 +45,5 @@ include "../modules/bse_sparse.f95"
 
 include "../modules/rgf.f95"
 
-include "../modules/eph_rgf.f95"
+! include "../modules/eph_rgf.f95"
 
