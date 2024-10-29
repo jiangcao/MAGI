@@ -32,20 +32,21 @@ if __name__=='__main__':
    Ly=L[1]
    Lx=L[0]
 
-   ns = 1
-   length = 60
-   nen = 3600
+   ns = 2
+   length = 10
+   nen = 1800
    nsub = 1
    nky=1
    nkz=1
    nk=nky*nkz
    niter=0
-   eps_screen=1.0
+   eps_screen=4.0
    r0=3.0
    emin=-12.0
    emax= 6.0
    temp =  np.ones(2)* 300.0
-   mu = np.array( [-2.25,-2.25 ] )
+   # mu = np.array( [-2.25,-2.25 ] )
+   mu = np.array( [-1.6,-1.6 ] )
    light_polar = np.array( [1.0, 1.0, 0.0] )
    light_polar = light_polar / np.linalg.norm(light_polar)
    hw_phot = 2.5 # eV
@@ -55,7 +56,7 @@ if __name__=='__main__':
    print('n_bose_phot=',n_bose_phot)
 
    ndiag= nb * 2
-   nm_dev=nb*length
+   nm_dev=nb * length
 
    if (ndiag==0):
        ldiag=True
@@ -116,19 +117,27 @@ if __name__=='__main__':
    print('num E_opt = ' , nnop)
    print('E_optical = ' , nops * dE)
 
+   eps_2=np.zeros(nnop,dtype='complex')
    eps_M=np.zeros(nnop,dtype='complex')
    eps_M_sinv=np.zeros(nnop,dtype='complex')
    eps_rpa=np.zeros(nnop,dtype='complex')
-   eps_M_sinv2=np.zeros(nnop,dtype='complex')
    eps_en=np.zeros(nnop)
 
    start_t = time.time()
 
-   ( G_retarded,G_lesser,G_greater,tr,te,P_r,P0_r ) = bse_sparse.bse_sparse_solve_scba(
-        method='sum',niter=0,nm_dev=nm_dev,lx=Lx,length=length,spindeg=2.0,temp=temp,mu=mu,
-        alpha_mix=0.5,nen=nen,en=energies,nops=nops,nnop=nnop,nb=nb,ns=ns,ham=ham,h00lead=lead_h00,h10lead=lead_h10,t=lead_coupling,v=v,
-        ndiag=ndiag,encut=encut,egap=egap,vertex=False,bse_sigma=False,flatband=False,output_files=True,
-        inj_photon=False,nphot=n_phot,m_phot=M_phot,n_bose_phot=n_bose_phot ) 
+   # ( G_retarded,G_lesser,G_greater,tr,te,P_r,P0_r ) = bse_sparse.bse_sparse_solve_scba(
+   #      method='sum',niter=0,nm_dev=nm_dev,lx=Lx,length=length,spindeg=2.0,temp=temp,mu=mu,
+   #      alpha_mix=0.5,nen=nen,en=energies,nops=nops,nnop=nnop,nb=nb,ns=ns,ham=ham,h00lead=lead_h00,h10lead=lead_h10,t=lead_coupling,v=v,
+   #      ndiag=ndiag,encut=encut,egap=egap,vertex=False,bse_sigma=False,flatband=False,output_files=True,
+   #      inj_photon=False,nphot=n_phot,m_phot=M_phot,n_bose_phot=n_bose_phot ) 
+
+
+   (G_retarded,G_lesser,G_greater,Sig_r,Sig_l,Sig_g,tr,te,W0_r,W0_l,W0_g) = gw_dense.solve_gw_1d_memsaving(
+                 niter=niter,nm_dev=nb*length,lx=Lx,length=length,spindeg=2.0,
+                 temp=temp,mu=mu,alpha_mix=0.5,
+                 nen=nen,en=energies,nb=nb,ns=ns,
+                 ham=ham,h00lead=lead_h00,h10lead=lead_h10,t=lead_coupling,v=v,
+                 ndiag=ndiag,encut=encut,egap=egap,flatband=False,vertex=False,bse=False,output_files=True)
 
    print('done')                                                       
    print('current=', -np.sum(tr[:,0]) , np.sum(tr[:,1]))                                                       
@@ -140,19 +149,7 @@ if __name__=='__main__':
    ldos = np.imag(Gr_diag)
    ndos = np.imag(Gn_diag)
 
-   for iop in range(nnop):
-      epsilon_M = np.eye(nm_dev) -  v[:,:,0] @ P_r[:,:,iop]
-      epsilon_rpa = npla.inv(np.eye(nm_dev) -  v[:,:,0] @ P_r[:,:,iop])
-      eps_M_sinv[iop] = np.sum( epsilon_M[ nm_dev//2, nb*ns:(nm_dev-nb*ns) ] )
-      eps_rpa[iop] = np.sum( epsilon_rpa[ nm_dev//2, nb*ns:(nm_dev-nb*ns) ] )
-      eps_en[iop]=nops[iop]*dE
-      print('- E=',eps_en[iop],np.abs( np.imag(eps_M_sinv[iop]) ),np.abs( np.imag(eps_rpa[iop]) ) )   
-
-   finish_t = time.time()
-   print("! BSE solver takes %s second for all optical energies " % (finish_t - start_t))
-   bse_time = (finish_t - start_t)
-
-   fname='data_len'+str(length)+'_ndiag'+str(ndiag)+'_nen'+str(nen)+'_nphot'+str(n_phot)+'.npz'
+   fname='data_len'+str(length)+'_ndiag'+str(ndiag)+'_nen'+str(nen)+'_nphot'+str(n_phot)+'_mul'+str(mu[0])+'_mur'+str(mu[1])+'_eps'+str(eps_screen)+'.npz'
    print("save data in ",fname)
    np.savez(fname, 
             ID_list=ID_list,
@@ -161,14 +158,51 @@ if __name__=='__main__':
             energies=energies,
             ldos=ldos,
             ndos=ndos,
-            eps_M=eps_M,
+            Lx=Lx,
+            cell=cell,
+            egap=egap,            
+            )
+
+   P_r,P0_r,Sig_r,Sig_l,Sig_g = bse_sparse.bse_sparse_solve(
+                  method='fft',alpha=0.99,spindeg=2.0,
+                  nm_dev=nm_dev,ndiag=ndiag,nen=nen,nsub=1,
+                  en=energies,nops=nops,nnop=nnop,nk=1,
+                  g_lesser=G_lesser,g_greater=G_greater,g_retarded=G_retarded,
+                  w=W0_r,v=v,solve_sigma=False,nb=nb,ns=ns)    
+
+   finish_t = time.time()
+   print("! BSE solver takes %s second for all optical energies " % (finish_t - start_t))
+   bse_time = (finish_t - start_t)
+
+   for iop in range(nnop):
+      epsilon_M = np.eye(nm_dev) -  v[:,:,0] @ P_r[:,:,iop]
+      epsilon_2 = np.eye(nm_dev) -  v[:,:,0] @ P0_r[:,:,iop]
+      epsilon_rpa = npla.inv(np.eye(nm_dev) -  v[:,:,0] @ P0_r[:,:,iop])
+      eps_M_sinv[iop] = np.sum( epsilon_M[ nm_dev//2, nb*ns:(nm_dev-nb*ns) ] )
+      eps_rpa[iop] = np.sum( epsilon_rpa[ nm_dev//2, nb*ns:(nm_dev-nb*ns) ] )
+      eps_2[iop] = np.sum( epsilon_2[ nm_dev//2, nb*ns:(nm_dev-nb*ns) ] )
+      eps_en[iop]=nops[iop]*dE
+      print('- E=',eps_en[iop],np.abs( np.imag(eps_M_sinv[iop]) ),np.abs( np.imag(eps_rpa[iop]) ) )      
+
+   # fname='data_len'+str(length)+'_ndiag'+str(ndiag)+'_nen'+str(nen)+'_nphot'+str(n_phot)+'.npz'
+   print("save data in ",fname)
+   np.savez(fname, 
+            ID_list=ID_list,
+            tr=tr,
+            te=te,
+            energies=energies,
+            ldos=ldos,
+            ndos=ndos,
+            Lx=Lx,
+            cell=cell,
+            egap=egap,
+            # eps_M=eps_M,
+            eps_2=eps_2,
             eps_M_sinv=eps_M_sinv,
             eps_rpa=eps_rpa,
             eps_en=eps_en,
             bse_time=bse_time,
             intensity=intensity,
-            n_phot=n_phot,
-            Lx=Lx,
-            cell=cell,
-            egap=egap)
+            n_phot=n_phot,            
+            )
 
