@@ -341,7 +341,7 @@ module gw_dense
     end subroutine calc_P_vertex_correction
     !
     !
-    subroutine selfenergy_gw(nm_dev,nen,nsub,nphiy,nphiz,nb,ns,ndiag,length, en, V,flatband,spindeg,&
+    subroutine selfenergy_gw(nm_dev,nen,nsub,nphiy,nphiz,nb,ns,ndiag,length, en, V,flatband,spindeg,sum_method,&
                              G_retarded,G_lesser,G_greater, &
                              Sig_retarded_new,Sig_lesser_new,Sig_greater_new,W0_retarded)
         !
@@ -352,6 +352,7 @@ module gw_dense
         real(dp),dimension(nen),intent(in)::en
         real(dp),intent(in)::spindeg
         logical,intent(in) :: flatband
+        character(len=*),intent(in)::sum_method
         complex(dp), intent(in):: V(nm_dev,nm_dev,nphiy*nphiz)
         complex(dp),dimension(nm_dev,nm_dev,nen,nsub,nphiy*nphiz),intent(in) ::  G_retarded,G_lesser,G_greater
         complex(dp),dimension(nm_dev,nm_dev,nen,nphiy*nphiz),intent(out) ::  Sig_retarded_new,Sig_lesser_new,Sig_greater_new
@@ -387,12 +388,12 @@ module gw_dense
                     h=min(nm_dev,i+ndiag)                        
                     do j = l,h
                         do isub = 1,nsub
-                            tmp=corr1d(nen,G_lesser(i,j,:,isub,ik),G_greater(j,i,:,isub,ikd),method='fft') * weights(isub)
+                            tmp=corr1d(nen,G_lesser(i,j,:,isub,ik),G_greater(j,i,:,isub,ikd),method=sum_method) * weights(isub)
                             P_lesser(i,j,:,iq) = P_lesser(i,j,:,iq)   + tmp(nen/2:nen/2+nopmax)
-                            tmp=corr1d(nen,G_greater(i,j,:,isub,ik),G_lesser(j,i,:,isub,ikd),method='fft') * weights(isub)         
+                            tmp=corr1d(nen,G_greater(i,j,:,isub,ik),G_lesser(j,i,:,isub,ikd),method=sum_method) * weights(isub)         
                             P_greater(i,j,:,iq) = P_greater(i,j,:,iq) + tmp(nen/2:nen/2+nopmax)
-                            tmp= corr1d(nen,G_lesser(i,j,:,isub,ik),conjg(G_retarded(i,j,:,isub,ikd)),method='fft') * weights(isub) &
-                               + corr1d(nen,G_retarded(i,j,:,isub,ik),G_lesser(j,i,:,isub,ikd),method='fft') * weights(isub) 
+                            tmp= corr1d(nen,G_lesser(i,j,:,isub,ik),conjg(G_retarded(i,j,:,isub,ikd)),method=sum_method) * weights(isub) &
+                               + corr1d(nen,G_retarded(i,j,:,isub,ik),G_lesser(j,i,:,isub,ikd),method=sum_method) * weights(isub) 
                             P_retarded(i,j,:,iq) = P_retarded(i,j,:,iq) + tmp(nen/2:nen/2+nopmax)
                         enddo
                     enddo
@@ -445,14 +446,14 @@ module gw_dense
                     do j = l,h
                         do isub = 1,nsub
                             Sig_lesser_new(i,j,:,ik) = Sig_lesser_new(i,j,:,ik) &
-                                + conv1d_fock(nen,nw,G_lesser(i,j,:,isub,ikd),W_lesser(i,j,:,iq),W_greater(i,j,:,iq),method='fft') * weights(isub)                                                             
+                                + conv1d_fock(nen,nw,G_lesser(i,j,:,isub,ikd),W_lesser(i,j,:,iq),W_greater(i,j,:,iq),method=sum_method) * weights(isub)                                                             
                             Sig_greater_new(i,j,:,ik) = Sig_greater_new(i,j,:,ik) &
-                                + conv1d_fock(nen,nw,G_greater(i,j,:,isub,ikd),W_greater(i,j,:,iq),W_lesser(i,j,:,iq),method='fft') * weights(isub) 
+                                + conv1d_fock(nen,nw,G_greater(i,j,:,isub,ikd),W_greater(i,j,:,iq),W_lesser(i,j,:,iq),method=sum_method) * weights(isub) 
                                 
                            Sig_retarded_new(i,j,:,ik) = Sig_retarded_new(i,j,:,ik) &
-                               + conv1d_fock(nen,nw,G_lesser(i,j,:,isub,ikd),W_retarded(i,j,:,iq),W_retarded(i,j,:,iq),method='fft') * weights(isub) &
-                               + conv1d_fock(nen,nw,G_retarded(i,j,:,isub,ikd),W_lesser(i,j,:,iq),W_greater(i,j,:,iq),method='fft') * weights(isub) &
-                               + conv1d_fock(nen,nw,G_retarded(i,j,:,isub,ikd),W_retarded(i,j,:,iq),W_retarded(i,j,:,iq),method='fft') * weights(isub)                                               
+                               + conv1d_fock(nen,nw,G_lesser(i,j,:,isub,ikd),W_retarded(i,j,:,iq),W_retarded(i,j,:,iq),method=sum_method) * weights(isub) &
+                               + conv1d_fock(nen,nw,G_retarded(i,j,:,isub,ikd),W_lesser(i,j,:,iq),W_greater(i,j,:,iq),method=sum_method) * weights(isub) &
+                               + conv1d_fock(nen,nw,G_retarded(i,j,:,isub,ikd),W_retarded(i,j,:,iq),W_retarded(i,j,:,iq),method=sum_method) * weights(isub)                                               
                         enddo 
                     enddo
                 enddo      
@@ -476,9 +477,9 @@ module gw_dense
     ! iterating G -> P -> W -> Sig 
     subroutine solve_gw_3D(niter,scba_tol,nm_dev,Lx,length,spindeg,temps,tempd,mus,mud,&
         alpha_mix,nen,nsub,En,nb,ns,nphiy,nphiz,Ham,H00lead,H10lead,T,V,&
-        ndiag,num_lead,flatband,output_files,G_retarded,G_lesser,G_greater,W0_retarded,tr)
+        ndiag,num_lead,flatband,output_files,sum_method,G_retarded,G_lesser,G_greater,W0_retarded,tr)
         !
-        use fft_mod, only : conv1d => conv1d2, corr1d => corr1d2  
+        ! use fft_mod, only : conv1d => conv1d2, corr1d => corr1d2  
         use parameters_mod
         !  
         integer, intent(in) :: nen, nsub, nb, ns,niter,nm_dev,length, nphiz, nphiy, num_lead
@@ -488,6 +489,7 @@ module gw_dense
         integer,intent(in)::ndiag
         logical,intent(in)::flatband
         logical,intent(in) :: output_files
+        character(len=*),intent(in)::sum_method
         complex(dp),intent(out),dimension(nm_dev,nm_dev,nen,nsub,nphiy*nphiz) ::  G_retarded,G_lesser,G_greater
         complex(dp),intent(out),dimension(nm_dev,nm_dev,nphiy*nphiz) ::  W0_retarded
         real(dp),intent(out) ::Tr(nen,num_lead) ! current spectrum on leads    
@@ -615,7 +617,7 @@ module gw_dense
             allocate(Sig_lesser_new(nm_dev,nm_dev,nen,nphiy*nphiz),source=czero)
             allocate(Sig_greater_new(nm_dev,nm_dev,nen,nphiy*nphiz),source=czero)
             !          
-            call selfenergy_gw(nm_dev,nen,nsub,nphiy,nphiz,nb,ns,ndiag,length, en, V,flatband,spindeg,&
+            call selfenergy_gw(nm_dev,nen,nsub,nphiy,nphiz,nb,ns,ndiag,length, en, V,flatband,spindeg,sum_method,&
                              G_retarded,G_lesser,G_greater, &
                              Sig_retarded_new,Sig_lesser_new,Sig_greater_new,W0_retarded)
             !
