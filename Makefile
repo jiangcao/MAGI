@@ -20,7 +20,7 @@ nvcommdir="${nvhome}/${target}/${version}/comm_libs"
 
 .PHONY: all clean
 
-all: directories wannier negf clean_compile
+all: directories wannier negf bse clean_compile
 
 directories:
 	mkdir -p ${OUTDIR}
@@ -35,6 +35,10 @@ wannier:
 
 negf: mkl_dfti.mod 
 	F77=gfortran F90=gfortran CC=gcc ${F2PY} ${F2PYFLAGS} -m negf src/magi/core/interface/negf.F90 skip: trimul_c mul_c :
+	mv negf*.so ${OUTDIR}
+
+bse: mkl_dfti.mod 
+	F77=gfortran F90=gfortran CC=gcc ${F2PY} ${F2PYFLAGS} -m negf src/magi/core/interface/bse.F90 skip: trimul_c mul_c :
 	mv negf*.so ${OUTDIR}
 
 mkl_dfti.mod: 

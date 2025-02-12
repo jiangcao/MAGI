@@ -5,17 +5,19 @@ length=30
 nen = 1800
 n_phot = 99
 mu = np.array( [-1.9,-1.9 ] )
+eps_screen=4.0
 
 pot_drop = 0.1 # V
 
 pot= np.concatenate( [[0], -pot_drop*np.arange(length-2)/(length-3), [-pot_drop]] )
 mu[1]=mu[1]+pot[-1]
 
-hw_phots = np.arange(11,35) * 0.1 #2.5 # eV
+hw_phots = np.arange(10,35) * 0.1 #2.5 # eV
 
 # fname='data_len'+str(length)+'_ndiag'+str(ndiag)+'_nen'+str(nen)+'_nphot'+str(n_phot)+'_mul'+str(mu[0])+'mur'+str(mu[1])+'.npz'
 fname='data_len'+str(length)+'_ndiag'+str(ndiag)+'_nen'+str(nen)+'_nphot'+str(n_phot)+'_mul'+str(mu[0])+'mur'+str(mu[1])+'_potdrop'+str(pot_drop)+'.npz'
 # fname='data_len'+str(length)+'_ndiag'+str(ndiag)+'_nen'+str(nen)+'_nphot'+str(n_phot)+'_mul'+str(mu[0])+'mur'+str(mu[1])+'.npz'
+# fname='data_len'+str(length)+'_ndiag'+str(ndiag)+'_nen'+str(nen)+'_nphot'+str(n_phot)+'_mul'+str(mu[0])+'mur'+str(mu[1])+'_potdrop'+str(pot_drop)+'_eps'+str(eps_screen)+'.npz'
 f=np.load('./'+fname)
 energies = f['energies']
 Egap = 2.9
@@ -29,6 +31,7 @@ for hw_phot in hw_phots:
     # fname='data_len'+str(length)+'_ndiag'+str(ndiag)+'_nen'+str(nen)+'_nphot'+str(n_phot)+'.npz'
     fname='data_len'+str(length)+'_ndiag'+str(ndiag)+'_nen'+str(nen)+'_nphot'+str(n_phot)+'_mul'+str(mu[0])+'mur'+str(mu[1])+'_potdrop'+str(pot_drop)+'.npz'
     # fname='data_len'+str(length)+'_ndiag'+str(ndiag)+'_nen'+str(nen)+'_nphot'+str(n_phot)+'_mul'+str(mu[0])+'mur'+str(mu[1])+'.npz'
+    # fname='data_len'+str(length)+'_ndiag'+str(ndiag)+'_nen'+str(nen)+'_nphot'+str(n_phot)+'_mul'+str(mu[0])+'mur'+str(mu[1])+'_potdrop'+str(pot_drop)+'_eps'+str(eps_screen)+'.npz'
 
     f=np.load('./'+fname)
 
@@ -81,7 +84,7 @@ for hw_phot in hw_phots:
     plt.arrow(-1.8-hw_phot/2.0,1.0,hw_phot,0,width=0.1,color='r',length_includes_head=True)
     
     plt.subplot(2,2,3)
-    plt.plot(hw_phots[:len(IDs1)],(np.abs(IDs1)+np.abs(IDs2))/2.0,'o-')
+    plt.plot(hw_phots[:len(IDs1)],(np.abs(np.array(IDs1)+np.array(IDs2)))/2.0,'o-')
     plt.yscale('log')
     plt.xlim(np.min(hw_phots), np.max(hw_phots))
     plt.xlabel('Photon Energy')

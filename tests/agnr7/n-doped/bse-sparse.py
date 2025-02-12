@@ -43,7 +43,7 @@ if __name__=='__main__':
    nkz=1
    nk=nky*nkz
    niter=0
-   eps_screen=4.0
+   eps_screen=12.0
    r0=3.0
    emin=-12.0
    emax= 6.0
