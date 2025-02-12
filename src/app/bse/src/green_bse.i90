@@ -1,0 +1,217 @@
+# 1 "/home/jiacao/fortran_codes/bse/src/green_bse.f90"
+! Copyright (c) 2023 Jiang Cao, ETH Zurich
+! All rights reserved.
+!
+! Redistribution and use in source and binary forms, with or without
+! modification, are permitted provided that the following conditions are met:
+!
+! 1. Redistributions of source code must retain the above copyright notice,
+!    this list of conditions and the following disclaimer.
+! 2. Redistributions in binary form must reproduce the above copyright notice,
+!    this list of conditions and the following disclaimer in the documentation
+!    and/or other materials provided with the distribution.
+! 3. Neither the name of the copyright holder nor the names of its contributors
+!    may be used to endorse or promote products derived from this software without
+!    specific prior written permission.
+!
+! THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+! AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+! IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+! ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+! LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+! CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+! SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+! INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+! CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+! ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+! POSSIBILITY OF SUCH DAMAGE.
+!
+module green_bse
+
+implicit none 
+
+private
+
+public :: green_bse_solve, green_bse_fullsolve
+
+complex(8), parameter :: cone = dcmplx(1.0d0,0.0d0)
+complex(8), parameter :: czero  = dcmplx(0.0d0,0.0d0)
+complex(8), parameter :: c1i  = dcmplx(0.0d0,1.0d0)
+real(8), parameter :: hbar=1.0546d-34 ! m^2 kg / s
+real(8), parameter :: m0=9.109d-31 ! kg
+real(8), parameter :: eps0=8.854d-12 ! C/V/m
+real(8), parameter :: c0=2.998d8 ! m/s
+real(8), parameter :: e0=1.6022d-19 ! C
+REAL(8), PARAMETER :: pi = 3.14159265359d0
+REAL(8), PARAMETER :: twopi = 3.14159265359d0*2.0d0
+
+CONTAINS
+
+
+! solve the full Bethe-Salpeter Equation
+subroutine green_bse_fullsolve(spindeg,nm_dev,nen,En,nop,G_lesser,G_greater,W_retarded,V,P_retarded)
+integer,intent(in)::nm_dev,nen,nop
+real(8),intent(in)::en(nen),spindeg
+complex(8),intent(in),dimension(nm_dev,nm_dev,nen):: G_lesser,G_greater ! electron GFs
+complex(8),intent(in),dimension(nm_dev,nm_dev) :: W_retarded ! W_0 static screened Coulomb interaction
+complex(8),intent(in),dimension(nm_dev,nm_dev) :: V ! bare Coulomb interaction
+complex(8),intent(out),dimension(nm_dev,nm_dev):: P_retarded ! 2-point polarization function with interacting electron-hole at frequency [[nop]]
+!---------
+complex(8),dimension(:,:,:,:),allocatable :: L ! two-particle Green's function
+complex(8),dimension(:,:,:,:),allocatable :: M ! 4-point Kernel
+allocate(L(nm_dev,nm_dev,nm_dev,nm_dev))
+allocate(M(nm_dev,nm_dev,nm_dev,nm_dev))
+! compute L0_ijkl = i G_il G_kj
+
+! L = L0 + L0 K L
+! L = (I - L0 K) \ L0
+deallocate(L,M)
+end subroutine green_bse_fullsolve
+
+
+! solve the Bethe-Salpeter Equation under approximation
+subroutine green_bse_solve(spindeg,nm_dev,nen,En,nop,G_lesser,G_greater,W_retarded,V,P_retarded)
+integer,intent(in)::nm_dev,nen,nop
+real(8),intent(in)::en(nen),spindeg
+complex(8),intent(in),dimension(nm_dev,nm_dev,nen):: G_lesser,G_greater ! electron GF
+complex(8),intent(in),dimension(nm_dev,nm_dev) :: W_retarded ! W_0 static screened Coulomb interaction
+complex(8),intent(in),dimension(nm_dev,nm_dev) :: V ! bare Coulomb interaction
+complex(8),intent(out),dimension(nm_dev,nm_dev):: P_retarded ! 2-point polarization function with interacting electron-hole
+!---------
+integer :: ie,i,j,k,l,m,n,p
+integer :: nn,nm,pp,pq
+complex(8),allocatable :: L0xx(:,:),A(:,:),B(:,:),Kxx(:,:), Mxx(:,:), Sxx(:,:)
+complex(8) :: Qijkl, L0Kdd
+real(8) :: dE  
+  allocate( L0xx(nm_dev,nm_dev) )
+  allocate( Mxx(nm_dev,nm_dev) )
+  allocate( Sxx(nm_dev,nm_dev) )
+  allocate( Kxx(nm_dev,nm_dev) )
+  allocate( A(nm_dev,nm_dev) )
+  L0xx = czero
+!$omp parallel default(shared) private(i,j,ie)
+!$omp do
+  do i=1,nm_dev
+    do j=1,nm_dev
+      do ie=nop+1,nen
+        L0xx(i,j) = L0xx(i,j) + &
+          +0.5d0*( G_greater(i,j,ie) * G_lesser(j,i,ie-nop) & 
+                 - G_lesser(i,j,ie) * G_greater(j,i,ie-nop) )
+      enddo
+    enddo
+  enddo
+!$omp end do
+!$omp end parallel
+  dE = (en(2) - en(1))/twopi
+  L0xx = L0xx * dE
+  Kxx(:,:) = - c1i*V(:,:)
+  do i=1,nm_dev
+    Kxx(i,i) = Kxx(i,i) + c1i*W_retarded(i,i)
+  enddo
+!
+  call zgemm('n','n',nm_dev,nm_dev,nm_dev,-cone,L0xx,nm_dev,Kxx,nm_dev,czero,A,nm_dev) 
+  do i=1,nm_dev
+    A(i,i) = A(i,i) + cone
+  enddo
+!
+  Sxx = czero
+  Mxx = czero  
+!$omp parallel default(shared) private(i,j,k,l,Qijkl,L0Kdd,p,ie)
+!$omp do
+  do i=1,nm_dev
+    do j=1,nm_dev
+      do k=1,nm_dev
+        do l=1,nm_dev
+!if ( (k/=i) .and. (l/=j) .and. (k/=l) ) then
+            Qijkl=czero
+            do ie=nop+1,nen
+              Qijkl = Qijkl + 0.5d0*( G_greater(i,l,ie) * G_lesser(k,i,ie-nop) * G_greater(l,j,ie) * G_lesser(j,k,ie-nop) &
+                                    - G_lesser(i,l,ie) * G_greater(k,i,ie-nop) * G_lesser(l,j,ie) * G_greater(j,k,ie-nop) )
+                                                                      
+            enddo
+            Qijkl = Qijkl * dE
+!
+            Qijkl = Qijkl * W_retarded(k,l) 
+            L0Kdd=czero
+            do ie=nop+1,nen
+              L0Kdd = L0Kdd + 0.5d0*( G_greater(k,k,ie) * G_lesser(l,l,ie-nop)   &
+                                    - G_lesser(k,k,ie) * G_greater(l,l,ie-nop)   ) 
+                                                                      
+            enddo
+            L0Kdd = L0Kdd * dE
+!
+            L0Kdd = cone - L0Kdd * W_retarded(k,l) * c1i
+            Qijkl = Qijkl / L0Kdd
+            Sxx(i,j) = Sxx(i,j) + Qijkl * c1i
+            do p=1,nm_dev
+              Mxx(i,p) = Mxx(i,p) - Qijkl * ( W_retarded(j,p) - V(j,p) ) 
+            enddo
+!endif
+        enddo
+      enddo
+    enddo
+  enddo
+!$omp end do
+!$omp end parallel
+!
+! call save_matrix('Sxx.dat',nm_dev, Sxx)
+! call save_matrix('Mxx.dat',nm_dev, Mxx)
+! call save_matrix('A.dat',nm_dev, A)
+! call save_matrix('Kxx.dat',nm_dev, Kxx)
+! call save_matrix('L0xx.dat',nm_dev, L0xx)
+!
+  A(:,:) = A(:,:) - Mxx(:,:)
+  call invert(A,nm_dev)
+  Sxx(:,:) = L0xx(:,:) - Sxx(:,:)
+  call zgemm('n','n',nm_dev,nm_dev,nm_dev,-c1i,A,nm_dev,Sxx,nm_dev,czero,P_retarded,nm_dev) 
+!
+! call save_matrix('pr.dat',nm_dev, P_retarded)
+!
+  deallocate(L0xx,Mxx,Sxx,Kxx,A)
+end subroutine green_bse_solve
+
+
+
+subroutine invert(A,nn)  
+  integer :: info,lda,lwork,nn      
+  integer, dimension(:), allocatable :: ipiv
+  complex(8), dimension(nn,nn),intent(inout) :: A
+  complex(8), dimension(:), allocatable :: work
+  allocate(work(nn*nn))
+  allocate(ipiv(nn))
+  call zgetrf(nn,nn,A,nn,ipiv,info)
+  if (info.ne.0) then
+    print*,'SEVERE warning: zgetrf failed, info=',info
+    A=czero
+  else
+    call zgetri(nn,A,nn,ipiv,work,nn*nn,info)
+    if (info.ne.0) then
+      print*,'SEVERE warning: zgetri failed, info=',info
+      A=czero
+    endif
+  endif
+  deallocate(work)
+  deallocate(ipiv)
+end subroutine invert
+
+
+! save a complex matrix to a file in row-column-value format for non-zero entries
+subroutine save_matrix(filename, nm, Mat)
+    character(len=*),intent(in)::filename ! file name
+    integer,intent(in)::nm ! number of bands
+    complex(8), intent(in) :: Mat(nm,nm) ! matrix
+! ----
+    integer::i,j        
+    open(unit=11, file=filename, status='unknown')                
+    do i=1,nm
+        do j=1,nm
+            if ( abs(Mat(i,j)) .gt. 0.0d0 ) then
+                write(11,'(2I10,2E18.6)') i,j,dble(Mat(i,j)),aimag(Mat(i,j))
+            endif
+        enddo
+        write(11,*)
+    enddo        
+    close(11)
+end subroutine save_matrix
+
+end module green_bse

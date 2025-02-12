@@ -1,0 +1,314 @@
+# 1 "/home/jiacao/fortran_codes/bse/src/wannierHam.f90"
+!!!!!!!!!!!!!!!! AUTHOR: Jiang Cao
+!!!!!!!!!!!!!!!! DATE: 09/2021
+
+MODULE wannierHam
+
+IMPLICIT NONE 
+
+private 
+COMPLEX(8), ALLOCATABLE :: Hr(:,:,:,:)
+real(8), allocatable :: wannier_center(:,:)
+REAL(8), DIMENSION(3) :: alpha,beta,gamm,xhat,yhat,b1,b2
+REAL(8) :: Lx, Ly ! in Ang
+REAL(8) :: CBM, VBM, Eg ! CB minimum and VB maximum
+REAL(8) :: kt_CBM, kt_VBM ! transverse kt value of CBM and VBM location
+INTEGER :: ymin,ymax,xmin,xmax,nb,nx,ny,nvb, spin_deg
+! neighbor index range
+! nb is the number of Wannier orbitals in a unit cell
+COMPLEX(8), PARAMETER :: zzero = dcmplx(0.0d0,0.0d0)
+COMPLEX(8), PARAMETER :: z1j = dcmplx(0.0d0,1.0d0)
+REAL(8), PARAMETER :: pi = 3.14159265359d0
+
+public :: w90_free_memory, w90_load_from_file, w90_MAT_DEF, w90_MAT_DEF_2D,w90_MAT_DEF_2D_kv, w90_plot_bz
+public :: w90_plot_x, NB, Lx, Ly, Nvb, VBM, CBM, kt_CBM, kt_VBM, Eg, spin_deg
+public :: eig,cross,eigv,b1,b2,norm,wannier_center,alpha,beta
+
+CONTAINS
+
+SUBROUTINE w90_free_memory()
+    deallocate(Hr)
+    deallocate(wannier_center)
+END SUBROUTINE w90_free_memory
+
+SUBROUTINE w90_load_from_file(fid)
+integer, intent(in) :: fid
+integer :: n,i,nkx,nky
+character(len=40) :: line, comment
+REAL(8) :: dky
+integer, allocatable :: ind(:)
+REAL(8), allocatable :: ham(:,:), energ(:,:)
+    read(fid,*) nvb, spin_deg ! number of VBs, spin-degeneracy
+    read(fid,*) comment
+    read(fid,*) alpha
+    read(fid,*) beta
+    read(fid,*) gamm
+    read(fid,*) comment
+    read(fid,*) n
+    allocate(ham(n,7))
+    do i=1,n
+        read(fid,*) ham(i,:)
+    end do    
+    xmin=minval(ham(:,1))
+    xmax=maxval(ham(:,1))
+    ymin=minval(ham(:,2))
+    ymax=maxval(ham(:,2))
+    nb = maxval(ham(:,4))
+    nx = xmax-xmin+1
+    ny = ymax-ymin+1
+    xhat = alpha/norm(alpha)
+    yhat = - cross(xhat,gamm)
+    yhat = yhat/norm(yhat)
+    Ly=abs(dot_product(beta,yhat)); ! L is in unit of A
+    Lx=abs(dot_product(alpha,xhat));
+    print '(A40)', 'reading Wannier H from file, info:'
+    print '(6i4)', xmin, xmax, ymin, ymax, nb, nvb
+    print '(2f5.1)', Lx, Ly
+    print *, 'a1, a2='
+    print '(3f5.1)', alpha
+    print '(3f5.1)', beta
+    b1=cross(beta,gamm)/dot_product(alpha,cross(beta,gamm))
+    b2 = cross(gamm,alpha)/dot_product(beta,cross(gamm,alpha))
+    print *, 'b1, b2='
+    print '(3f5.1)', b1
+    print '(3f5.1)', b2
+    allocate(Hr(nb,nb,nx,ny))
+    Hr(:,:,:,:) = zzero
+    do i = 1,n 
+        Hr(floor(ham(i,4)),floor(ham(i,5)),floor(ham(i,1))-xmin+1,&
+        &floor(ham(i,2))-ymin+1) = ham(i,6) + z1j*ham(i,7);
+    end do    
+    print *, 'Find CBM and VBM'
+    nkx=25
+    nky=25    
+    dky = 1.0d0 / dble(nky-1) * 2 * pi / Ly
+    allocate(energ(nb,nkx*nky))
+    allocate(ind(nb))
+    call w90_PLOT_BZ(nkx,nky,energ)
+    ind = maxloc(energ,2)
+    kt_vbm = mod(ind(nvb),nkx)*dky - pi / Ly ! k transverse corresponding to VBM
+    VBM = energ(nvb,ind(nvb))
+    ind = minloc(energ,2)
+    kt_cbm = mod(ind(nvb+1),nkx)*dky - pi / Ly ! k transverse corresponding to CBM
+    CBM = energ(nvb+1,ind(nvb+1))
+    Eg = CBM-VBM
+    print '(3A8)','CBM','VBM','Eg'
+    print '(3f8.3)', CBM, VBM, CBM-VBM
+    print '(2A8)','kt_CBM','kt_VBM'
+    print '(2f8.3)', kt_cbm, kt_vbm
+    print '(A40)', 'reading Wannier centers from file'
+    read(fid,*) comment    
+    allocate(wannier_center(3,nb))
+    do i=1,nb
+        read(fid,*) wannier_center(:,i)
+    end do
+! center z around 0
+    wannier_center(3,:)=wannier_center(3,:)-(sum(wannier_center(3,:)/dble(NB)))
+    deallocate(ham)
+    deallocate(energ)
+    deallocate(ind)
+END SUBROUTINE w90_load_from_file
+
+SUBROUTINE w90_PLOT_LINE(kstart,kend,nk,EN)
+! k in cartesian coordinate, in [2pi/L] unit
+integer, intent(in) :: nk
+real(8), dimension(3), intent(in) :: kstart, kend
+real(8), dimension(nb,nk), intent(out) :: EN
+integer :: i
+real(8) :: dkx, dky, kx, ky
+complex(8), dimension(NB,NB) :: Hii
+    dkx = (kend(1) - kstart(1)) / dble(nk-1) * 2 * pi / Lx
+    dky = (kend(2) - kstart(2)) / dble(nk-1) * 2 * pi / Ly
+    do i = 1,nk
+        kx = kstart(1) + dkx*(i-1)
+        ky = kstart(2) + dky*(i-1)    
+        
+        call w90_MAT_DEF_2D(Hii, kx,ky)    
+        
+        EN(1:NB,i) = eig(NB,Hii)
+    end do
+END SUBROUTINE w90_PLOT_LINE
+
+SUBROUTINE w90_PLOT_BZ(nkx,nky,EN)
+integer, intent(in) :: nkx,nky
+real(8), dimension(nb,nkx*nky), intent(out) :: EN
+integer :: i,j
+real(8) :: dkx, dky, kx, ky
+complex(8), dimension(NB,NB) :: Hii
+    dkx = 1.0d0 / dble(nkx-1) * 2 * pi / Lx
+    dky = 1.0d0 / dble(nky-1) * 2 * pi / Ly
+    do i = 1,nkx
+    do j = 1,nky
+        kx = i*dkx - pi / Lx
+        ky = j*dky - pi / Ly
+        
+        call w90_MAT_DEF_2D(Hii, kx,ky)    
+        
+        EN(1:NB,i+(j-1)*nkx) = eig(NB,Hii)
+    end do
+    end do
+END SUBROUTINE w90_PLOT_BZ
+
+
+SUBROUTINE w90_PLOT_X(ns,nk,ky,EN)
+! ky is in [2pi/Ang]
+integer, intent(in) :: nk,ns    
+real(8), dimension(nb*ns,nk), intent(out) :: EN
+complex(8), dimension(NB*ns,NB*ns) :: Hii,H1i,Ht
+real(8) :: dkx, dky, kx, ky
+integer :: i
+    dkx = 2.d0 * pi / dble(nk-1) /Lx/Ns
+    do i = 1,nk
+        kx = - pi/Lx/Ns + dkx*(i-1)                    
+        call w90_MAT_DEF(Hii, H1i,kx, ky,ns)           
+        Ht(:,:) = Hii(:,:) + H1i(:,:) * exp(-z1j*kx*ns*Lx) + &
+                  transpose(conjg(H1i(:,:)))*exp(+z1j*kx*ns*Lx)
+        EN(:,i) = eig(NB*ns,Ht);
+    end do
+END SUBROUTINE w90_PLOT_X
+
+!!! construct the fully periodic Hamiltonian matrix
+SUBROUTINE w90_MAT_DEF_2D(Hii,kx,ky)
+! kx and ky is in unit of [2pi/Ang]
+REAL(8), INTENT(IN) :: kx, ky
+COMPLEX(8), INTENT(OUT), DIMENSION(NB,NB) :: Hii
+real(8), dimension(3) :: kv, r
+integer :: i,j
+    Hii(:,:) = zzero    
+    kv = kx*xhat + ky*yhat
+    do i = xmin,xmax           
+        do j = ymin,ymax
+            r = i*alpha + j*beta                          
+            Hii(:,:) = Hii(:,:) + Hr(:,:,i-xmin+1,j-ymin+1) &
+            &* exp(-z1j * dot_product(r,kv))                                  
+        end do
+!!! Hii = (Hii + transpose(conjg(Hii))) / 2.0d0
+    end do   
+END SUBROUTINE w90_MAT_DEF_2D
+
+!!! construct the fully periodic Hamiltonian matrix
+SUBROUTINE w90_MAT_DEF_2D_kv(Hii,kv)
+! kv is in original cartesien coordinate of W90 [1/ang]
+REAL(8), INTENT(IN) :: kv(1:3)
+COMPLEX(8), INTENT(OUT), DIMENSION(NB,NB) :: Hii
+real(8), dimension(3) :: r
+integer :: i,j
+    Hii(:,:) = zzero        
+    do i = xmin,xmax           
+        do j = ymin,ymax
+            r = i*alpha + j*beta                                      
+            Hii(:,:) = Hii(:,:) + Hr(:,:,i-xmin+1,j-ymin+1) &
+            &* exp(-z1j * dot_product(r,kv))                                  
+        end do
+!!! Hii = (Hii + transpose(conjg(Hii))) / 2.0d0
+    end do   
+END SUBROUTINE w90_MAT_DEF_2D_kv
+
+!!! construct the diagonal and off-diagonal blocks H(I,I), H(I,I+1)
+SUBROUTINE w90_MAT_DEF(Hii,H1i,kx, ky,ns)
+! ky in [2pi/Ang]
+integer, intent(in) :: ns
+COMPLEX(8), INTENT(OUT), DIMENSION(NB*ns,NB*ns) :: Hii, H1i
+real(8), intent(in) :: ky,kx
+integer :: i,j,k
+real(8) :: phiy, phix
+real(8), dimension(3) :: kv, r
+Hii(:,:) = zzero
+H1i(:,:) = zzero
+do i = 1,ns
+    do k = 1,ns    
+        do j = ymin,ymax
+            kv = kx*xhat + ky*yhat
+            r =  (i-k)*alpha + j*beta                    
+            if ((i-k <= xmax ) .and. (i-k >= xmin )) then                
+                Hii(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb) = Hii(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb) + &
+                & Hr(:,:,i-k-xmin+1,j-ymin+1) * exp(-z1j* dot_product(r,kv) )           
+            end if                 
+            if (((i-k+ns) <= xmax) .and. ((i-k+ns) >= xmin)) then                   
+                H1i(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb) = H1i(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb) + & 
+                & Hr(:,:,i-k-xmin+ns+1,j-ymin+1) * exp(-z1j* dot_product(r,kv) )            
+            end if
+        end do        
+    end do
+end do  
+END SUBROUTINE w90_MAT_DEF
+
+!!! construct the Ribbon structure Hamiltonian's diagonal and off-diagonal blocks
+SUBROUTINE w90_MAT_DEF_ribbon_simple(Hii,H1i,nn,width)
+integer, intent(in) :: nn,width
+complex(8), intent(out):: Hii(NB*width,NB*width),H1i(NB*width,NB*width,nn)
+integer :: i,j,k
+do i = 1,width
+    do j = 1,width
+        if ((i-j <= ymax) .and. (i-j >= ymin)) then
+            Hii(((i-1)*NB+1):i*NB,((j-1)*NB+1):k*NB) = Hr(:,:,-xmin+1,i-j-ymin+1)
+            do k = 1,nn
+                H1i(:,:,k) = Hr(:,:,k-xmin+1,i-j-ymin+1)
+            end do
+        end if
+    end do
+end do
+END SUBROUTINE w90_MAT_DEF_ribbon_simple
+
+FUNCTION norm(vector)
+REAL(8) :: vector(3),norm
+norm = sqrt(dot_product(vector,vector))
+END FUNCTION
+
+FUNCTION cross(a, b)
+REAL(8), DIMENSION(3) :: cross
+REAL(8), DIMENSION(3), INTENT(IN) :: a, b
+cross(1) = a(2) * b(3) - a(3) * b(2)
+cross(2) = a(3) * b(1) - a(1) * b(3)
+cross(3) = a(1) * b(2) - a(2) * b(1)
+END FUNCTION cross
+
+FUNCTION eig(NN, A)
+INTEGER, INTENT(IN) :: NN
+COMPLEX(8), INTENT(INOUT), DIMENSION(:,:) :: A
+REAL(8) :: eig(NN)
+real(8) :: W(1:NN)
+integer :: INFO,LWORK,liwork, lrwork
+complex(8), allocatable :: work(:)
+real(8), allocatable :: RWORK(:)
+!integer, allocatable :: iwork(:)
+lwork= max(1,2*NN-1)
+lrwork= max(1,3*NN-2)
+allocate(work(lwork))
+allocate(rwork(lrwork))
+
+CALL zheev( 'N','U', NN, A, NN, W, WORK, LWORK, RWORK, INFO )
+
+deallocate(work,rwork)
+if (INFO.ne.0)then
+   write(*,*)'SEVERE WARNING: ZHEEV HAS FAILED. INFO=',INFO
+   call abort
+endif
+eig(:)=W(:)
+END FUNCTION eig
+
+FUNCTION eigv(NN, A)
+INTEGER, INTENT(IN) :: NN
+COMPLEX(8), INTENT(INOUT), DIMENSION(:,:) :: A
+REAL(8) :: eigv(NN)
+real(8) :: W(1:NN)
+integer :: INFO,LWORK,liwork, lrwork
+complex(8), allocatable :: work(:)
+real(8), allocatable :: RWORK(:)
+!integer, allocatable :: iwork(:)
+lwork= max(1,2*NN-1)
+lrwork= max(1,3*NN-2)
+allocate(work(lwork))
+allocate(rwork(lrwork))
+
+CALL zheev( 'V','U', NN, A, NN, W, WORK, LWORK, RWORK, INFO )
+
+deallocate(work,rwork)
+if (INFO.ne.0)then
+   write(*,*)'SEVERE WARNING: ZHEEV HAS FAILED. INFO=',INFO
+   call abort
+endif
+eigv(:)=W(:)
+END FUNCTION eigv
+
+END MODULE wannierHam

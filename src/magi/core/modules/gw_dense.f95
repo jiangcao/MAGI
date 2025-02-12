@@ -221,12 +221,12 @@ module gw_dense
             Sig_retarded_new = dcmplx( dble(Sig_retarded_new), aimag(Sig_greater_new-Sig_lesser_new)/2.0d0 )
             ! symmetrize the selfenergies
             do ie=1,nen
-            B(:,:)=transpose(Sig_retarded_new(:,:,ie))
-            Sig_retarded_new(:,:,ie) = (Sig_retarded_new(:,:,ie) + B(:,:))/2.0d0    
-            B(:,:)=transpose(Sig_lesser_new(:,:,ie))
-            Sig_lesser_new(:,:,ie) = (Sig_lesser_new(:,:,ie) + B(:,:))/2.0d0
-            B(:,:)=transpose(Sig_greater_new(:,:,ie))
-            Sig_greater_new(:,:,ie) = (Sig_greater_new(:,:,ie) + B(:,:))/2.0d0
+              B(:,:)=transpose(Sig_retarded_new(:,:,ie))
+              Sig_retarded_new(:,:,ie) = (Sig_retarded_new(:,:,ie) + B(:,:))/2.0d0
+              B(:,:)=transpose(Sig_lesser_new(:,:,ie))
+              Sig_lesser_new(:,:,ie) = dcmplx((dble(Sig_lesser_new(:,:,ie)) - dble(B(:,:)))/2.0d0, (dimag(Sig_lesser_new(:,:,ie)) + dimag(B(:,:)))/2.0d0)
+              B(:,:)=transpose(Sig_greater_new(:,:,ie))
+              Sig_greater_new(:,:,ie) = dcmplx((dble(Sig_greater_new(:,:,ie)) - dble(B(:,:)))/2.0d0, (dimag(Sig_greater_new(:,:,ie)) + dimag(B(:,:)))/2.0d0)
             enddo
             !        
             ! mixing with the previous one
